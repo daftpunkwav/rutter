@@ -1,0 +1,16 @@
+# rutter-core: shared domain vocabulary for every other crate.
+
+[package]
+name = "rutter-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Domain vocabulary for rutter: actions, snapshots, references, errors"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }

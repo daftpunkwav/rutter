@@ -1,0 +1,16 @@
+# rutter: the binary. Entry modes and process lifecycle.
+
+[package]
+name = "rutter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Headless browser orchestration service for AI agents"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { workspace = true }
+thiserror = { workspace = true }

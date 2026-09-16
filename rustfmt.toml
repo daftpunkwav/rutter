@@ -1,0 +1,6 @@
+# Formatting policy for the rutter workspace. The configuration stays
+# close to rustfmt defaults on purpose; the two knobs below are pinned so
+# direct rustfmt runs match `cargo fmt`.
+
+edition = "2024"
+max_width = 100
