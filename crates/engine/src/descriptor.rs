@@ -9,6 +9,8 @@
 pub enum EngineBackend {
     /// The Chrome for Testing headless shell, the initial backend.
     ChromiumHeadlessShell,
+    /// The full Chrome for Testing browser; required for headed windows.
+    Chromium,
 }
 
 /// What an engine backend can do; consumers must check before relying on

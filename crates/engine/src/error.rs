@@ -48,6 +48,13 @@ pub enum EngineError {
         detail: String,
     },
 
+    /// A resource cap was hit; the operation is refused, not queued.
+    #[error("capacity exceeded: {detail}")]
+    Capacity {
+        /// Which cap was hit and what the caller can do about it.
+        detail: String,
+    },
+
     /// The engine binary could not be located or downloaded.
     #[error("engine download failed: {detail}")]
     DownloadFailed {
