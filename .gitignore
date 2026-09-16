@@ -25,3 +25,6 @@ Thumbs.db
 # Personal agent instructions (local-only by convention)
 AGENTS.local.md
 CLAUDE.local.md
+
+# Local agent planning artifacts
+.zcode/
