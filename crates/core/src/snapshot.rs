@@ -40,6 +40,9 @@ pub struct SnapshotNode {
     pub checked: Option<bool>,
     /// Whether the element reports itself as disabled.
     pub disabled: bool,
+    /// For fold summary nodes: how many children were collapsed into
+    /// this line (rendered as `× N`); `None` for regular nodes.
+    pub folded_count: Option<u32>,
     /// Children of the node in tree order.
     pub children: Vec<SnapshotNode>,
 }
@@ -54,7 +57,17 @@ impl SnapshotNode {
             reference: None,
             checked: None,
             disabled: false,
+            folded_count: None,
             children: Vec::new(),
+        }
+    }
+
+    /// Creates a fold summary line for `count` collapsed children of
+    /// the given role.
+    pub fn fold_summary(role: impl Into<String>, count: u32) -> Self {
+        Self {
+            folded_count: Some(count),
+            ..Self::leaf(role)
         }
     }
 }
@@ -81,6 +94,9 @@ fn render_node(f: &mut fmt::Formatter<'_>, node: &SnapshotNode, depth: usize) ->
     if let Some(reference) = &node.reference {
         write!(f, " [ref={}]", reference)?;
     }
+    if let Some(count) = node.folded_count {
+        write!(f, " × {count}")?;
+    }
     writeln!(f)?;
     for child in &node.children {
         render_node(f, child, depth + 1)?;
@@ -105,6 +121,7 @@ mod tests {
             reference: None,
             checked: None,
             disabled: false,
+            folded_count: None,
             children: Vec::new(),
         }
     }
@@ -123,10 +140,13 @@ mod tests {
         disabled_button.reference = Some(Reference::new("e18"));
         disabled_button.disabled = true;
 
+        let mut fold = node("listitem", None);
+        fold.folded_count = Some(20);
+
         let snapshot = Snapshot {
             url: "https://example.com".to_owned(),
             root: SnapshotNode {
-                children: vec![heading, button, disabled_button],
+                children: vec![heading, button, disabled_button, fold],
                 ..node("generic", None)
             },
             truncated: false,
@@ -140,7 +160,8 @@ mod tests {
                 "  - heading \"Welcome\"\n",
                 "    - img \"Logo\" [ref=e2]\n",
                 "  - button \"Sign in\" [checked] [ref=e17]\n",
-                "  - button \"Delete\" [disabled] [ref=e18]\n"
+                "  - button \"Delete\" [disabled] [ref=e18]\n",
+                "  - listitem × 20\n"
             )
         );
     }

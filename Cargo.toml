@@ -24,6 +24,8 @@ async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 dirs = "6"
 futures = { version = "0.3", default-features = false, features = ["std"] }
+insta = "1"
+proptest = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

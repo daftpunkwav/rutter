@@ -63,7 +63,9 @@ to role `generic` with no name.
 
 Unknown fields are ignored by the converter. Malformed values degrade
 to defaults (missing role → `generic`, wrong types → field absent);
-the converter never fails on hostile page data (blueprint §8.4).
+overlong strings are clamped by the converter (roles and refs to 64
+characters, names and values to 200) and set `truncated`. The converter
+never fails on hostile page data (blueprint §8.4).
 
 Skipped elements: `script`, `style`, `noscript`, `template`, `head`,
 `meta`, `link`, `title`, `br`, SVG internals (an `svg` element is
@@ -108,15 +110,15 @@ budget-induced change sets `Snapshot::truncated = true`.
 2. **Sibling folding.** A run of ≥ 8 consecutive same-role siblings
    with no name is folded into one summary node (role kept, `× N`
    set). Runs shorter than 8 pass through unchanged.
-3. **Viewport-first culling.** A subtree entirely below/above the
+3. **Viewport-first culling.** Any subtree entirely below/above the
    viewport (rect outside the viewport rect expanded by a 200 px
    margin) whose rendered size exceeds 400 characters is replaced by a
-   summary node of its root (`× N` counts the folded children). Ties
-   are broken top-down, left-to-right.
-4. **Hard budget.** While the rendered size exceeds the budget: fold
-   the largest out-of-viewport foldable subtree; if none remains, cut
-   the largest out-of-viewport subtree; if still over, fold the largest
-   remaining subtree regardless of viewport.
+   summary node of its root (`× N` counts the folded children),
+   regardless of the remaining budget.
+4. **Hard budget.** The remaining budget is spent in document order:
+   children keep their full text while it fits; a child that no longer
+   fits shrinks recursively; a leaf or a line that does not fit at all
+   is dropped. Every budget-induced fold or drop sets `truncated`.
 5. **Safety caps** (hostile-input limits, independent of budget):
    depth 512, 100 000 nodes — unchanged from v0; tripping them sets
    `truncated` and degrades, never panics.
