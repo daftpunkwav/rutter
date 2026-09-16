@@ -20,9 +20,14 @@ license = "Apache-2.0"
 rutter-core = { path = "crates/core" }
 async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
+dirs = "6"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tempfile = "3"
 thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Lint policy (blueprint §8.4): no unwrap/expect/panic outside tests and
 # process init, no placeholder markers, public items documented.

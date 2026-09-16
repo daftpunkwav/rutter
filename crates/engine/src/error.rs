@@ -47,4 +47,11 @@ pub enum EngineError {
         /// What went wrong, for reporting the bug.
         detail: String,
     },
+
+    /// The engine binary could not be located or downloaded.
+    #[error("engine download failed: {detail}")]
+    DownloadFailed {
+        /// What went wrong while resolving or fetching the binary.
+        detail: String,
+    },
 }

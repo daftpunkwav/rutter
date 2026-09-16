@@ -15,15 +15,18 @@
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod backoff;
 pub mod config;
 pub mod context;
 pub mod descriptor;
+pub mod download;
 pub mod engine;
 pub mod error;
 pub mod health;
 pub mod input;
 pub mod page;
 
+pub use backoff::Backoff;
 pub use config::{ContextConfig, LaunchMode};
 pub use context::ContextHandle;
 pub use descriptor::{EngineBackend, EngineCapabilities, EngineDescriptor};
