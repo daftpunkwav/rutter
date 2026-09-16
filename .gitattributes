@@ -1,0 +1,19 @@
+# Normalize all text to LF in the repository and on checkout.
+* text=auto eol=lf
+
+# Scripts must stay LF on every platform.
+*.sh text eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.zip binary
+*.gz binary

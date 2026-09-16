@@ -1,0 +1,27 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Cargo.lock is committed on purpose: this is a binary workspace.
+
+# Local caches and tool output
+.cache/
+coverage/
+dist/
+node_modules/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editor and OS noise
+.idea/
+.vscode/
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+
+# Personal agent instructions (local-only by convention)
+AGENTS.local.md
+CLAUDE.local.md
