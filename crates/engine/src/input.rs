@@ -42,6 +42,17 @@ pub enum InputEvent {
         /// Button to release.
         button: MouseButton,
     },
+    /// Scrolls by a wheel delta at page coordinates.
+    MouseWheel {
+        /// X coordinate in CSS pixels.
+        x: f64,
+        /// Y coordinate in CSS pixels.
+        y: f64,
+        /// Horizontal scroll delta, positive scrolls right.
+        delta_x: f64,
+        /// Vertical scroll delta, positive scrolls down.
+        delta_y: f64,
+    },
     /// Presses a key.
     KeyPressed {
         /// Key name in engine notation, for example `a`, `Enter`, `Tab`.
@@ -51,5 +62,11 @@ pub enum InputEvent {
     KeyReleased {
         /// Key name in engine notation, for example `a`, `Enter`, `Tab`.
         key: String,
+    },
+    /// Inserts text at the current focus like a paste, without per-key
+    /// events; the reliable path for the `type` action.
+    InsertText {
+        /// Text to insert, interpreted as literal characters.
+        text: String,
     },
 }

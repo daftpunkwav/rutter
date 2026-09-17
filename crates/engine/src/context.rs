@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use rutter_core::cookie::Cookie;
 use rutter_core::ids::{ContextId, PageId};
 
 use crate::error::EngineError;
@@ -31,4 +32,8 @@ pub trait ContextHandle: Send + Sync {
     /// Closes a page; closing the last page may close the context,
     /// depending on backend semantics.
     async fn close_page(&self, id: PageId) -> Result<(), EngineError>;
+
+    /// Sets cookies scoped to this context, replacing nothing: each
+    /// cookie is written by name/domain/path per backend semantics.
+    async fn set_cookies(&self, cookies: &[Cookie]) -> Result<(), EngineError>;
 }

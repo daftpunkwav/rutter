@@ -11,7 +11,9 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use chromiumoxide::Page;
-use chromiumoxide::cdp::browser_protocol::input::{DispatchKeyEventType, DispatchMouseEventType};
+use chromiumoxide::cdp::browser_protocol::input::{
+    DispatchKeyEventType, DispatchMouseEventType, InsertTextParams,
+};
 use chromiumoxide::cdp::browser_protocol::page::NavigateParams;
 use chromiumoxide::cdp::browser_protocol::target::TargetId;
 use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
@@ -107,6 +109,23 @@ impl rutter_engine::page::PageHandle for CdpPage {
                 params.button = Some(error::cdp_button(button));
                 params.click_count = Some(1);
                 params
+            }
+            InputEvent::MouseWheel {
+                x,
+                y,
+                delta_x,
+                delta_y,
+            } => {
+                let mut params = error::mouse_params(DispatchMouseEventType::MouseWheel, x, y);
+                params.delta_x = Some(delta_x);
+                params.delta_y = Some(delta_y);
+                params
+            }
+            InputEvent::InsertText { text } => {
+                let params = InsertTextParams::new(text);
+                return with_deadline("insert_text", COMMAND_TIMEOUT, self.page.execute(params))
+                    .await
+                    .map(|_| ());
             }
             InputEvent::KeyPressed { key } => {
                 let params = error::key_params(DispatchKeyEventType::KeyDown, &key);

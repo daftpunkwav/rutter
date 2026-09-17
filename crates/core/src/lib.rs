@@ -16,6 +16,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod action;
+pub mod cookie;
 pub mod error;
 pub mod ids;
 pub mod reference;
