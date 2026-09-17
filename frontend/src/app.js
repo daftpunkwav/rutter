@@ -26,22 +26,51 @@
 
   function t(key) { return I18N[key] || key; }
 
+  var socket = null;
+
   function connect() {
     var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    var socket = new WebSocket(
+    socket = new WebSocket(
       protocol + '//' + window.location.host + '/ws?token=' + encodeURIComponent(token));
+    socket.binaryType = 'arraybuffer';
 
     socket.onmessage = function (message) {
+      if (message.data instanceof ArrayBuffer) {
+        showFrame(message.data);
+        return;
+      }
       var envelope;
       try { envelope = JSON.parse(message.data); } catch (error) { return; }
       if (envelope.type === 'note') { append('timeline', envelope.text); return; }
-      if (envelope.type === 'decision-ack') { return; }
+      if (envelope.type === 'decision-ack' || envelope.type === 'screencast-ack') { return; }
       render(envelope);
     };
     socket.onclose = function () {
       setTimeout(connect, 1000);
     };
   }
+
+  function sendScreencast(on) {
+    if (!socket || socket.readyState !== 1) { return; }
+    var session = document.getElementById('live-session').value.trim();
+    if (on && !session) { return; }
+    socket.send(JSON.stringify({ type: 'screencast', on: on, session: session }));
+  }
+
+  function showFrame(buffer) {
+    var image = document.getElementById('live-frame');
+    image.hidden = false;
+    if (image.src.startsWith('blob:')) { URL.revokeObjectURL(image.src); }
+    image.src = URL.createObjectURL(new Blob([buffer], { type: 'image/jpeg' }));
+  }
+
+  // The script loads at the end of <body>, so the controls exist now.
+  document.getElementById('live-start').onclick = function () {
+    sendScreencast(true);
+  };
+  document.getElementById('live-stop').onclick = function () {
+    sendScreencast(false);
+  };
 
   function render(envelope) {
     var event = envelope.event || {};

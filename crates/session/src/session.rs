@@ -19,7 +19,7 @@ use rutter_core::ids::{PageId, SessionId};
 use rutter_core::snapshot::Snapshot;
 use rutter_engine::context::ContextHandle;
 use rutter_engine::error::EngineError;
-use rutter_engine::page::{PageHandle, Screenshot};
+use rutter_engine::page::{PageHandle, ScreencastStream, Screenshot};
 use rutter_events::{Backbone, Event};
 use rutter_policy::{ActionClass, ApprovalBroker, ApprovalOutcome, RuleSet, Verdict};
 
@@ -267,6 +267,14 @@ impl Session {
         }
         .snapshot()
         .await
+    }
+
+    /// Starts a live screencast of the active page; the stream is
+    /// observation only — dropping it stops the capture (blueprint
+    /// §7.7: on-demand, dashboard never executes actions).
+    pub async fn screencast(&self) -> Result<ScreencastStream, SessionError> {
+        let page = self.active_page().await.map_err(engine_error)?;
+        page.start_screencast().await.map_err(SessionError::Engine)
     }
 
     /// Captures the active page.

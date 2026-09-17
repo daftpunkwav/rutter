@@ -15,6 +15,7 @@ workspace = true
 rutter-core = { workspace = true }
 rutter-engine = { workspace = true }
 async-trait = { workspace = true }
+base64 = { workspace = true }
 chromiumoxide = "0.9"
 futures = { workspace = true }
 serde_json = { workspace = true }

@@ -21,6 +21,8 @@ use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Html;
 use axum::routing::{get, post};
+use rutter_core::ids::SessionId;
+use rutter_engine::page::ScreencastStream;
 use rutter_events::Envelope;
 use rutter_policy::{ApprovalBroker, ApprovalId, Decision};
 use rutter_session::manager::SessionManager;
@@ -222,9 +224,12 @@ async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
     }
 
     // Live: forward the broadcast stream; client decisions come back
-    // on the same socket, so all writes happen in this loop.
+    // on the same socket, so all writes happen in this loop. Screencast
+    // frames are on-demand (blueprint §7.7): they flow only while a
+    // viewer asked for them, as binary WebSocket frames.
     let mut live = backbone.subscribe();
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<Message>(64);
+    let mut current: Option<ScreencastStream> = None;
 
     loop {
         tokio::select! {
@@ -256,11 +261,68 @@ async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                     None => break,
                 }
             }
+            frame = async {
+                match current.as_mut() {
+                    Some(stream) => stream.next_frame().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                match frame {
+                    Some(jpeg_frame) => {
+                        if socket
+                            .send(Message::binary(jpeg_frame.jpeg))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    None => current = None,
+                }
+            }
             incoming = socket.recv() => {
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
-                        if let Some(reply) = handle_client_message(&state, &text) {
-                            let _ = outgoing_tx.send(Message::text(reply)).await;
+                        // Screencast control lives here because the
+                        // stream itself must live in this loop.
+                        let value: Option<Value> = serde_json::from_str(&text).ok();
+                        match value.as_ref().and_then(|v| v.get("type")).and_then(Value::as_str) {
+                            Some("screencast") => {
+                                // Dropping the previous stream stops
+                                // its capture task.
+                                current = None;
+                                let on = value
+                                    .as_ref()
+                                    .and_then(|v| v.get("on"))
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(false);
+                                if on {
+                                    let session_id = value
+                                        .as_ref()
+                                        .and_then(|v| v.get("session"))
+                                        .and_then(Value::as_str)
+                                        .map(|s| SessionId::new(s.to_owned()));
+                                    if let Some(session_id) = session_id {
+                                        if let Some(session) =
+                                            state.manager.get_session(&session_id).await
+                                        {
+                                            current =
+                                                session.screencast().await.ok();
+                                        }
+                                    }
+                                }
+                                let _ = socket
+                                    .send(Message::text(
+                                        "{\"type\":\"screencast-ack\"}",
+                                    ))
+                                    .await;
+                            }
+                            _ => {
+                                if let Some(reply) = handle_client_message(&state, &text) {
+                                    let _ =
+                                        outgoing_tx.send(Message::text(reply)).await;
+                                }
+                            }
                         }
                     }
                     Some(Ok(_)) => {}
@@ -269,6 +331,7 @@ async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
             }
         }
     }
+    // Dropping `current` stops the capture task.
 }
 
 /// Applies one client message; approvals answer the broker.

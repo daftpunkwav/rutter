@@ -80,6 +80,17 @@ impl SessionManager {
         Arc::clone(&self.inner.broker)
     }
 
+    /// Looks up an open session without creating one.
+    pub async fn get_session(&self, id: &SessionId) -> Option<Arc<Session>> {
+        self.inner
+            .running
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|running| running.sessions.get(id))
+            .map(Arc::clone)
+    }
+
     /// The event backbone once the engine started; `None` before the
     /// first session (dashboard sources replay + live events here).
     pub async fn backbone(&self) -> Option<Arc<Backbone>> {

@@ -15,7 +15,9 @@ use chromiumoxide::cdp::browser_protocol::input::{
     DispatchKeyEventType, DispatchMouseEventType, InsertTextParams,
 };
 use chromiumoxide::cdp::browser_protocol::page::{
-    GetNavigationHistoryParams, NavigateParams, NavigateToHistoryEntryParams,
+    EventFrameNavigated, EventScreencastFrame, GetNavigationHistoryParams, NavigateParams,
+    NavigateToHistoryEntryParams, ScreencastFrameAckParams, StartScreencastFormat,
+    StartScreencastParams, StopScreencastParams,
 };
 use chromiumoxide::cdp::browser_protocol::target::TargetId;
 use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
@@ -25,7 +27,7 @@ use serde_json::Value;
 
 use rutter_engine::error::EngineError;
 use rutter_engine::input::InputEvent;
-use rutter_engine::page::{ImageFormat, Screenshot};
+use rutter_engine::page::{ImageFormat, ScreencastFrame, ScreencastStream, Screenshot};
 
 use crate::error::{self, COMMAND_TIMEOUT, fold, fold_navigation, with_deadline, with_deadline_by};
 
@@ -228,5 +230,70 @@ impl rutter_engine::page::PageHandle for CdpPage {
             format: ImageFormat::Png,
             data,
         })
+    }
+
+    async fn start_screencast(&self) -> Result<ScreencastStream, EngineError> {
+        use futures::StreamExt;
+
+        // Register the listeners before starting so early frames are
+        // not lost (blueprint §7.7: correct ack loop).
+        let mut frames = self
+            .page
+            .event_listener::<EventScreencastFrame>()
+            .await
+            .map_err(fold)?;
+        let mut navigations = self
+            .page
+            .event_listener::<EventFrameNavigated>()
+            .await
+            .map_err(fold)?;
+        let start = StartScreencastParams::builder()
+            .format(StartScreencastFormat::Jpeg)
+            .quality(50)
+            .max_width(1024)
+            .every_nth_frame(1)
+            .build();
+        self.page.execute(start).await.map_err(fold)?;
+
+        let (sender, receiver) = tokio::sync::mpsc::channel::<ScreencastFrame>(4);
+        let task_page = self.page.clone();
+        // The forwarding task owns the capture lifecycle: acks every
+        // frame (blueprint §7.7), restarts after navigations where CDP
+        // stops the capture on its own, and stops when the viewer drops
+        // the stream.
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    Some(event) = frames.next() => {
+                        let _ = task_page
+                            .execute(ScreencastFrameAckParams::new(event.session_id))
+                            .await;
+                        use base64::Engine as _;
+                        let Ok(jpeg) =
+                            base64::engine::general_purpose::STANDARD.decode(AsRef::<[u8]>::as_ref(&event.data))
+                        else {
+                            continue;
+                        };
+                        if sender.send(ScreencastFrame { jpeg }).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(_) = navigations.next() => {
+                        // CDP stops the capture on navigation; restart it.
+                        let restart = StartScreencastParams::builder()
+                            .format(StartScreencastFormat::Jpeg)
+                            .quality(50)
+                            .max_width(1024)
+                            .every_nth_frame(1)
+                            .build();
+                        let _ = task_page.execute(restart).await;
+                    }
+                    else => break,
+                }
+            }
+            let _ = task_page.execute(StopScreencastParams::default()).await;
+        });
+
+        Ok(ScreencastStream::new(receiver))
     }
 }

@@ -36,6 +36,6 @@ pub use engine::Engine;
 pub use error::EngineError;
 pub use health::HealthReport;
 pub use input::{InputEvent, MouseButton};
-pub use page::{ImageFormat, PageHandle, Screenshot};
+pub use page::{ImageFormat, PageHandle, ScreencastFrame, ScreencastStream, Screenshot};
 pub use supervisor::policy::RestartPolicy;
 pub use supervisor::{EngineLauncher, Supervisor};

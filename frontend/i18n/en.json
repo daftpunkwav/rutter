@@ -3,5 +3,8 @@
   "approvals": "approvals",
   "timeline": "event timeline",
   "grant": "grant",
-  "deny": "deny"
+  "deny": "deny",
+  "live": "live view",
+  "start": "start",
+  "stop": "stop"
 }

@@ -5,8 +5,11 @@
 <title>rutter dashboard</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 0; display: grid;
-         grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; height: 100vh; }
+         grid-template-columns: 1fr 1fr; grid-template-rows: auto auto 1fr 1fr;
+         height: 100vh; }
   header { grid-column: 1 / 3; padding: 8px 16px; border-bottom: 1px solid #ddd; }
+  #live { grid-column: 1 / 3; padding: 8px 16px; }
+  #live img { max-width: 100%; border: 1px solid #ccc; }
   main { overflow: auto; padding: 8px 16px; }
   h2 { font-size: 14px; text-transform: uppercase; color: #666; }
   .event { border-bottom: 1px solid #eee; padding: 4px 0; white-space: pre-wrap; }
@@ -17,6 +20,12 @@
 <body>
 <header><strong>rutter</strong> <span data-i18n="subtitle"></span>
   <span id="sessions"></span></header>
+<section id="live"><h2 data-i18n="live"></h2>
+  <input id="live-session" placeholder="session id" style="width:220px">
+  <button id="live-start" data-i18n="start"></button>
+  <button id="live-stop" data-i18n="stop"></button>
+  <div><img id="live-frame" alt="live view" hidden></div>
+</section>
 <main id="approvals"><h2 data-i18n="approvals"></h2><div id="approval-list"></div></main>
 <main id="timeline"><h2 data-i18n="timeline"></h2><div id="events"></div></main>
 <script src="app.js"></script>

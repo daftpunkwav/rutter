@@ -29,6 +29,31 @@ pub struct Screenshot {
     pub data: Vec<u8>,
 }
 
+/// One JPEG frame from a live page screencast.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScreencastFrame {
+    /// Encoded JPEG bytes.
+    pub jpeg: Vec<u8>,
+}
+
+/// A live screencast frame stream; dropping it stops the capture
+/// (blueprint §7.7: on-demand, stops when the last viewer leaves).
+pub struct ScreencastStream {
+    receiver: tokio::sync::mpsc::Receiver<ScreencastFrame>,
+}
+
+impl ScreencastStream {
+    /// Wraps a frame receiver; backends build streams over channels.
+    pub fn new(receiver: tokio::sync::mpsc::Receiver<ScreencastFrame>) -> Self {
+        Self { receiver }
+    }
+
+    /// Awaits the next frame; `None` once the capture stopped.
+    pub async fn next_frame(&mut self) -> Option<ScreencastFrame> {
+        self.receiver.recv().await
+    }
+}
+
 /// Operations on one page (tab) inside a context.
 #[async_trait]
 pub trait PageHandle: Send + Sync {
@@ -54,4 +79,10 @@ pub trait PageHandle: Send + Sync {
 
     /// Captures an image of the current viewport.
     async fn capture_screenshot(&self) -> Result<Screenshot, EngineError>;
+
+    /// Starts a JPEG screencast (~1-5 fps, width capped); frames flow
+    /// on the returned stream until it is dropped (blueprint §7.7).
+    /// Backends must restart the capture after navigations, where the
+    /// protocol stops it on its own.
+    async fn start_screencast(&self) -> Result<ScreencastStream, EngineError>;
 }
