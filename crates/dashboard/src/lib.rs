@@ -114,16 +114,22 @@ impl DashboardServer {
 }
 
 /// Host header validation: only loopback names pass (blueprint §7.7,
-/// DNS rebinding).
+/// DNS rebinding). The host name is compared after stripping any port;
+/// a prefix match would let `127.0.0.1.evil.com` through.
 fn host_allowed(headers: &HeaderMap) -> bool {
-    headers
+    let Some(host) = headers
         .get(axum::http::header::HOST)
         .and_then(|host| host.to_str().ok())
-        .is_some_and(|host| {
-            host.starts_with("127.0.0.1")
-                || host.starts_with("localhost")
-                || host.starts_with("[::1]")
-        })
+    else {
+        return false;
+    };
+    let name = if let Some(rest) = host.strip_prefix('[') {
+        // Bracketed IPv6 literal: "[::1]:port" -> "::1".
+        rest.split(']').next().unwrap_or("")
+    } else {
+        host.split(':').next().unwrap_or("")
+    };
+    name == "127.0.0.1" || name.eq_ignore_ascii_case("localhost") || name == "::1"
 }
 
 fn token_ok(state: &Dashboard, provided: Option<&String>) -> bool {
@@ -211,12 +217,19 @@ async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
         return;
     };
 
+    // Subscribe before taking the replay snapshot: events published in
+    // between would otherwise be in neither the snapshot nor the live
+    // stream. Live envelopes at or below the replay watermark are
+    // duplicates and are skipped.
+    let mut live = backbone.subscribe();
+
     // Replay: every session's history, ordered by sequence number.
     let mut replay: Vec<Envelope> = Vec::new();
     for session in state.manager.session_ids().await {
         replay.extend(backbone.replay(&session));
     }
     replay.sort_by_key(|envelope| envelope.seq);
+    let watermark = replay.last().map(|envelope| envelope.seq);
     for envelope in replay {
         if send_envelope(&mut socket, &envelope).await.is_err() {
             return;
@@ -227,7 +240,6 @@ async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
     // on the same socket, so all writes happen in this loop. Screencast
     // frames are on-demand (blueprint §7.7): they flow only while a
     // viewer asked for them, as binary WebSocket frames.
-    let mut live = backbone.subscribe();
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<Message>(64);
     let mut current: Option<ScreencastStream> = None;
 
@@ -236,6 +248,10 @@ async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
             envelope = live.recv() => {
                 match envelope {
                     Ok(envelope) => {
+                        // Already covered by the replay snapshot.
+                        if watermark.is_some_and(|seen| envelope.seq <= seen) {
+                            continue;
+                        }
                         let Ok(json) = serde_json::to_string(&envelope) else {
                             continue;
                         };
