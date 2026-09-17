@@ -6,12 +6,14 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::MutexGuard;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use chromiumoxide::cdp::browser_protocol::browser::BrowserContextId;
 use chromiumoxide::cdp::browser_protocol::target::{CloseTargetParams, CreateTargetParams};
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as AsyncMutex;
 
 use rutter_core::ids::{ContextId, PageId};
 use rutter_engine::config::ContextConfig;
@@ -29,9 +31,12 @@ pub struct CdpContext {
     id: ContextId,
     /// Shared browser connection handle; `Browser` itself is not
     /// `Clone`, so every layer funnels through this mutex.
-    browser: Arc<Mutex<chromiumoxide::Browser>>,
+    browser: Arc<AsyncMutex<chromiumoxide::Browser>>,
     cdp_context_id: BrowserContextId,
     config: ContextConfig,
+    /// Sync mutex on purpose: the `ContextHandle` reads (`pages`, `page`)
+    /// are synchronous per trait, and guards are never held across an
+    /// await.
     pages: Mutex<PageMap>,
     page_counter: AtomicU64,
 }
@@ -40,7 +45,7 @@ impl CdpContext {
     /// Creates the rutter-side handle for a CDP browser context.
     pub fn new(
         id: ContextId,
-        browser: Arc<Mutex<chromiumoxide::Browser>>,
+        browser: Arc<AsyncMutex<chromiumoxide::Browser>>,
         cdp_context_id: BrowserContextId,
         config: ContextConfig,
     ) -> Self {
@@ -53,6 +58,14 @@ impl CdpContext {
             page_counter: AtomicU64::new(0),
         }
     }
+
+    /// Locks the page map, recovering from poisoning: page handles stay
+    /// usable even if a caller panicked while holding the lock.
+    fn lock_pages(&self) -> MutexGuard<'_, PageMap> {
+        self.pages
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 }
 
 #[async_trait]
@@ -62,14 +75,12 @@ impl ContextHandle for CdpContext {
     }
 
     fn pages(&self) -> Vec<PageId> {
-        // The async mutex only guards mutations; reading the key set
-        // blocks briefly and never awaits, so this stays sync per trait.
-        self.pages.blocking_lock().keys().cloned().collect()
+        self.lock_pages().keys().cloned().collect()
     }
 
     async fn open_page(&self) -> Result<(PageId, Arc<dyn PageHandle>), EngineError> {
         {
-            let pages = self.pages.lock().await;
+            let pages = self.lock_pages();
             if pages.len() >= self.config.max_pages {
                 return Err(EngineError::Capacity {
                     detail: format!(
@@ -90,23 +101,20 @@ impl ContextHandle for CdpContext {
         let serial = self.page_counter.fetch_add(1, Ordering::Relaxed);
         let page_id = PageId::new(format!("{}:page-{}", self.id, serial));
         let handle = Arc::new(CdpPage::new(page, self.config.navigation_timeout));
-        self.pages
-            .lock()
-            .await
+        self.lock_pages()
             .insert(page_id.clone(), Arc::clone(&handle));
         Ok((page_id, handle))
     }
 
     fn page(&self, id: PageId) -> Option<Arc<dyn PageHandle>> {
-        self.pages
-            .blocking_lock()
+        self.lock_pages()
             .get(&id)
             .cloned()
             .map(|handle| handle as Arc<dyn PageHandle>)
     }
 
     async fn close_page(&self, id: PageId) -> Result<(), EngineError> {
-        let handle = self.pages.lock().await.remove(&id);
+        let handle = self.lock_pages().remove(&id);
         let Some(handle) = handle else {
             return Ok(());
         };
