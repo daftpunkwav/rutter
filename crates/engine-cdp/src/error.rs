@@ -32,6 +32,22 @@ pub(crate) async fn with_deadline<F, T>(
 where
     F: Future<Output = Result<T, CdpError>>,
 {
+    with_deadline_by(operation, budget, fut, fold).await
+}
+
+/// [`with_deadline`] with a caller-supplied error folder, used where a
+/// call site knows more context than [`fold`] does (for example
+/// navigation knows the URL).
+pub(crate) async fn with_deadline_by<F, T, M>(
+    operation: &str,
+    budget: Duration,
+    fut: F,
+    map: M,
+) -> Result<T, EngineError>
+where
+    F: Future<Output = Result<T, CdpError>>,
+    M: Fn(CdpError) -> EngineError,
+{
     let started = Instant::now();
     match tokio::time::timeout(budget, fut).await {
         Ok(Ok(value)) => Ok(value),
@@ -39,7 +55,7 @@ where
             operation: operation.to_owned(),
             elapsed: started.elapsed(),
         }),
-        Ok(Err(error)) => Err(fold(error)),
+        Ok(Err(error)) => Err(map(error)),
         Err(_elapsed) => Err(EngineError::Timeout {
             operation: operation.to_owned(),
             elapsed: started.elapsed(),
@@ -68,6 +84,23 @@ pub fn fold(error: CdpError) -> EngineError {
         other => EngineError::Internal {
             detail: format!("cdp layer failure: {other}"),
         },
+    }
+}
+
+/// Folds an error raised by a navigation, distinguishing transport
+/// failures (`net::ERR_*` from the browser's network stack) from bugs so
+/// callers get input feedback instead of an "internal error".
+pub fn fold_navigation(error: CdpError, url: &str) -> EngineError {
+    let detail = error.to_string();
+    let transport = matches!(&error, CdpError::Chrome(_) | CdpError::ChromeMessage(_))
+        && (detail.contains("net::ERR_") || detail.contains("invalid URL"));
+    if transport {
+        EngineError::NavigationFailed {
+            url: url.to_owned(),
+            detail,
+        }
+    } else {
+        fold(error)
     }
 }
 
@@ -112,6 +145,24 @@ mod tests {
     fn launch_failures_stay_launch_failures() {
         let folded = fold(CdpError::NoResponse);
         assert!(matches!(folded, EngineError::Terminated));
+    }
+
+    #[test]
+    fn transport_navigation_errors_get_their_own_variant() {
+        let error = fold_navigation(
+            CdpError::ChromeMessage("net::ERR_NAME_NOT_RESOLVED at https://x".to_owned()),
+            "https://x",
+        );
+        assert!(matches!(error, EngineError::NavigationFailed { .. }));
+    }
+
+    #[test]
+    fn non_transport_errors_stay_internal() {
+        let error = fold_navigation(
+            CdpError::ChromeMessage("unrelated failure".to_owned()),
+            "https://x",
+        );
+        assert!(matches!(error, EngineError::Internal { .. }));
     }
 
     #[test]

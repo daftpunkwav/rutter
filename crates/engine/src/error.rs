@@ -11,6 +11,17 @@ use thiserror::Error;
 /// Why an engine-layer operation failed.
 #[derive(Debug, Clone, Error)]
 pub enum EngineError {
+    /// The page could not be loaded: bad URL, DNS, TLS, or a server
+    /// error. Distinguished from internal bugs so callers can treat it
+    /// as input feedback rather than a defect.
+    #[error("navigation to '{url}' failed: {detail}")]
+    NavigationFailed {
+        /// URL that was requested.
+        url: String,
+        /// Transport-level detail from the backend.
+        detail: String,
+    },
+
     /// The engine process could not be launched or connected to.
     #[error("engine launch failed: {detail}")]
     LaunchFailed {

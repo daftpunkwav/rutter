@@ -21,7 +21,7 @@ use rutter_engine::error::EngineError;
 use rutter_engine::input::InputEvent;
 use rutter_engine::page::{ImageFormat, Screenshot};
 
-use crate::error::{self, COMMAND_TIMEOUT, fold, with_deadline};
+use crate::error::{self, COMMAND_TIMEOUT, fold, fold_navigation, with_deadline, with_deadline_by};
 
 /// One CDP target (tab) wrapped as a page handle.
 pub struct CdpPage {
@@ -48,10 +48,15 @@ impl CdpPage {
 #[async_trait]
 impl rutter_engine::page::PageHandle for CdpPage {
     async fn navigate(&self, url: &str) -> Result<String, EngineError> {
-        with_deadline("navigate", self.navigation_timeout, async {
-            self.page.goto(NavigateParams::new(url)).await?;
-            self.page.wait_for_navigation().await
-        })
+        with_deadline_by(
+            "navigate",
+            self.navigation_timeout,
+            async {
+                self.page.goto(NavigateParams::new(url)).await?;
+                self.page.wait_for_navigation().await
+            },
+            |error| fold_navigation(error, url),
+        )
         .await?;
 
         self.page

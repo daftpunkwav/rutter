@@ -34,6 +34,10 @@ impl CliError {
     pub fn hint(&self) -> String {
         match self {
             Self::Engine { source } => match source {
+                EngineError::NavigationFailed { .. } => {
+                    "re-check that the URL is spelled correctly and reachable                      from this machine, then retry"
+                        .to_owned()
+                }
                 EngineError::DownloadFailed { .. } => {
                     "set --engine-executable to an existing browser binary, \
                      or --cache-dir to a writable directory and retry"
