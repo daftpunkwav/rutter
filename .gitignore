@@ -28,3 +28,7 @@ CLAUDE.local.md
 
 # Local agent planning artifacts
 .zcode/
+
+# Insta snapshot journals and inline-snapshot backups
+*.pending-snap
+*.snap.new
