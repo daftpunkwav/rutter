@@ -122,7 +122,7 @@ impl EngineStore {
             ),
         })?;
 
-        let installed = self.extract_binary(product, version, zip_bytes, &staging);
+        let installed = self.extract_archive(product, version, zip_bytes, &staging);
         if installed.is_err() {
             let _ = fs::remove_dir_all(&staging);
             return installed;
@@ -151,9 +151,11 @@ impl EngineStore {
         })
     }
 
-    /// Finds the engine binary inside the zip and writes it into
-    /// `staging`, preserving the executable bit on Unix.
-    fn extract_binary(
+    /// Extracts the whole engine zip into `staging`, flattening the
+    /// single top-level folder Chrome for Testing ships. The binary
+    /// needs its siblings (ICU data, DLLs) to launch, so extracting
+    /// only the executable is not enough.
+    fn extract_archive(
         &self,
         product: &str,
         version: &str,
@@ -167,6 +169,7 @@ impl EngineStore {
             })?;
 
         let wanted = binary_name(product);
+        let mut executable = None;
         for index in 0..archive.len() {
             let mut file =
                 archive
@@ -174,13 +177,26 @@ impl EngineStore {
                     .map_err(|error| EngineError::DownloadFailed {
                         detail: format!("engine zip entry {index} is unreadable: {error}"),
                     })?;
+            if file.is_dir() {
+                continue;
+            }
             let name = file.name().to_owned();
-            let basename = name.rsplit(['/', '\\']).next().unwrap_or(&name);
-            if basename != wanted || file.is_dir() {
+            // Flatten `chrome-headless-shell-win64/<rest>` to `<rest>`;
+            // entries without a folder prefix stay as they are.
+            let relative = match name.find(['/', '\\']) {
+                Some(split) => &name[split + 1..],
+                None => name.as_str(),
+            };
+            if relative.is_empty() {
                 continue;
             }
 
-            let target = staging.join(&wanted);
+            let target = staging.join(relative);
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).map_err(|error| EngineError::DownloadFailed {
+                    detail: format!("cannot create {}: {error}", parent.display()),
+                })?;
+            }
             let mut contents = Vec::with_capacity(file.size() as usize);
             file.read_to_end(&mut contents)
                 .map_err(|error| EngineError::DownloadFailed {
@@ -195,17 +211,20 @@ impl EngineStore {
                 let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o755));
             }
 
-            return Ok(InstalledEngine {
-                product: product.to_owned(),
-                version: version.to_owned(),
-                executable: target,
-            });
+            if relative == wanted {
+                executable = Some(target);
+            }
         }
 
-        Err(EngineError::DownloadFailed {
+        let executable = executable.ok_or_else(|| EngineError::DownloadFailed {
             detail: format!(
                 "engine zip does not contain '{wanted}' (product '{product}', version '{version}')"
             ),
+        })?;
+        Ok(InstalledEngine {
+            product: product.to_owned(),
+            version: version.to_owned(),
+            executable,
         })
     }
 }
@@ -253,10 +272,14 @@ mod tests {
     }
 
     /// Zip in the layout Chrome for Testing ships: one folder prefixed
-    /// with the platform, the binary inside.
+    /// with the platform, the binary plus its runtime data inside.
     fn shell_zip() -> Vec<u8> {
-        let path = format!("chrome-headless-shell-win64/{}", product());
-        build_zip(&[(path.as_str(), b"MZ" as &[u8])])
+        let binary = format!("chrome-headless-shell-win64/{}", product());
+        build_zip(&[
+            (binary.as_str(), b"MZ" as &[u8]),
+            ("chrome-headless-shell-win64/icudtl.dat", b"icu" as &[u8]),
+            ("chrome-headless-shell-win64/resources.pak", b"pak" as &[u8]),
+        ])
     }
 
     #[test]
@@ -271,6 +294,12 @@ mod tests {
         assert_eq!(installed.version, "141.0.1");
         assert!(installed.executable.is_file());
         assert_eq!(installed.executable.file_name().unwrap(), product());
+
+        let version_dir = installed.executable.parent().expect("version dir");
+        assert!(
+            version_dir.join("icudtl.dat").is_file(),
+            "runtime data must sit next to the binary"
+        );
 
         let found = store
             .installed("chrome-headless-shell")

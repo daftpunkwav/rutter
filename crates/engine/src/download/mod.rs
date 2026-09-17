@@ -47,6 +47,49 @@ pub fn cache_root_default() -> Result<PathBuf, EngineError> {
     Ok(base.join("rutter"))
 }
 
+/// Locates a system-installed Chromium-family browser for headed runs.
+///
+/// Checks standard install locations only; no PATH search, no registry
+/// probing. Hosts without any browser install let browse mode download
+/// full Chrome instead.
+pub fn discover_system_browser() -> Option<PathBuf> {
+    system_browser_candidates()
+        .into_iter()
+        .find(|path| path.is_file())
+}
+
+fn system_browser_candidates() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if std::env::consts::OS == "windows" {
+        let roots = ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"]
+            .iter()
+            .filter_map(|name| std::env::var_os(name).map(PathBuf::from));
+        for root in roots {
+            paths.push(root.join(r"Google\Chrome\Application\chrome.exe"));
+            paths.push(root.join(r"Microsoft\Edge\Application\msedge.exe"));
+        }
+    } else if std::env::consts::OS == "macos" {
+        for path in [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ] {
+            paths.push(PathBuf::from(path));
+        }
+    } else {
+        for path in [
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/snap/bin/chromium",
+        ] {
+            paths.push(PathBuf::from(path));
+        }
+    }
+    paths
+}
+
 /// Resolves a launchable engine binary.
 ///
 /// `explicit` short-circuits everything: the path must exist and be a

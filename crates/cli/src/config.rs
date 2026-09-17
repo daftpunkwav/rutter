@@ -1,0 +1,63 @@
+//! Runtime settings for the rutter binary.
+//!
+//! Boundary: flag and environment resolution only. A TOML config file
+//! arrives with the policy rules in M2; until then the CLI is
+//! configured exclusively through flags and the environment. Every
+//! default is overridable; nothing is read from the network here.
+
+use std::path::PathBuf;
+use std::time::Duration;
+
+use rutter_engine::error::EngineError;
+
+/// Deadline for one navigation in `open` mode.
+const DEFAULT_NAVIGATION_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Resolved settings for one invocation.
+#[derive(Debug, Clone)]
+pub struct Settings {
+    /// Engine binary the caller insists on; bypasses download and cache.
+    pub engine_executable: Option<PathBuf>,
+    /// Root of the engine cache (default: OS cache dir + `rutter`).
+    pub cache_root: PathBuf,
+    /// Deadline for one navigation.
+    pub navigation_timeout: Duration,
+}
+
+impl Settings {
+    /// Builds settings from explicit flag values and the environment.
+    pub fn resolve(
+        engine_executable: Option<PathBuf>,
+        cache_dir: Option<PathBuf>,
+    ) -> Result<Self, EngineError> {
+        let cache_root = match cache_dir {
+            Some(dir) => dir,
+            None => rutter_engine::download::cache_root_default()?,
+        };
+        Ok(Self {
+            engine_executable,
+            cache_root,
+            navigation_timeout: DEFAULT_NAVIGATION_TIMEOUT,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_values_win_over_defaults() {
+        let settings = Settings::resolve(
+            Some(PathBuf::from("browser.exe")),
+            Some(PathBuf::from("cache")),
+        )
+        .expect("resolve");
+        assert_eq!(
+            settings.engine_executable,
+            Some(PathBuf::from("browser.exe"))
+        );
+        assert_eq!(settings.cache_root, PathBuf::from("cache"));
+        assert_eq!(settings.navigation_timeout, DEFAULT_NAVIGATION_TIMEOUT);
+    }
+}

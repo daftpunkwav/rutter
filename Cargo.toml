@@ -20,8 +20,10 @@ license = "Apache-2.0"
 [workspace.dependencies]
 rutter-core = { path = "crates/core" }
 rutter-engine = { path = "crates/engine" }
+rutter-engine-cdp = { path = "crates/engine-cdp" }
+rutter-observe = { path = "crates/observe" }
 async-trait = "0.1"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 dirs = "6"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 insta = "1"

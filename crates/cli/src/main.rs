@@ -5,18 +5,25 @@
 //! - Own process exit codes and top-level error reporting.
 //!
 //! Boundary: the CLI owns no engine or orchestration logic of its own;
-//! it is the first consumer of the core crates. Engine bring-up lands
-//! with milestone M0 (blueprint §10).
+//! it is the first consumer of the core crates. The tokio runtime here
+//! is process init: one runtime for the whole invocation.
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod browse;
+mod config;
 mod entry;
+mod error;
+mod launcher;
+mod open;
 
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+
+use config::Settings;
 use entry::EntryMode;
 
 /// Headless browser orchestration for AI agents.
@@ -25,6 +32,14 @@ use entry::EntryMode;
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
+
+    /// Use this browser binary instead of downloading or caching one.
+    #[arg(long, global = true, value_name = "PATH")]
+    engine_executable: Option<std::path::PathBuf>,
+
+    /// Engine cache directory (default: OS cache dir + rutter).
+    #[arg(long, global = true, value_name = "DIR", env = "RUTTER_CACHE_DIR")]
+    cache_dir: Option<std::path::PathBuf>,
 }
 
 /// Available subcommands; no subcommand selects browse mode.
@@ -51,38 +66,25 @@ fn main() -> ExitCode {
         Some(Command::Open { url }) => EntryMode::Open { url },
     };
 
-    match entry::run(mode) {
+    let Ok(settings) = Settings::resolve(cli.engine_executable, cli.cache_dir) else {
+        eprintln!("rutter: cannot resolve settings; set RUTTER_CACHE_DIR to a writable path");
+        return ExitCode::FAILURE;
+    };
+
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("rutter: cannot start the async runtime: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    match runtime.block_on(entry::run(mode, &settings)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("rutter: {error}");
+            eprintln!("rutter: hint — {}", error.hint());
             ExitCode::FAILURE
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn invocations_map_to_entry_modes() {
-        let mode = |command: Option<Command>| match command {
-            None => EntryMode::Browse,
-            Some(Command::Serve { headed }) => EntryMode::Serve { headed },
-            Some(Command::Open { url }) => EntryMode::Open { url },
-        };
-        assert_eq!(mode(None), EntryMode::Browse);
-        assert_eq!(
-            mode(Some(Command::Serve { headed: true })),
-            EntryMode::Serve { headed: true }
-        );
-        assert_eq!(
-            mode(Some(Command::Open {
-                url: "https://example.com".to_owned()
-            })),
-            EntryMode::Open {
-                url: "https://example.com".to_owned()
-            }
-        );
     }
 }

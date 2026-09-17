@@ -2,13 +2,12 @@
 //!
 //! The three modes (browse, serve, open) only set defaults; engine mode
 //! and the dashboard are orthogonal flags on top of them. Boundary: mode
-//! dispatch hands an entry mode to the component that implements it.
-//! Until engine bring-up lands (milestone M0), every mode fails with a
-//! clear message instead of pretending to work.
+//! dispatch only — each mode's implementation lives in its own module
+//! beside this one, and the CLI owns no engine logic beyond the launcher
+//! registration.
 
-use std::fmt;
-
-use thiserror::Error;
+use crate::config::Settings;
+use crate::error::CliError;
 
 /// What the binary was asked to start.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,8 +27,8 @@ pub enum EntryMode {
     },
 }
 
-impl fmt::Display for EntryMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for EntryMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Browse => f.write_str("browse"),
             Self::Serve { .. } => f.write_str("serve"),
@@ -38,17 +37,16 @@ impl fmt::Display for EntryMode {
     }
 }
 
-/// Why an entry mode could not run.
-#[derive(Debug, Error)]
-#[error("the '{mode}' mode requires the engine backend, which is not wired into this build yet")]
-pub struct EntryError {
-    /// The mode that was requested.
-    mode: EntryMode,
-}
-
 /// Runs an entry mode to completion.
-pub fn run(mode: EntryMode) -> Result<(), EntryError> {
-    Err(EntryError { mode })
+pub async fn run(mode: EntryMode, settings: &Settings) -> Result<(), CliError> {
+    match mode {
+        EntryMode::Browse => crate::browse::run(settings).await,
+        EntryMode::Open { url } => crate::open::run(settings, &url).await,
+        EntryMode::Serve { headed: _ } => Err(CliError::Unavailable {
+            mode: "serve".to_owned(),
+            reason: "the MCP tool surface lands in milestone M1".to_owned(),
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -68,9 +66,15 @@ mod tests {
         );
     }
 
-    #[test]
-    fn run_reports_missing_engine_backend() {
-        let error = run(EntryMode::Browse).expect_err("skeleton must not fake success");
-        assert!(error.to_string().contains("engine backend"));
+    #[tokio::test]
+    async fn serve_is_honest_about_m1() {
+        let settings =
+            Settings::resolve(None, Some(std::env::temp_dir().join("rutter-test-serve")))
+                .expect("settings");
+        let error = run(EntryMode::Serve { headed: false }, &settings)
+            .await
+            .expect_err("serve must stay unavailable in M0");
+        assert!(matches!(error, CliError::Unavailable { .. }));
+        assert!(error.to_string().contains("M1"));
     }
 }
