@@ -11,6 +11,7 @@ members = [
     "crates/events",
     "crates/mcp",
     "crates/observe",
+    "crates/policy",
     "crates/session",
 ]
 
@@ -27,6 +28,7 @@ rutter-engine-cdp = { path = "crates/engine-cdp" }
 rutter-events = { path = "crates/events" }
 rutter-mcp = { path = "crates/mcp" }
 rutter-observe = { path = "crates/observe" }
+rutter-policy = { path = "crates/policy" }
 rutter-session = { path = "crates/session" }
 rmcp = { version = "3.4", features = ["server", "client", "macros", "transport-io", "transport-child-process"] }
 async-trait = "0.1"

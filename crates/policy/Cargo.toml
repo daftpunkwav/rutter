@@ -1,0 +1,19 @@
+# rutter-policy: verdict evaluation and the approval broker.
+
+[package]
+name = "rutter-policy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Rule set, verdict evaluation, and approval broker for rutter"
+
+[lints]
+workspace = true
+
+[dependencies]
+rutter-core = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+toml = "0.8"
