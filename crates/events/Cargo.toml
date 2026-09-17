@@ -1,0 +1,19 @@
+# rutter-events: the typed event backbone.
+
+[package]
+name = "rutter-events"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Event types, bus, ring buffers, and replay for rutter"
+
+[lints]
+workspace = true
+
+[dependencies]
+rutter-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
