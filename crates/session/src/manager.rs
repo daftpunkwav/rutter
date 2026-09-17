@@ -80,6 +80,28 @@ impl SessionManager {
         Arc::clone(&self.inner.broker)
     }
 
+    /// The event backbone once the engine started; `None` before the
+    /// first session (dashboard sources replay + live events here).
+    pub async fn backbone(&self) -> Option<Arc<Backbone>> {
+        self.inner
+            .running
+            .lock()
+            .await
+            .as_ref()
+            .map(|running| Arc::clone(&running.backbone))
+    }
+
+    /// Ids of the open sessions.
+    pub async fn session_ids(&self) -> Vec<SessionId> {
+        self.inner
+            .running
+            .lock()
+            .await
+            .as_ref()
+            .map(|running| running.sessions.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
     /// Returns the session for `id`, starting the engine and creating
     /// the session's context on first request.
     pub async fn session(&self, id: SessionId) -> Result<Arc<Session>, EngineError> {

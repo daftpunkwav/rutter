@@ -45,6 +45,14 @@ struct Cli {
     /// Extra argument passed to the engine process (repeatable).
     #[arg(long = "engine-arg", global = true, value_name = "ARG")]
     engine_args: Vec<String>,
+
+    /// Policy TOML file for serve mode (blueprint §7.6).
+    #[arg(long, global = true, value_name = "FILE")]
+    policy: Option<std::path::PathBuf>,
+
+    /// Enable the supervision dashboard on 127.0.0.1:PORT (serve mode).
+    #[arg(long, global = true, value_name = "PORT")]
+    dashboard: Option<u16>,
 }
 
 /// Available subcommands; no subcommand selects browse mode.
@@ -88,7 +96,23 @@ fn main() -> ExitCode {
         }
     };
 
-    match runtime.block_on(entry::run(mode, &settings)) {
+    let policy = cli.policy.map(|path| {
+        match std::fs::read_to_string(&path)
+            .map_err(|error| error.to_string())
+            .and_then(|text| {
+                rutter_policy::parse_policy(&text)
+                    .map_err(|error| error.to_string())
+                    .map(|rules| (rules, text))
+            }) {
+            Ok((rules, _text)) => rules,
+            Err(error) => {
+                eprintln!("rutter: {path:?}: {error}");
+                std::process::exit(2);
+            }
+        }
+    });
+
+    match runtime.block_on(entry::run(mode, &settings, policy, cli.dashboard)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("rutter: {error}");

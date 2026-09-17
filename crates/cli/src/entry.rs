@@ -38,11 +38,18 @@ impl std::fmt::Display for EntryMode {
 }
 
 /// Runs an entry mode to completion.
-pub async fn run(mode: EntryMode, settings: &Settings) -> Result<(), CliError> {
+pub async fn run(
+    mode: EntryMode,
+    settings: &Settings,
+    policy: Option<rutter_policy::RuleSet>,
+    dashboard_port: Option<u16>,
+) -> Result<(), CliError> {
     match mode {
         EntryMode::Browse => crate::browse::run(settings).await,
         EntryMode::Open { url } => crate::open::run(settings, &url).await,
-        EntryMode::Serve { headed } => crate::serve::run(settings, headed).await,
+        EntryMode::Serve { headed } => {
+            crate::serve::run(settings, headed, policy, dashboard_port).await
+        }
     }
 }
 

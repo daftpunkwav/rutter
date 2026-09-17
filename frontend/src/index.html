@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>rutter dashboard</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; display: grid;
+         grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; height: 100vh; }
+  header { grid-column: 1 / 3; padding: 8px 16px; border-bottom: 1px solid #ddd; }
+  main { overflow: auto; padding: 8px 16px; }
+  h2 { font-size: 14px; text-transform: uppercase; color: #666; }
+  .event { border-bottom: 1px solid #eee; padding: 4px 0; white-space: pre-wrap; }
+  .approval { background: #fff3cd; padding: 8px; margin: 8px 0; border: 1px solid #ccc; }
+  button { margin-right: 8px; }
+</style>
+</head>
+<body>
+<header><strong>rutter</strong> <span data-i18n="subtitle"></span>
+  <span id="sessions"></span></header>
+<main id="approvals"><h2 data-i18n="approvals"></h2><div id="approval-list"></div></main>
+<main id="timeline"><h2 data-i18n="timeline"></h2><div id="events"></div></main>
+<script src="app.js"></script>
+</body>
+</html>

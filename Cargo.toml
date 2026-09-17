@@ -6,6 +6,7 @@ resolver = "2"
 members = [
     "crates/cli",
     "crates/core",
+    "crates/dashboard",
     "crates/engine",
     "crates/engine-cdp",
     "crates/events",
@@ -23,6 +24,7 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 rutter-core = { path = "crates/core" }
+rutter-dashboard = { path = "crates/dashboard" }
 rutter-engine = { path = "crates/engine" }
 rutter-engine-cdp = { path = "crates/engine-cdp" }
 rutter-events = { path = "crates/events" }

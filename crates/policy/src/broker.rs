@@ -38,6 +38,12 @@ pub enum Decision {
 pub struct ApprovalId(String);
 
 impl ApprovalId {
+    /// Creates an identifier from an already-minted value; used by
+    /// decision submitters that only know the printed text form.
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
     /// The identifier's text form (`apr-7`), shown to humans.
     pub fn as_str(&self) -> &str {
         &self.0
