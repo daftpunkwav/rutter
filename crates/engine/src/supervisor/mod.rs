@@ -9,8 +9,10 @@
 //! session-layer concern (blueprint §7.4) and is not attempted here; a
 //! restart yields a fresh, empty engine. While the breaker is open or a
 //! restart is in flight, [`Supervisor::engine`] reports
-//! [`EngineError::Terminated`] — callers fail their affected operations,
-//! and rutter itself never crashes on engine death.
+//! [`EngineError::Terminated`] — callers fail their affected operations.
+//! The heartbeat keeps retrying after breaker windows drain, so a failed
+//! or dead engine recovers on its own, and rutter itself never crashes
+//! on engine death.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -91,20 +93,30 @@ impl Supervisor {
     }
 
     /// Performs the initial launch and starts the heartbeat loop.
+    ///
+    /// The heartbeat starts even when the initial launch exhausts the
+    /// breaker: once the window drains, the loop retries and the
+    /// supervisor recovers on its own. A repeated `start` is a no-op.
     pub async fn start(&self) -> Result<(), EngineError> {
-        let engine = self.launch_with_policy().await?;
-        *self.supervised.engine.write().await = Some(engine);
+        let mut heartbeat_slot = self.heartbeat.lock().await;
+        if heartbeat_slot.is_some() {
+            return Ok(());
+        }
+
+        let result = self.launch_with_policy().await;
+        if let Ok(engine) = &result {
+            *self.supervised.engine.write().await = Some(Arc::clone(engine));
+        }
 
         let supervised = Arc::clone(&self.supervised);
         let launcher = Arc::clone(&self.launcher);
         let policy = self.policy.clone();
         let interval = self.heartbeat_interval;
         let mode = self.mode;
-        let handle = tokio::spawn(async move {
+        *heartbeat_slot = Some(tokio::spawn(async move {
             heartbeat_loop(supervised, launcher, mode, policy, interval).await;
-        });
-        *self.heartbeat.lock().await = Some(handle);
-        Ok(())
+        }));
+        result.map(|_| ())
     }
 
     /// Returns the current engine, or `Terminated` while dead, restarting,
@@ -470,5 +482,74 @@ mod tests {
             supervisor.engine().await,
             Err(EngineError::Terminated)
         ));
+    }
+
+    /// Launcher that fails its first launches, then recovers.
+    struct FlakyLauncher {
+        failures_left: AtomicUsize,
+        launches: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl EngineLauncher for FlakyLauncher {
+        fn describe(&self) -> String {
+            "flaky".to_owned()
+        }
+        async fn launch(&self, _mode: LaunchMode) -> Result<Arc<dyn Engine>, EngineError> {
+            let serial = self.launches.fetch_add(1, Ordering::SeqCst);
+            if self.failures_left.fetch_sub(1, Ordering::SeqCst) > 1 {
+                return Err(EngineError::LaunchFailed {
+                    detail: "transient failure".to_owned(),
+                });
+            }
+            Ok(Arc::new(MockEngine {
+                alive: AtomicBool::new(true),
+                serial,
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn supervisor_recovers_after_a_failed_start() {
+        let mut supervisor = Supervisor::new(
+            Arc::new(FlakyLauncher {
+                failures_left: AtomicUsize::new(3),
+                launches: AtomicUsize::new(0),
+            }),
+            LaunchMode::Headless,
+        )
+        .with_heartbeat(Duration::from_millis(5));
+        supervisor.policy = RestartPolicy::with_backoff(
+            2,
+            Duration::from_millis(100),
+            Duration::from_millis(1),
+            Duration::from_millis(1),
+        );
+
+        // The initial start exhausts its window and reports failure, but
+        // the heartbeat keeps retrying and the engine comes back.
+        assert!(matches!(
+            supervisor.start().await,
+            Err(EngineError::Terminated)
+        ));
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match supervisor.engine().await {
+                Ok(engine) => {
+                    assert_eq!(engine.descriptor().version, "mock-2");
+                    break;
+                }
+                Err(EngineError::Terminated) => {}
+                Err(error) => panic!("unexpected engine error: {error}"),
+            }
+            assert!(
+                Instant::now() < deadline,
+                "supervisor did not recover within 5 s"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        supervisor.shutdown().await;
     }
 }
