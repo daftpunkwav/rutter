@@ -15,7 +15,9 @@ use chromiumoxide::cdp::browser_protocol::browser::BrowserContextId;
 use chromiumoxide::cdp::browser_protocol::network::TimeSinceEpoch;
 use chromiumoxide::cdp::browser_protocol::network::{CookieParam, CookieSameSite};
 use chromiumoxide::cdp::browser_protocol::storage::{GetCookiesParams, SetCookiesParams};
-use chromiumoxide::cdp::browser_protocol::target::{CloseTargetParams, CreateTargetParams};
+use chromiumoxide::cdp::browser_protocol::target::{
+    CloseTargetParams, CreateTargetParams, GetTargetsParams,
+};
 use tokio::sync::Mutex as AsyncMutex;
 
 use rutter_core::cookie::{Cookie, SameSite};
@@ -149,20 +151,33 @@ impl ContextHandle for CdpContext {
     }
 
     async fn close_page(&self, id: PageId) -> Result<(), EngineError> {
-        // Close the target first: on failure the page stays registered
-        // and the close can be retried; only a confirmed close removes it.
+        // Close the target first: only a confirmed close (or a target
+        // that is already gone) removes the registration, so a failed
+        // close can be retried while a vanished one cannot wedge the
+        // page cap with a ghost entry.
         let handle = self.lock_pages().get(&id).cloned();
         let Some(handle) = handle else {
             return Ok(());
         };
         let target_id = handle.target_id();
-        let browser = self.browser.lock().await;
-        crate::error::with_deadline(
-            "close_page",
-            crate::error::COMMAND_TIMEOUT,
-            browser.execute(CloseTargetParams::new(target_id)),
-        )
-        .await?;
+        {
+            let browser = self.browser.lock().await;
+            let closed = crate::error::with_deadline(
+                "close_page",
+                crate::error::COMMAND_TIMEOUT,
+                browser.execute(CloseTargetParams::new(target_id.clone())),
+            )
+            .await;
+            if let Err(error) = closed {
+                // A target the browser dropped on its own (a user closed
+                // the tab, or the renderer crashed) answers CloseTarget
+                // with an error; the registration must still go, or the
+                // page cap counts a page that no longer exists.
+                if target_still_exists(&browser, target_id).await {
+                    return Err(error);
+                }
+            }
+        }
         self.lock_pages().remove(&id);
         Ok(())
     }
@@ -228,6 +243,23 @@ impl ContextHandle for CdpContext {
                 expires: Some(cookie.expires),
             })
             .collect())
+    }
+}
+
+/// Whether the browser still knows a target; the answer defaults to
+/// `true` when the probe itself fails, so an unverifiable target keeps
+/// the original close error instead of being torn down on a guess.
+async fn target_still_exists(
+    browser: &chromiumoxide::Browser,
+    target_id: chromiumoxide::cdp::browser_protocol::target::TargetId,
+) -> bool {
+    match browser.execute(GetTargetsParams::default()).await {
+        Ok(response) => response
+            .result
+            .target_infos
+            .iter()
+            .any(|info| info.target_id == target_id),
+        Err(_) => true,
     }
 }
 
