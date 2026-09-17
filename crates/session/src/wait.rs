@@ -8,6 +8,12 @@
 use std::future::Future;
 use std::time::{Duration, Instant};
 
+/// Upper bound for one polling budget. Budgets beyond this clamp down:
+/// caller-supplied values (for example `wait_for`'s `timeout_ms`) can
+/// exceed the process clock's representable range, where
+/// `Instant + Duration` would panic instead of waiting longer.
+pub(crate) const MAX_POLL_BUDGET: Duration = Duration::from_secs(600);
+
 /// Polls `check` every `interval` until it resolves to `Some` or the
 /// budget expires. Returns the check's value, or `None` on timeout.
 pub async fn poll_until<T, F, Fut>(mut check: F, budget: Duration, interval: Duration) -> Option<T>
@@ -15,6 +21,7 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Option<T>>,
 {
+    let budget = budget.min(MAX_POLL_BUDGET);
     let deadline = Instant::now() + budget;
     loop {
         if let Some(value) = check().await {
@@ -57,5 +64,23 @@ mod tests {
         .await;
         assert_eq!(value, None);
         assert!(started.elapsed() < Duration::from_secs(2), "bounded wait");
+    }
+
+    #[tokio::test]
+    async fn absurd_budgets_clamp_instead_of_panicking() {
+        // u64::MAX milliseconds overflows the process clock when added
+        // to `Instant::now()`; the clamp must prevent that panic. The
+        // check succeeds immediately, so only deadline construction and
+        // the happy path run here.
+        let value = poll_until(
+            || async {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+                Some(1u8)
+            },
+            Duration::from_millis(u64::MAX),
+            Duration::from_millis(10),
+        )
+        .await;
+        assert_eq!(value, Some(1));
     }
 }
