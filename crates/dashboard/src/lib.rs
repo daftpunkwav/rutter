@@ -365,9 +365,14 @@ fn handle_client_message(state: &Dashboard, text: &str) -> Option<String> {
             let accepted = state
                 .broker
                 .decide(&ApprovalId::new(request_id.to_owned()), decision);
-            Some(format!(
-                "{{\"type\":\"decision-ack\",\"request_id\":\"{request_id}\",\"accepted\":{accepted}}}"
-            ))
+            // Built through serde_json so a hostile request_id cannot
+            // produce a malformed reply.
+            serde_json::to_string(&serde_json::json!({
+                "type": "decision-ack",
+                "request_id": request_id,
+                "accepted": accepted,
+            }))
+            .ok()
         }
         _ => None,
     }
