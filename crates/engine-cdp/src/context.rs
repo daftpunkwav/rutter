@@ -95,7 +95,12 @@ impl ContextHandle for CdpContext {
         params.browser_context_id = Some(self.cdp_context_id.clone());
         let page = {
             let browser = self.browser.lock().await;
-            browser.new_page(params).await.map_err(crate::error::fold)?
+            crate::error::with_deadline(
+                "open_page",
+                crate::error::COMMAND_TIMEOUT,
+                browser.new_page(params),
+            )
+            .await?
         };
 
         let serial = self.page_counter.fetch_add(1, Ordering::Relaxed);
@@ -120,10 +125,12 @@ impl ContextHandle for CdpContext {
         };
         let target_id = handle.target_id();
         let browser = self.browser.lock().await;
-        browser
-            .execute(CloseTargetParams::new(target_id))
-            .await
-            .map_err(crate::error::fold)?;
+        crate::error::with_deadline(
+            "close_page",
+            crate::error::COMMAND_TIMEOUT,
+            browser.execute(CloseTargetParams::new(target_id)),
+        )
+        .await?;
         Ok(())
     }
 }

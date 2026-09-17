@@ -20,7 +20,6 @@ use rutter_engine::error::EngineError;
 use rutter_engine::health::HealthReport;
 
 use crate::context::CdpContext;
-use crate::error;
 
 /// Shared browser connection; `Browser` is not `Clone`, so all handles
 /// funnel through this mutex.
@@ -71,10 +70,12 @@ impl Engine for CdpEngine {
     ) -> Result<Arc<dyn ContextHandle>, EngineError> {
         let cdp_context_id: BrowserContextId = {
             let browser = self.browser.lock().await;
-            browser
-                .create_browser_context(CreateBrowserContextParams::default())
-                .await
-                .map_err(error::fold)?
+            crate::error::with_deadline(
+                "create_context",
+                crate::error::COMMAND_TIMEOUT,
+                browser.create_browser_context(CreateBrowserContextParams::default()),
+            )
+            .await?
         };
 
         let serial = self.context_counter.fetch_add(1, Ordering::Relaxed);
@@ -90,7 +91,8 @@ impl Engine for CdpEngine {
     async fn health(&self) -> Result<HealthReport, EngineError> {
         let version = {
             let browser = self.browser.lock().await;
-            browser.version().await.map_err(error::fold)?
+            crate::error::with_deadline("health", crate::error::COMMAND_TIMEOUT, browser.version())
+                .await?
         };
         Ok(HealthReport {
             healthy: true,
@@ -101,7 +103,8 @@ impl Engine for CdpEngine {
 
     async fn shutdown(&self) -> Result<(), EngineError> {
         let mut browser = self.browser.lock().await;
-        browser.close().await.map_err(error::fold)?;
+        crate::error::with_deadline("shutdown", crate::error::COMMAND_TIMEOUT, browser.close())
+            .await?;
         Ok(())
     }
 }

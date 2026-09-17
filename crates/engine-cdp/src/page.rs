@@ -6,7 +6,7 @@
 //! Chromiumoxide types are implementation details and never appear in
 //! the public `rutter-engine` trait signatures.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use chromiumoxide::Page;
@@ -14,7 +14,6 @@ use chromiumoxide::cdp::browser_protocol::input::{DispatchKeyEventType, Dispatch
 use chromiumoxide::cdp::browser_protocol::page::NavigateParams;
 use chromiumoxide::cdp::browser_protocol::target::TargetId;
 use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
-use chromiumoxide::error::CdpError;
 use chromiumoxide::page::ScreenshotParams;
 use serde_json::Value;
 
@@ -22,11 +21,7 @@ use rutter_engine::error::EngineError;
 use rutter_engine::input::InputEvent;
 use rutter_engine::page::{ImageFormat, Screenshot};
 
-use crate::error;
-
-/// Fixed budget for evaluation, input, and screenshots; navigation uses
-/// the context's configured timeout instead.
-const OP_TIMEOUT: Duration = Duration::from_secs(30);
+use crate::error::{self, COMMAND_TIMEOUT, fold, with_deadline};
 
 /// One CDP target (tab) wrapped as a page handle.
 pub struct CdpPage {
@@ -48,33 +43,12 @@ impl CdpPage {
     pub fn target_id(&self) -> TargetId {
         self.page.target_id().clone()
     }
-
-    /// Runs an async operation under a deadline, mapping elapse and CDP
-    /// failures onto the engine error contract.
-    async fn with_deadline<F, T>(
-        &self,
-        budget: Duration,
-        operation: &str,
-        fut: F,
-    ) -> Result<T, EngineError>
-    where
-        F: std::future::Future<Output = Result<T, CdpError>>,
-    {
-        let started = Instant::now();
-        match tokio::time::timeout(budget, fut).await {
-            Ok(result) => result.map_err(error::fold),
-            Err(_elapsed) => Err(EngineError::Timeout {
-                operation: operation.to_owned(),
-                elapsed: started.elapsed(),
-            }),
-        }
-    }
 }
 
 #[async_trait]
 impl rutter_engine::page::PageHandle for CdpPage {
     async fn navigate(&self, url: &str) -> Result<String, EngineError> {
-        self.with_deadline(self.navigation_timeout, "navigate", async {
+        with_deadline("navigate", self.navigation_timeout, async {
             self.page.goto(NavigateParams::new(url)).await?;
             self.page.wait_for_navigation().await
         })
@@ -83,7 +57,7 @@ impl rutter_engine::page::PageHandle for CdpPage {
         self.page
             .url()
             .await
-            .map_err(error::fold)?
+            .map_err(fold)?
             .ok_or_else(|| EngineError::Internal {
                 detail: "page URL unavailable after navigation".to_owned(),
             })
@@ -92,13 +66,12 @@ impl rutter_engine::page::PageHandle for CdpPage {
     async fn evaluate(&self, expression: &str) -> Result<Value, EngineError> {
         let mut params = EvaluateParams::new(expression);
         params.return_by_value = Some(true);
-        let result = self
-            .with_deadline(
-                OP_TIMEOUT,
-                "evaluate",
-                self.page.evaluate_expression(params),
-            )
-            .await?;
+        let result = with_deadline(
+            "evaluate",
+            COMMAND_TIMEOUT,
+            self.page.evaluate_expression(params),
+        )
+        .await?;
         Ok(result.value().cloned().unwrap_or(Value::Null))
     }
 
@@ -121,32 +94,33 @@ impl rutter_engine::page::PageHandle for CdpPage {
             }
             InputEvent::KeyPressed { key } => {
                 let params = error::key_params(DispatchKeyEventType::KeyDown, &key);
-                return self
-                    .with_deadline(OP_TIMEOUT, "dispatch_key", self.page.execute(params))
+                return with_deadline("dispatch_key", COMMAND_TIMEOUT, self.page.execute(params))
                     .await
                     .map(|_| ());
             }
             InputEvent::KeyReleased { key } => {
                 let params = error::key_params(DispatchKeyEventType::KeyUp, &key);
-                return self
-                    .with_deadline(OP_TIMEOUT, "dispatch_key", self.page.execute(params))
+                return with_deadline("dispatch_key", COMMAND_TIMEOUT, self.page.execute(params))
                     .await
                     .map(|_| ());
             }
         };
-        self.with_deadline(OP_TIMEOUT, "dispatch_mouse", self.page.execute(command))
-            .await
-            .map(|_| ())
+        with_deadline(
+            "dispatch_mouse",
+            COMMAND_TIMEOUT,
+            self.page.execute(command),
+        )
+        .await
+        .map(|_| ())
     }
 
     async fn capture_screenshot(&self) -> Result<Screenshot, EngineError> {
-        let data = self
-            .with_deadline(
-                OP_TIMEOUT,
-                "screenshot",
-                self.page.screenshot(ScreenshotParams::default()),
-            )
-            .await?;
+        let data = with_deadline(
+            "screenshot",
+            COMMAND_TIMEOUT,
+            self.page.screenshot(ScreenshotParams::default()),
+        )
+        .await?;
         Ok(Screenshot {
             format: ImageFormat::Png,
             data,

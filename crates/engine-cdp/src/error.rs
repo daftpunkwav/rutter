@@ -1,10 +1,12 @@
-//! CDP error folding: chromiumoxide failures become `EngineError`.
+//! CDP error folding and command deadlines.
 //!
 //! Boundary: one place maps third-party errors onto the engine error
-//! contract so the rest of the crate stays mapping-free and no CDP
-//! error type escapes into a public signature.
+//! contract and bounds every CDP call with a deadline, so the rest of
+//! the crate stays mapping-free, no CDP error type escapes into a
+//! public signature, and no call can wait forever (blueprint §8.4).
 
-use std::time::Duration;
+use std::future::Future;
+use std::time::{Duration, Instant};
 
 use chromiumoxide::cdp::browser_protocol::input::{
     DispatchKeyEventParams, DispatchKeyEventType, DispatchMouseEventParams, DispatchMouseEventType,
@@ -15,7 +17,39 @@ use chromiumoxide::error::CdpError;
 use rutter_engine::error::EngineError;
 use rutter_engine::input::MouseButton;
 
-/// Folds a chromiumoxide error into the engine error contract.
+/// Fixed budget for commands whose caller supplies no dedicated budget
+/// (health probes, context and target management, input, screenshots).
+pub(crate) const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Runs a CDP call under a deadline. Elapsed outer budgets and CDP-level
+/// timeouts both surface as [`EngineError::Timeout`] carrying the real
+/// wait time; every other failure goes through [`fold`].
+pub(crate) async fn with_deadline<F, T>(
+    operation: &str,
+    budget: Duration,
+    fut: F,
+) -> Result<T, EngineError>
+where
+    F: Future<Output = Result<T, CdpError>>,
+{
+    let started = Instant::now();
+    match tokio::time::timeout(budget, fut).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(CdpError::Timeout)) => Err(EngineError::Timeout {
+            operation: operation.to_owned(),
+            elapsed: started.elapsed(),
+        }),
+        Ok(Err(error)) => Err(fold(error)),
+        Err(_elapsed) => Err(EngineError::Timeout {
+            operation: operation.to_owned(),
+            elapsed: started.elapsed(),
+        }),
+    }
+}
+
+/// Folds a chromiumoxide error into the engine error contract. Timeout
+/// variants are normally intercepted by [`with_deadline`]; this fallback
+/// keeps them honest when one arrives from an unbounded path.
 pub fn fold(error: CdpError) -> EngineError {
     match error {
         CdpError::Timeout => EngineError::Timeout {
