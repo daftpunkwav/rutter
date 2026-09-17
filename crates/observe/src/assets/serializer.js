@@ -108,8 +108,13 @@
   }
 
   function clip(text, limit) {
-    if (text.length > limit) return text.slice(0, limit - 3) + '...';
-    return text;
+    if (text.length <= limit) return text;
+    var sliced = text.slice(0, limit - 3);
+    // Never cut between a surrogate pair: a lone surrogate breaks
+    // JSON consumers. Drop the orphaned high surrogate if present.
+    var last = sliced.charCodeAt(sliced.length - 1);
+    if (last >= 0xd800 && last <= 0xdbff) sliced = sliced.slice(0, -1);
+    return sliced + '...';
   }
 
   function nameOf(el, role) {
@@ -231,52 +236,61 @@
     return node;
   }
 
+  function pushChild(element, depth, store, out) {
+    if (!element) return;
+    if (SKIPPED_TAGS[element.tagName]) return;
+    if (element.tagName === 'SVG') {
+      var svg = serializeSvg(element);
+      if (svg) out.push(svg);
+      return;
+    }
+    if (!isVisible(element)) return;
+    var serialized = serializeElement(element, depth + 1, store);
+    if (serialized) out.push(serialized);
+  }
+
+  function pushAll(list, depth, store, out) {
+    for (var i = 0; i < list.length; i += 1) {
+      pushChild(list[i], depth, store, out);
+    }
+  }
+
   function serializeChildren(el, depth, store) {
     var out = [];
-    var child = null;
-
-    function push(element) {
-      if (!element) return;
-      if (SKIPPED_TAGS[element.tagName]) return;
-      if (element.tagName === 'SVG') {
-        var svg = serializeSvg(element);
-        if (svg) out.push(svg);
-        return;
-      }
-      if (!isVisible(element)) return;
-      var serialized = serializeElement(element, depth + 1, store);
-      if (serialized) out.push(serialized);
-    }
-
+    var shadow = null;
     try {
-      var shadow = el.shadowRoot;
-      if (shadow && shadow.children) {
-        for (var s = 0; s < shadow.children.length; s += 1) {
-          push(shadow.children[s]);
-        }
-      }
+      shadow = el.shadowRoot;
     } catch (err) {
       state.truncated = true;
     }
 
-    try {
-      if (el.tagName === 'SLOT' && typeof el.assignedNodes === 'function') {
-        var assigned = el.assignedNodes({ flatten: true });
-        for (var a = 0; a < assigned.length; a += 1) {
-          child = assigned[a];
-          if (child && child.nodeType === 1) push(child);
+    // A host with an open shadow root reports only its shadow tree:
+    // slotted light-DOM nodes appear inside their slot, and unrendered
+    // light children are omitted (invisible means omitted, never
+    // guessed at).
+    if (shadow) {
+      if (shadow.children) pushAll(shadow.children, depth, store, out);
+      return out;
+    }
+
+    if (el.tagName === 'SLOT') {
+      try {
+        if (typeof el.assignedNodes === 'function') {
+          var assigned = el.assignedNodes({ flatten: true });
+          for (var a = 0; a < assigned.length; a += 1) {
+            if (assigned[a] && assigned[a].nodeType === 1) {
+              pushChild(assigned[a], depth, store, out);
+            }
+          }
         }
-        return out;
+      } catch (err) {
+        state.truncated = true;
       }
-    } catch (err) {
-      state.truncated = true;
+      return out;
     }
 
     try {
-      var children = el.children;
-      for (var i = 0; i < children.length; i += 1) {
-        push(children[i]);
-      }
+      pushAll(el.children, depth, store, out);
     } catch (err) {
       state.truncated = true;
     }

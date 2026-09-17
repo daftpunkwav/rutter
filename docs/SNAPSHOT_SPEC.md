@@ -62,7 +62,7 @@ to role `generic` with no name.
 | `checked`  | bool, optional     | Checkbox/radio state.                               |
 | `disabled` | bool               | `disabled` attribute or `aria-disabled="true"`; default false. |
 | `rect`     | object, optional   | `{x, y, width, height}` in CSS pixels, integers, viewport-relative. |
-| `children` | array, optional    | Child nodes in tree order; shadow-root children follow light-DOM children of the host. |
+| `children` | array, optional    | Child nodes in tree order. A host with an open shadow root reports only its shadow tree; slotted light-DOM nodes appear inside their slot (flattened), and unrendered light children are omitted. |
 
 Unknown fields are ignored by the converter. Malformed values degrade
 to defaults (missing role → `generic`, wrong types → field absent);
