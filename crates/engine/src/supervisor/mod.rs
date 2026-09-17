@@ -67,11 +67,15 @@ pub struct Supervisor {
     heartbeat_interval: Duration,
     supervised: Arc<Supervised>,
     heartbeat: Mutex<Option<JoinHandle<()>>>,
+    /// Bumped every time a dead engine is successfully replaced;
+    /// recovery consumers watch this (blueprint §7.4).
+    restarts: tokio::sync::watch::Sender<u64>,
 }
 
 impl Supervisor {
     /// Creates a supervisor for a launcher, production defaults.
     pub fn new(launcher: Arc<dyn EngineLauncher>, mode: LaunchMode) -> Self {
+        let (restarts, _) = tokio::sync::watch::channel(0);
         Self {
             launcher,
             mode,
@@ -83,7 +87,14 @@ impl Supervisor {
                 restarting: Mutex::new(()),
             }),
             heartbeat: Mutex::new(None),
+            restarts,
         }
+    }
+
+    /// Watcher for engine replacements; the count increments on every
+    /// successful restart of a dead engine.
+    pub fn restart_watcher(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.restarts.subscribe()
     }
 
     /// Overrides the heartbeat cadence; tests use a short interval.
@@ -113,8 +124,9 @@ impl Supervisor {
         let policy = self.policy.clone();
         let interval = self.heartbeat_interval;
         let mode = self.mode;
+        let restarts = self.restarts.clone();
         *heartbeat_slot = Some(tokio::spawn(async move {
-            heartbeat_loop(supervised, launcher, mode, policy, interval).await;
+            heartbeat_loop(supervised, launcher, mode, policy, interval, restarts).await;
         }));
         result.map(|_| ())
     }
@@ -187,6 +199,7 @@ async fn heartbeat_loop(
     mode: LaunchMode,
     policy: RestartPolicy,
     interval: Duration,
+    restarts: tokio::sync::watch::Sender<u64>,
 ) {
     loop {
         tokio::time::sleep(interval).await;
@@ -252,6 +265,7 @@ async fn heartbeat_loop(
             match launcher.launch(mode).await {
                 Ok(engine) => {
                     *supervised.engine.write().await = Some(engine);
+                    restarts.send_modify(|count| *count += 1);
                     break;
                 }
                 Err(error) => {

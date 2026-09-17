@@ -23,6 +23,10 @@ pub struct Cookie {
     pub http_only: bool,
     /// Cross-site sending policy.
     pub same_site: Option<SameSite>,
+    /// Expiry as seconds since the Unix epoch; `None` is a session
+    /// cookie. Captured storage state preserves this so logins survive
+    /// restarts (blueprint §7.4).
+    pub expires: Option<f64>,
 }
 
 /// Cross-site sending policy of a cookie.

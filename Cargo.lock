@@ -1718,6 +1718,7 @@ dependencies = [
  "rutter-events",
  "rutter-observe",
  "rutter-policy",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror",

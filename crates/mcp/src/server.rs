@@ -103,6 +103,7 @@ impl TryFrom<&CookieInput> for Cookie {
             secure: input.secure.unwrap_or(false),
             http_only: input.http_only.unwrap_or(false),
             same_site,
+            expires: None,
         })
     }
 }

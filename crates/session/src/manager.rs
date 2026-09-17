@@ -1,13 +1,16 @@
 //! The session manager: one supervised engine, many client sessions.
 //!
-//! Boundary: session lifecycle, engine ownership, and supervision
-//! wiring. The engine starts lazily on the first session request
+//! Boundary: session lifecycle, engine ownership, supervision wiring,
+//! and recovery. The engine starts lazily on the first session request
 //! (blueprint §8.5) and shuts down when the manager does; every session
 //! evaluates the shared policy and parks approvals on the shared broker
-//! (blueprint §7.6). Storage state replay across engine restarts is
-//! wired by the recovery module.
+//! (blueprint §7.6). When the supervisor replaces a dead engine, a
+//! recovery task rebuilds each session: fresh context, storage-state
+//! replay, page restoration, and an `EngineRestarted` event per session
+//! (blueprint §7.4).
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use rutter_core::ids::SessionId;
@@ -29,49 +32,60 @@ struct Running {
     sessions: HashMap<SessionId, Arc<Session>>,
 }
 
-/// Hands out sessions over one shared engine.
-pub struct SessionManager {
+/// Shared manager state; the recovery task holds this weakly.
+struct Inner {
     launcher: Arc<dyn EngineLauncher>,
     mode: LaunchMode,
     config: SessionConfig,
     policy: Arc<RuleSet>,
     broker: Arc<ApprovalBroker>,
+    state_dir: Option<PathBuf>,
     /// The async mutex is deliberate: starting the engine and creating
     /// contexts await, and concurrent session requests must serialize on
     /// one engine.
     running: tokio::sync::Mutex<Option<Running>>,
 }
 
+/// Hands out sessions over one shared engine.
+pub struct SessionManager {
+    inner: Arc<Inner>,
+}
+
 impl SessionManager {
-    /// Creates a manager; nothing starts until the first session.
+    /// Creates a manager; nothing starts until the first session. The
+    /// recovery task spawns on the first engine start.
     pub fn new(
         launcher: Arc<dyn EngineLauncher>,
         mode: LaunchMode,
         config: SessionConfig,
         policy: Arc<RuleSet>,
         broker: Arc<ApprovalBroker>,
+        state_dir: Option<PathBuf>,
     ) -> Self {
         Self {
-            launcher,
-            mode,
-            config,
-            policy,
-            broker,
-            running: tokio::sync::Mutex::new(None),
+            inner: Arc::new(Inner {
+                launcher,
+                mode,
+                config,
+                policy,
+                broker,
+                state_dir,
+                running: tokio::sync::Mutex::new(None),
+            }),
         }
     }
 
     /// The approval broker human decisions go to (dashboard policy API).
     pub fn broker(&self) -> Arc<ApprovalBroker> {
-        Arc::clone(&self.broker)
+        Arc::clone(&self.inner.broker)
     }
 
     /// Returns the session for `id`, starting the engine and creating
     /// the session's context on first request.
     pub async fn session(&self, id: SessionId) -> Result<Arc<Session>, EngineError> {
-        let mut guard = self.running.lock().await;
+        let mut guard = self.inner.running.lock().await;
         if guard.is_none() {
-            let running = self.start_running().await?;
+            let running = start_running(&self.inner).await?;
             let descriptor = running.engine.descriptor();
             // The engine event lands in the first session's history: it
             // is the session that witnessed the launch.
@@ -82,6 +96,7 @@ impl SessionManager {
                     version: descriptor.version,
                 },
             );
+            spawn_recovery(&self.inner, running.supervisor.restart_watcher());
             *guard = Some(running);
         }
 
@@ -97,15 +112,21 @@ impl SessionManager {
 
         let context = running
             .engine
-            .create_context(self.config.context_config())
+            .create_context(self.inner.config.context_config())
             .await?;
+        let state_path = self
+            .inner
+            .state_dir
+            .as_ref()
+            .map(|dir| dir.join(format!("{id}.storage.json")));
         let session = Arc::new(Session::new(
             id.clone(),
             context,
             Arc::clone(&running.backbone),
-            self.config.clone(),
-            Arc::clone(&self.policy),
-            Arc::clone(&self.broker),
+            self.inner.config.clone(),
+            Arc::clone(&self.inner.policy),
+            Arc::clone(&self.inner.broker),
+            state_path,
         ));
         running.sessions.insert(id.clone(), Arc::clone(&session));
         running.backbone.publish(id, Event::SessionStarted);
@@ -116,7 +137,7 @@ impl SessionManager {
     /// ring until the manager drops. Unknown ids succeed as no-ops.
     pub async fn close_session(&self, id: &SessionId) -> Result<(), EngineError> {
         let session = {
-            let mut guard = self.running.lock().await;
+            let mut guard = self.inner.running.lock().await;
             match guard
                 .as_mut()
                 .and_then(|running| running.sessions.remove(id))
@@ -131,27 +152,66 @@ impl SessionManager {
         Ok(())
     }
 
-    /// Shuts the engine down; open sessions die with it (M1 has no
-    /// storage-state replay; blueprint §10 defers that to M2).
+    /// Shuts the engine down; open sessions die with it, but their
+    /// storage states remain on disk and reload on the next start.
     pub async fn shutdown(&self) {
         let supervisor = {
-            let mut guard = self.running.lock().await;
+            let mut guard = self.inner.running.lock().await;
             guard.take().map(|running| running.supervisor)
         };
         if let Some(supervisor) = supervisor {
             supervisor.shutdown().await;
         }
     }
+}
 
-    async fn start_running(&self) -> Result<Running, EngineError> {
-        let supervisor = Arc::new(Supervisor::new(Arc::clone(&self.launcher), self.mode));
-        supervisor.start().await?;
-        let engine = supervisor.engine().await?;
-        Ok(Running {
-            supervisor,
-            engine,
-            backbone: Arc::new(Backbone::new()),
-            sessions: HashMap::new(),
-        })
-    }
+/// Starts the engine and spawns the recovery task for its supervisor.
+async fn start_running(inner: &Arc<Inner>) -> Result<Running, EngineError> {
+    let supervisor = Arc::new(Supervisor::new(Arc::clone(&inner.launcher), inner.mode));
+    supervisor.start().await?;
+    let engine = supervisor.engine().await?;
+    spawn_recovery(inner, supervisor.restart_watcher());
+    Ok(Running {
+        supervisor,
+        engine,
+        backbone: Arc::new(Backbone::new()),
+        sessions: HashMap::new(),
+    })
+}
+
+/// Watches for engine replacements and rebuilds every session:
+/// fresh context, storage-state replay, page restoration, and an
+/// `EngineRestarted` event per session (blueprint §7.4).
+fn spawn_recovery(inner: &Arc<Inner>, mut watcher: tokio::sync::watch::Receiver<u64>) {
+    let weak = Arc::downgrade(inner);
+    tokio::spawn(async move {
+        // The current value is the baseline; only real bumps recover.
+        let _baseline = *watcher.borrow_and_update();
+        while watcher.changed().await.is_ok() {
+            let _count = *watcher.borrow_and_update();
+            let Some(inner) = weak.upgrade() else {
+                break;
+            };
+            let mut guard = inner.running.lock().await;
+            let Some(running) = guard.as_mut() else {
+                continue;
+            };
+            eprintln!(
+                "rutter: engine restarted; recovering {} session(s)",
+                running.sessions.len()
+            );
+            for session in running.sessions.values() {
+                match running
+                    .engine
+                    .create_context(inner.config.context_config())
+                    .await
+                {
+                    Ok(context) => session.recover(context).await,
+                    Err(error) => {
+                        eprintln!("rutter: recovery context failed: {error}");
+                    }
+                }
+            }
+        }
+    });
 }

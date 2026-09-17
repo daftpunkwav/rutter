@@ -36,4 +36,8 @@ pub trait ContextHandle: Send + Sync {
     /// Sets cookies scoped to this context, replacing nothing: each
     /// cookie is written by name/domain/path per backend semantics.
     async fn set_cookies(&self, cookies: &[Cookie]) -> Result<(), EngineError>;
+
+    /// Reads every cookie scoped to this context (storage state
+    /// capture, blueprint §7.4).
+    async fn cookies(&self) -> Result<Vec<Cookie>, EngineError>;
 }

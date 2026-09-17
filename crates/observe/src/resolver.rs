@@ -121,6 +121,43 @@ const WAIT_TEMPLATE: &str = r#"(function () {
 })();
 "#;
 
+/// Builds a localStorage dump script: returns
+/// `{ origin, data: {key: value, ...} }` for the current page.
+pub fn storage_dump_script() -> String {
+    r#"(function () {
+  'use strict';
+  var data = {};
+  for (var i = 0; i < window.localStorage.length; i += 1) {
+    var key = window.localStorage.key(i);
+    data[key] = window.localStorage.getItem(key);
+  }
+  return { origin: window.location.origin, data: data };
+})();
+"#
+    .to_owned()
+}
+
+/// Builds a localStorage restore script from a JSON object of
+/// key-value pairs; returns `{ restored: N }`.
+pub fn storage_restore_script(entries_json: &str) -> String {
+    RESTORE_TEMPLATE.replace("__ENTRIES__", entries_json)
+}
+
+/// Restore template; `__ENTRIES__` is a JSON object literal.
+const RESTORE_TEMPLATE: &str = r#"(function () {
+  'use strict';
+  var ENTRIES = __ENTRIES__;
+  var restored = 0;
+  for (var key in ENTRIES) {
+    try {
+      window.localStorage.setItem(key, ENTRIES[key]);
+      restored += 1;
+    } catch (err) {}
+  }
+  return { restored: restored };
+})();
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,6 +194,13 @@ mod tests {
     fn wait_script_embeds_the_needle_literal() {
         let script = wait_for_script(&serde_json::to_string("done").expect("json"));
         assert!(script.contains("var NEEDLE = \"done\""));
+    }
+
+    #[test]
+    fn storage_scripts_embed_their_payloads() {
+        assert!(storage_dump_script().contains("localStorage"));
+        let restore = storage_restore_script("{\"k\":\"v\"}");
+        assert!(restore.contains("var ENTRIES = {\"k\":\"v\"}"));
     }
 
     #[test]

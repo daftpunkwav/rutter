@@ -12,8 +12,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use chromiumoxide::cdp::browser_protocol::browser::BrowserContextId;
+use chromiumoxide::cdp::browser_protocol::network::TimeSinceEpoch;
 use chromiumoxide::cdp::browser_protocol::network::{CookieParam, CookieSameSite};
-use chromiumoxide::cdp::browser_protocol::storage::SetCookiesParams;
+use chromiumoxide::cdp::browser_protocol::storage::{GetCookiesParams, SetCookiesParams};
 use chromiumoxide::cdp::browser_protocol::target::{CloseTargetParams, CreateTargetParams};
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -182,7 +183,7 @@ impl ContextHandle for CdpContext {
                     secure: Some(cookie.secure),
                     http_only: Some(cookie.http_only),
                     same_site: cookie.same_site.map(cdp_same_site),
-                    expires: None,
+                    expires: cookie.expires.map(TimeSinceEpoch::new),
                     priority: None,
                     same_party: None,
                     source_scheme: None,
@@ -200,6 +201,42 @@ impl ContextHandle for CdpContext {
         )
         .await?;
         Ok(())
+    }
+
+    async fn cookies(&self) -> Result<Vec<Cookie>, EngineError> {
+        let browser = self.browser.lock().await;
+        let response = crate::error::with_deadline(
+            "cookies",
+            crate::error::COMMAND_TIMEOUT,
+            browser.execute(GetCookiesParams {
+                browser_context_id: Some(self.cdp_context_id.clone()),
+            }),
+        )
+        .await?;
+        Ok(response
+            .result
+            .cookies
+            .into_iter()
+            .map(|cookie| Cookie {
+                name: cookie.name,
+                value: cookie.value,
+                domain: cookie.domain,
+                path: Some(cookie.path),
+                secure: cookie.secure,
+                http_only: cookie.http_only,
+                same_site: cookie.same_site.map(cdp_same_site_back),
+                expires: Some(cookie.expires),
+            })
+            .collect())
+    }
+}
+
+/// Maps the CDP policy back onto the protocol-neutral enum.
+fn cdp_same_site_back(same_site: CookieSameSite) -> SameSite {
+    match same_site {
+        CookieSameSite::Strict => SameSite::Strict,
+        CookieSameSite::Lax => SameSite::Lax,
+        CookieSameSite::None => SameSite::None,
     }
 }
 

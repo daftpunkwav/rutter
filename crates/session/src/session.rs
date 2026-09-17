@@ -1,11 +1,13 @@
-//! One session: a client's context, its active page, and its events.
+//! One session: a client's context, its pages, and its events.
 //!
 //! Boundary: the orchestration surface the MCP tools call. The session
-//! owns exactly one context (blueprint §4); it tracks the active page,
-//! executes actions through the [`crate::actions`] executor, and emits
-//! the semantic events of blueprint §7.5. Recovery and storage state
-//! are M2 concerns.
+//! owns exactly one context (blueprint §4), tracks its open pages and
+//! their URLs, executes actions through the [`crate::actions`]
+//! executor, enforces the policy with approvals (§7.6), and persists
+//! its storage state after every change so a supervisor restart can
+//! rebuild it (§7.4). Recovery swaps in a fresh context and replays.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -24,32 +26,41 @@ use rutter_policy::{ActionClass, ApprovalBroker, ApprovalOutcome, RuleSet, Verdi
 use crate::actions::{Executor, PageOps};
 use crate::config::SessionConfig;
 use crate::error::SessionError;
+use crate::storage::StorageState;
 
 /// One open page as reported by `tabs_list`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TabInfo {
     /// Stable page identifier.
     pub page: PageId,
-    /// Current URL, empty when the page did not answer.
+    /// Last known URL.
     pub url: String,
     /// Whether this page is the session's active page.
     pub active: bool,
 }
 
+/// One tracked page with its last known URL.
+struct PageSlot {
+    id: PageId,
+    url: String,
+    handle: Arc<dyn PageHandle>,
+    active: bool,
+}
+
 /// The client-visible state of one session.
 pub struct Session {
     id: SessionId,
-    context: Arc<dyn ContextHandle>,
     backbone: Arc<Backbone>,
     config: SessionConfig,
     policy: Arc<RuleSet>,
     broker: Arc<ApprovalBroker>,
-    active: Mutex<Option<ActivePage>>,
-}
-
-struct ActivePage {
-    id: PageId,
-    handle: Arc<dyn PageHandle>,
+    /// Swappable so recovery can install a fresh context after an
+    /// engine restart (blueprint §7.4).
+    context: tokio::sync::RwLock<Arc<dyn ContextHandle>>,
+    pages: Mutex<Vec<PageSlot>>,
+    /// Where the storage state persists; `None` disables persistence.
+    state_path: Option<PathBuf>,
+    last_storage: Mutex<StorageState>,
 }
 
 impl Session {
@@ -61,16 +72,29 @@ impl Session {
         config: SessionConfig,
         policy: Arc<RuleSet>,
         broker: Arc<ApprovalBroker>,
+        state_path: Option<PathBuf>,
     ) -> Self {
         Self {
             id,
-            context,
             backbone,
             config,
             policy,
             broker,
-            active: Mutex::new(None),
+            context: tokio::sync::RwLock::new(context),
+            pages: Mutex::new(Vec::new()),
+            state_path,
+            last_storage: Mutex::new(StorageState::default()),
         }
+    }
+
+    /// The session's identifier.
+    pub fn id(&self) -> &SessionId {
+        &self.id
+    }
+
+    /// The event backbone, for M2 consumers that replay history.
+    pub fn backbone(&self) -> Arc<Backbone> {
+        Arc::clone(&self.backbone)
     }
 
     /// The approval broker decisions are submitted to.
@@ -135,53 +159,52 @@ impl Session {
         }
     }
 
-    /// The session's identifier.
-    pub fn id(&self) -> &SessionId {
-        &self.id
-    }
-
-    /// The event backbone, for M2 consumers that replay history.
-    pub fn backbone(&self) -> Arc<Backbone> {
-        Arc::clone(&self.backbone)
-    }
-
     /// The active page, opening the first page when none exists yet.
-    pub async fn active_page(&self) -> Result<(PageId, Arc<dyn PageHandle>), EngineError> {
+    async fn active_page(&self) -> Result<Arc<dyn PageHandle>, EngineError> {
         {
-            let active = self.lock_active();
-            if let Some(page) = active.as_ref() {
-                return Ok((page.id.clone(), Arc::clone(&page.handle)));
+            let pages = self.lock_pages();
+            if let Some(slot) = pages.iter().find(|slot| slot.active) {
+                return Ok(Arc::clone(&slot.handle));
             }
         }
-        let (page_id, handle) = self.context.open_page().await?;
-        *self.lock_active() = Some(ActivePage {
+        let context = self.context.read().await.clone();
+        let (page_id, handle) = context.open_page().await?;
+        *self.lock_pages() = vec![PageSlot {
             id: page_id.clone(),
+            url: String::new(),
             handle: Arc::clone(&handle),
-        });
-        self.backbone.publish(
-            self.id.clone(),
-            Event::PageOpened {
-                page: page_id.clone(),
-            },
-        );
-        Ok((page_id, handle))
+            active: true,
+        }];
+        self.backbone
+            .publish(self.id.clone(), Event::PageOpened { page: page_id });
+        Ok(handle)
     }
 
     /// Executes one action with the given origin and returns the fresh
     /// snapshot; requested/completed/failed land on the event backbone.
+    /// After a completed action the page URL and the storage state are
+    /// refreshed (blueprint §7.4: persist on change).
     pub async fn execute(&self, action: Action, origin: Origin) -> Result<Snapshot, SessionError> {
-        let (page_id, page) = self.active_page().await.map_err(engine_error)?;
+        let page = self.active_page().await.map_err(engine_error)?;
+        let page_id = {
+            let pages = self.lock_pages();
+            match pages.iter().find(|slot| slot.active) {
+                Some(slot) => slot.id.clone(),
+                // active_page guarantees an active slot; an empty id is
+                // harmless for event payloads.
+                None => PageId::new(String::new()),
+            }
+        };
 
         // Supervision gate (blueprint §7.6): agent-origin actions are
         // evaluated against the current page URL; human-origin actions
         // bypass approval and are recorded identically.
+        let ops = PageOps {
+            page: page.as_ref(),
+            config: &self.config,
+        };
         if origin == Origin::Agent {
-            let url = PageOps {
-                page: page.as_ref(),
-                config: &self.config,
-            }
-            .url()
-            .await;
+            let url = ops.url().await;
             self.enforce_policy(rutter_policy::class_of(&action), &url, &page_id, &action)
                 .await?;
         }
@@ -202,36 +225,42 @@ impl Session {
             config: &self.config,
             backbone: &self.backbone,
         };
-        match executor.run(&action).await {
-            Ok(snapshot) => {
-                self.backbone.publish(
-                    self.id.clone(),
-                    Event::ActionCompleted {
-                        page: page_id,
-                        origin,
-                        action,
-                    },
-                );
-                Ok(snapshot)
-            }
-            Err(error) => {
-                self.backbone.publish(
-                    self.id.clone(),
-                    Event::ActionFailed {
-                        page: page_id,
-                        origin,
-                        action,
-                        error: as_action_error(&self.id, &error),
-                    },
-                );
-                Err(error)
-            }
-        }
+        let result = executor.run(&action).await;
+        match &result {
+            Ok(_) => self.backbone.publish(
+                self.id.clone(),
+                Event::ActionCompleted {
+                    page: page_id.clone(),
+                    origin,
+                    action: action.clone(),
+                },
+            ),
+            Err(error) => self.backbone.publish(
+                self.id.clone(),
+                Event::ActionFailed {
+                    page: page_id.clone(),
+                    origin,
+                    action: action.clone(),
+                    error: as_action_error(&self.id, error),
+                },
+            ),
+        };
+
+        // Refresh the tracked URL, then persist the changed state
+        // (blueprint §7.4: persist per session on change).
+        let url = ops.url().await;
+        self.lock_pages()
+            .iter_mut()
+            .filter(|slot| slot.active)
+            .for_each(|slot| slot.url = url.clone());
+        self.persist_storage(&page, &url).await;
+
+        result
     }
 
     /// Renders the active page as a snapshot; no events, no auto-wait.
     pub async fn snapshot(&self) -> Result<Snapshot, SessionError> {
-        let (_, page) = self.active_page().await.map_err(engine_error)?;
+        let page = self.active_page().await.map_err(engine_error)?;
         PageOps {
             page: page.as_ref(),
             config: &self.config,
@@ -242,7 +271,7 @@ impl Session {
 
     /// Captures the active page.
     pub async fn screenshot(&self) -> Result<Screenshot, SessionError> {
-        let (_, page) = self.active_page().await.map_err(engine_error)?;
+        let page = self.active_page().await.map_err(engine_error)?;
         page.capture_screenshot()
             .await
             .map_err(SessionError::Engine)
@@ -250,7 +279,7 @@ impl Session {
 
     /// Polls the active page until `needle` appears in its text.
     pub async fn wait_for(&self, needle: &str, budget: Duration) -> Result<Snapshot, SessionError> {
-        let (_, page) = self.active_page().await.map_err(engine_error)?;
+        let page = self.active_page().await.map_err(engine_error)?;
         PageOps {
             page: page.as_ref(),
             config: &self.config,
@@ -259,41 +288,53 @@ impl Session {
         .await
     }
 
-    /// Lists the session's pages with their URLs.
+    /// Lists the session's pages with their last known URLs.
     pub async fn tabs(&self) -> Vec<TabInfo> {
-        let active_id = self.lock_active().as_ref().map(|page| page.id.clone());
-        let mut tabs = Vec::new();
-        for page_id in self.context.pages() {
-            // A crashed or detached page contributes an empty URL rather
-            // than failing the whole listing.
-            let url = match self.context.page(page_id.clone()) {
-                Some(page) => page
-                    .evaluate("location.href")
-                    .await
-                    .ok()
-                    .and_then(|value| value.as_str().map(str::to_owned))
-                    .unwrap_or_default(),
-                None => String::new(),
-            };
-            tabs.push(TabInfo {
-                active: active_id.as_ref() == Some(&page_id),
-                page: page_id,
-                url,
-            });
-        }
-        tabs
+        self.lock_pages()
+            .iter()
+            .map(|slot| TabInfo {
+                page: slot.id.clone(),
+                url: slot.url.clone(),
+                active: slot.active,
+            })
+            .collect()
+    }
+
+    /// Opens a new page and makes it active (tabs_new tool).
+    pub async fn open_tab(&self) -> Result<PageId, SessionError> {
+        let context = self.context.read().await.clone();
+        let (page_id, handle) = context.open_page().await.map_err(engine_error)?;
+        self.lock_pages()
+            .iter_mut()
+            .for_each(|slot| slot.active = false);
+        self.lock_pages().push(PageSlot {
+            id: page_id.clone(),
+            url: String::new(),
+            handle: Arc::clone(&handle),
+            active: true,
+        });
+        self.backbone.publish(
+            self.id.clone(),
+            Event::PageOpened {
+                page: page_id.clone(),
+            },
+        );
+        Ok(page_id)
     }
 
     /// Makes another page active and returns its snapshot.
     pub async fn select_tab(&self, page_id: PageId) -> Result<Snapshot, SessionError> {
-        let handle = self
-            .context
-            .page(page_id.clone())
-            .ok_or_else(|| unknown_tab(&page_id))?;
-        *self.lock_active() = Some(ActivePage {
-            id: page_id,
-            handle: Arc::clone(&handle),
-        });
+        let handle = {
+            let mut pages = self.lock_pages();
+            let Some(slot) = pages.iter_mut().find(|slot| slot.id == page_id) else {
+                return Err(unknown_tab(&page_id));
+            };
+            let handle = Arc::clone(&slot.handle);
+            pages
+                .iter_mut()
+                .for_each(|slot| slot.active = slot.id == page_id);
+            handle
+        };
         PageOps {
             page: handle.as_ref(),
             config: &self.config,
@@ -302,20 +343,21 @@ impl Session {
         .await
     }
 
-    /// Closes a page; closing the active page leaves no active page
-    /// until the next navigation opens one.
+    /// Closes a page; closing the active page promotes the first
+    /// remaining page.
     pub async fn close_tab(&self, page_id: PageId) -> Result<String, SessionError> {
-        let was_active = self
-            .lock_active()
-            .as_ref()
-            .is_some_and(|page| page.id == page_id);
-        if was_active {
-            *self.lock_active() = None;
-        }
-        self.context
+        let context = self.context.read().await.clone();
+        context
             .close_page(page_id.clone())
             .await
             .map_err(engine_error)?;
+        {
+            let mut pages = self.lock_pages();
+            pages.retain(|slot| slot.id != page_id);
+            if !pages.is_empty() && !pages.iter().any(|slot| slot.active) {
+                pages[0].active = true;
+            }
+        }
         self.backbone.publish(
             self.id.clone(),
             Event::PageClosed {
@@ -330,7 +372,14 @@ impl Session {
     /// events carry `Reload` as the closest action payload since cookie
     /// changes have no `Action` variant.
     pub async fn set_cookies(&self, cookies: &[Cookie]) -> Result<(), SessionError> {
-        let (page_id, page) = self.active_page().await.map_err(engine_error)?;
+        let page = self.active_page().await.map_err(engine_error)?;
+        let page_id = {
+            let pages = self.lock_pages();
+            match pages.iter().find(|slot| slot.active) {
+                Some(slot) => slot.id.clone(),
+                None => PageId::new(String::new()),
+            }
+        };
         let url = PageOps {
             page: page.as_ref(),
             config: &self.config,
@@ -339,23 +388,146 @@ impl Session {
         .await;
         self.enforce_policy(ActionClass::Cookies, &url, &page_id, &Action::Reload)
             .await?;
-        self.context
-            .set_cookies(cookies)
-            .await
-            .map_err(engine_error)
+        let context = self.context.read().await.clone();
+        context.set_cookies(cookies).await.map_err(engine_error)?;
+        self.persist_storage(&page, &url).await;
+        Ok(())
+    }
+
+    /// Captures the session's storage state (cookies plus localStorage
+    /// of every open page).
+    pub async fn capture_storage(&self) -> StorageState {
+        let context = self.context.read().await.clone();
+        let pairs = self
+            .lock_pages()
+            .iter()
+            .map(|slot| (slot.url.clone(), Arc::clone(&slot.handle)))
+            .collect::<Vec<_>>();
+        StorageState::capture(context.as_ref(), &pairs).await
+    }
+
+    /// Saves the current storage state to the session's persistence
+    /// file (explicit save; blueprint §7.4).
+    pub async fn save_storage(&self) -> Result<(), SessionError> {
+        let page = self.active_page().await.map_err(engine_error)?;
+        let url = PageOps {
+            page: page.as_ref(),
+            config: &self.config,
+        }
+        .url()
+        .await;
+        self.persist_storage(&page, &url).await;
+        Ok(())
+    }
+
+    /// Loads a previously saved storage state and applies it to the
+    /// session (explicit load; blueprint §7.4).
+    pub async fn load_storage(&self) -> Result<(), SessionError> {
+        let state = match &self.state_path {
+            Some(path) => StorageState::read(path),
+            None => {
+                return Err(SessionError::Action(ActionError::Internal {
+                    detail: "this session has no storage state directory".to_owned(),
+                }));
+            }
+        };
+        let context = self.context.read().await.clone();
+        let pairs = self
+            .lock_pages()
+            .iter()
+            .map(|slot| (slot.url.clone(), Arc::clone(&slot.handle)))
+            .collect::<Vec<_>>();
+        state.restore(context.as_ref(), &pairs).await;
+        *self.lock_last_storage() = state;
+        Ok(())
+    }
+
+    /// Rebuilds the session on a fresh context after an engine restart:
+    /// replays cookies and localStorage, re-opens the tracked pages at
+    /// their URLs, and publishes `EngineRestarted` (blueprint §7.4).
+    pub(crate) async fn recover(&self, context: Arc<dyn ContextHandle>) {
+        let saved = std::mem::take(&mut *self.lock_pages());
+        let state = self.lock_last_storage().clone();
+
+        let shared = Arc::clone(&context);
+        *self.context.write().await = shared;
+        if !state.cookies.is_empty() {
+            let _ = context.set_cookies(&state.cookies).await;
+        }
+
+        let active_url = saved
+            .iter()
+            .find(|slot| slot.active)
+            .map(|slot| slot.url.clone());
+        let mut restored = Vec::new();
+        for slot in saved {
+            if slot.url.is_empty() || slot.url == "about:blank" {
+                continue;
+            }
+            let Ok((id, handle)) = context.open_page().await else {
+                continue;
+            };
+            let _ = handle.navigate(&slot.url).await;
+            let origin = PageOps {
+                page: handle.as_ref(),
+                config: &self.config,
+            }
+            .url()
+            .await;
+            state
+                .restore(context.as_ref(), &[(origin, Arc::clone(&handle))])
+                .await;
+            let was_active = Some(slot.url.clone()) == active_url;
+            restored.push(PageSlot {
+                id: id.clone(),
+                url: slot.url,
+                handle,
+                active: was_active,
+            });
+            self.backbone
+                .publish(self.id.clone(), Event::PageOpened { page: id });
+        }
+        if !restored.is_empty() && !restored.iter().any(|slot| slot.active) {
+            restored[0].active = true;
+        }
+        *self.lock_pages() = restored;
+
+        self.backbone
+            .publish(self.id.clone(), Event::EngineRestarted);
+    }
+
+    /// Captures and persists the storage state; the in-memory copy
+    /// updates first so recovery works even if the file write fails.
+    async fn persist_storage(&self, page: &Arc<dyn PageHandle>, url: &str) {
+        let context = self.context.read().await.clone();
+        let state =
+            StorageState::capture(context.as_ref(), &[(url.to_owned(), Arc::clone(page))]).await;
+        *self.lock_last_storage() = state.clone();
+        if let Some(path) = &self.state_path {
+            if let Err(error) = state.write(path) {
+                eprintln!("rutter: cannot write storage state: {error}");
+            }
+        }
     }
 
     /// Closes every page of the session; page-close failures are
     /// tolerated so a session always closes.
     pub async fn close(&self) {
-        for page_id in self.context.pages() {
-            let _ = self.context.close_page(page_id).await;
+        let context = self.context.read().await.clone();
+        for page_id in context.pages() {
+            let _ = context.close_page(page_id).await;
         }
-        *self.lock_active() = None;
+        self.lock_pages().clear();
     }
 
-    fn lock_active(&self) -> std::sync::MutexGuard<'_, Option<ActivePage>> {
-        self.active
+    fn lock_pages(&self) -> std::sync::MutexGuard<'_, Vec<PageSlot>> {
+        self.pages
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn lock_last_storage(&self) -> std::sync::MutexGuard<'_, StorageState> {
+        self.last_storage
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }

@@ -17,6 +17,7 @@ rutter-engine = { workspace = true }
 rutter-events = { workspace = true }
 rutter-observe = { workspace = true }
 rutter-policy = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

@@ -25,9 +25,11 @@ pub mod error;
 pub mod manager;
 pub mod resolve;
 pub mod session;
+pub mod storage;
 pub mod wait;
 
 pub use config::SessionConfig;
 pub use error::SessionError;
 pub use manager::SessionManager;
 pub use session::{Session, TabInfo};
+pub use storage::StorageState;

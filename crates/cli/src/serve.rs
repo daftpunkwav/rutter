@@ -31,13 +31,16 @@ pub async fn run(settings: &Settings, headed: bool) -> Result<(), CliError> {
         LaunchMode::Headless
     };
     // Policy: the built-in conservative set; a --policy TOML file can
-    // override it per deployment.
+    // override it per deployment. Storage states persist under the
+    // cache root (blueprint §7.4).
+    let state_dir = Some(settings.cache_root.join("sessions"));
     let manager = Arc::new(SessionManager::new(
         Arc::new(launcher),
         mode,
         SessionConfig::default(),
         Arc::new(RuleSet::default_set()),
         Arc::new(ApprovalBroker::new()),
+        state_dir,
     ));
 
     let session_id = SessionId::new(format!("stdio-{}", std::process::id()));
