@@ -122,16 +122,24 @@ const WAIT_TEMPLATE: &str = r#"(function () {
 "#;
 
 /// Builds a localStorage dump script: returns
-/// `{ origin, data: {key: value, ...} }` for the current page.
+/// `{ origin, data: {key: value, ...} }` for the current page. Hosts
+/// where the storage API throws (opaque origins such as `file://`,
+/// sandboxed frames) answer `{ unavailable: true }` instead of failing
+/// the whole evaluate.
 pub fn storage_dump_script() -> String {
     r#"(function () {
   'use strict';
-  var data = {};
-  for (var i = 0; i < window.localStorage.length; i += 1) {
-    var key = window.localStorage.key(i);
-    data[key] = window.localStorage.getItem(key);
+  try {
+    if (!window.localStorage) return { unavailable: true };
+    var data = {};
+    for (var i = 0; i < window.localStorage.length; i += 1) {
+      var key = window.localStorage.key(i);
+      data[key] = window.localStorage.getItem(key);
+    }
+    return { origin: window.location.origin, data: data };
+  } catch (err) {
+    return { unavailable: true };
   }
-  return { origin: window.location.origin, data: data };
 })();
 "#
     .to_owned()

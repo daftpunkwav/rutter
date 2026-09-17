@@ -22,6 +22,11 @@
         node.textContent = I18N[node.getAttribute('data-i18n')] || node.getAttribute('data-i18n');
       });
       connect();
+    })
+    .catch(function () {
+      // The catalog is cosmetic; without it the dashboard still works
+      // with untranslated labels instead of never connecting.
+      connect();
     });
 
   function t(key) { return I18N[key] || key; }
