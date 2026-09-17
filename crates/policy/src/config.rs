@@ -34,6 +34,12 @@ pub struct ConfigRule {
     pub verdict: String,
 }
 
+/// Upper bound for the approval window in milliseconds (24 h). Larger
+/// configured values overflow the process clock when converted to a
+/// deadline, which would panic the parked approval wait; a window this
+/// large is a configuration mistake, not a real policy.
+const MAX_APPROVAL_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
+
 /// Parses a policy configuration into a rule set.
 pub fn parse_policy(toml_text: &str) -> Result<RuleSet, ConfigError> {
     let config: PolicyConfig = toml::from_str(toml_text).map_err(|error| ConfigError {
@@ -63,11 +69,29 @@ pub fn parse_policy(toml_text: &str) -> Result<RuleSet, ConfigError> {
                 detail: "a rule must set action_class, url_pattern, or both".to_owned(),
             });
         }
+        // A present-but-blank pattern must not degrade to `None`: `None`
+        // widens the rule to every URL, so the mistake is rejected.
+        let url_pattern = match rule.url_pattern.as_deref() {
+            Some(text) => Some(Pattern::parse(text).ok_or_else(|| ConfigError {
+                detail: format!("blank url_pattern '{text:?}' in a rule; patterns must not be empty"),
+            })?),
+            None => None,
+        };
         rules.push(PolicyRule {
             action_class: rule.action_class.clone(),
-            url_pattern: rule.url_pattern.as_deref().and_then(Pattern::parse),
+            url_pattern,
             verdict,
         });
+    }
+
+    if let Some(ms) = config.approval_timeout_ms {
+        if ms > MAX_APPROVAL_TIMEOUT_MS {
+            return Err(ConfigError {
+                detail: format!(
+                    "approval_timeout_ms {ms} exceeds the maximum of {MAX_APPROVAL_TIMEOUT_MS}"
+                ),
+            });
+        }
     }
 
     let ruleset = RuleSet::new(rules, default_verdict);
@@ -158,5 +182,29 @@ verdict = "deny"
         let error =
             parse_policy("[[rules]]\nverdict = \"allow\"\n").expect_err("rule without axis");
         assert!(error.to_string().contains("action_class"));
+    }
+
+    #[test]
+    fn blank_url_patterns_are_rejected_not_widened() {
+        // A blank pattern must fail parsing instead of silently matching
+        // every URL.
+        for pattern in ["", "   "] {
+            let text = format!(
+                "[[rules]]\nurl_pattern = {pattern:?}\nverdict = \"deny\"\n"
+            );
+            let error = parse_policy(&text).expect_err("blank pattern");
+            assert!(error.to_string().contains("url_pattern"));
+        }
+    }
+
+    #[test]
+    fn approval_windows_beyond_a_day_are_rejected() {
+        let error = parse_policy("approval_timeout_ms = 18446744073709551615")
+            .expect_err("absurd approval window");
+        assert!(error.to_string().contains("approval_timeout_ms"));
+        assert!(
+            parse_policy("approval_timeout_ms = 86400000").is_ok(),
+            "exactly 24 h stays accepted"
+        );
     }
 }
