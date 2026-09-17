@@ -16,6 +16,8 @@ use crate::rules::{PolicyRule, RuleSet, Verdict};
 pub struct PolicyConfig {
     /// Verdict for actions no rule matched; `allow` when omitted.
     pub default: Option<String>,
+    /// Approval window in milliseconds; 120 000 when omitted.
+    pub approval_timeout_ms: Option<u64>,
     /// Ordered rules; the first match wins.
     #[serde(default)]
     pub rules: Vec<ConfigRule>,
@@ -68,7 +70,11 @@ pub fn parse_policy(toml_text: &str) -> Result<RuleSet, ConfigError> {
         });
     }
 
-    Ok(RuleSet::new(rules, default_verdict))
+    let ruleset = RuleSet::new(rules, default_verdict);
+    Ok(match config.approval_timeout_ms {
+        Some(ms) => ruleset.with_approval_timeout(std::time::Duration::from_millis(ms)),
+        None => ruleset,
+    })
 }
 
 /// Why a policy configuration was rejected.

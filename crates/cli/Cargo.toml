@@ -27,4 +27,5 @@ thiserror = { workspace = true }
 toml = "0.8"
 tokio = { workspace = true }
 [dev-dependencies]
+tempfile = { workspace = true }
 rmcp = { workspace = true }

@@ -43,19 +43,23 @@ pub struct PolicyRule {
     pub verdict: Verdict,
 }
 
-/// An ordered rule set plus the verdict for actions no rule matches.
+/// An ordered rule set plus the verdict for actions no rule matches,
+/// and the window a human has to answer approvals (blueprint §7.6:
+/// configurable, default 120 s).
 ///
 /// The default set is conservative for the sensitive class: cookie
 /// manipulation always requires approval, everything else is allowed
-/// unless a loaded configuration says otherwise (blueprint §7.6).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// unless a loaded configuration says otherwise.
+#[derive(Debug, Clone)]
 pub struct RuleSet {
     rules: Vec<PolicyRule>,
     default_verdict: Verdict,
+    approval_timeout: std::time::Duration,
 }
 
 impl RuleSet {
-    /// The built-in default: allow, except cookies require approval.
+    /// The built-in default: allow, except cookies require approval,
+    /// with the 120 s approval window.
     pub fn default_set() -> Self {
         Self {
             rules: vec![PolicyRule {
@@ -64,6 +68,7 @@ impl RuleSet {
                 verdict: Verdict::RequireApproval,
             }],
             default_verdict: Verdict::Allow,
+            approval_timeout: std::time::Duration::from_secs(120),
         }
     }
 
@@ -72,7 +77,19 @@ impl RuleSet {
         Self {
             rules,
             default_verdict,
+            approval_timeout: std::time::Duration::from_secs(120),
         }
+    }
+
+    /// Overrides the approval window.
+    pub fn with_approval_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.approval_timeout = timeout;
+        self
+    }
+
+    /// The window a human has to answer an approval.
+    pub fn approval_timeout(&self) -> std::time::Duration {
+        self.approval_timeout
     }
 
     /// Evaluates one action class against a URL: the first matching rule

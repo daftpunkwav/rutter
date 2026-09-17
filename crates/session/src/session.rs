@@ -140,7 +140,7 @@ impl Session {
         );
         let outcome = self
             .broker
-            .wait(&request_id, receiver, self.config.approval_timeout)
+            .wait(&request_id, receiver, self.policy.approval_timeout())
             .await;
         let granted = outcome == ApprovalOutcome::Granted;
         self.backbone.publish(
@@ -154,7 +154,7 @@ impl Session {
             ApprovalOutcome::Granted => Ok(()),
             ApprovalOutcome::Denied => Err(denied()),
             ApprovalOutcome::TimedOut => Err(SessionError::Action(ActionError::ApprovalTimedOut {
-                waited: self.config.approval_timeout,
+                waited: self.policy.approval_timeout(),
             })),
         }
     }

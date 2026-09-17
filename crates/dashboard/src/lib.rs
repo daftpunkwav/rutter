@@ -63,11 +63,16 @@ impl DashboardServer {
         }
     }
 
-    /// The per-launch access token (blueprint §7.7).
+    /// The per-launch access token (blueprint §7.7). The
+    /// `RUTTER_DASHBOARD_TOKEN` override exists for automation; without
+    /// it the token mixes time and process id, enough to resist
+    /// accidental observers on a single-user machine.
     pub fn token(&self) -> String {
-        // Local-only secret: time and process id mixed through the
-        // standard hasher are enough to resist accidental observers on
-        // a single-user machine.
+        if let Ok(token) = std::env::var("RUTTER_DASHBOARD_TOKEN") {
+            if !token.is_empty() {
+                return token;
+            }
+        }
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         std::time::SystemTime::now().hash(&mut hasher);
