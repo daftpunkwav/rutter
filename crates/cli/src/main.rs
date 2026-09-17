@@ -18,6 +18,7 @@ mod entry;
 mod error;
 mod launcher;
 mod open;
+mod serve;
 
 use std::process::ExitCode;
 

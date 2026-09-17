@@ -42,10 +42,7 @@ pub async fn run(mode: EntryMode, settings: &Settings) -> Result<(), CliError> {
     match mode {
         EntryMode::Browse => crate::browse::run(settings).await,
         EntryMode::Open { url } => crate::open::run(settings, &url).await,
-        EntryMode::Serve { headed: _ } => Err(CliError::Unavailable {
-            mode: "serve".to_owned(),
-            reason: "the MCP tool surface lands in milestone M1".to_owned(),
-        }),
+        EntryMode::Serve { headed } => crate::serve::run(settings, headed).await,
     }
 }
 
@@ -64,20 +61,5 @@ mod tests {
             .to_string(),
             "open"
         );
-    }
-
-    #[tokio::test]
-    async fn serve_is_honest_about_m1() {
-        let settings = Settings::resolve(
-            None,
-            Some(std::env::temp_dir().join("rutter-test-serve")),
-            Vec::new(),
-        )
-        .expect("settings");
-        let error = run(EntryMode::Serve { headed: false }, &settings)
-            .await
-            .expect_err("serve must stay unavailable in M0");
-        assert!(matches!(error, CliError::Unavailable { .. }));
-        assert!(error.to_string().contains("M1"));
     }
 }

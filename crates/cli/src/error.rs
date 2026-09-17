@@ -27,6 +27,13 @@ pub enum CliError {
         /// What is missing and when it is expected.
         reason: String,
     },
+
+    /// The MCP server transport failed.
+    #[error("mcp server failed: {message}")]
+    Server {
+        /// What went wrong with the transport or service.
+        message: String,
+    },
 }
 
 impl CliError {
@@ -35,6 +42,9 @@ impl CliError {
         match self {
             Self::Engine { source } => source.hint().to_owned(),
             Self::Unavailable { .. } => "track milestone M1 for the MCP server surface".to_owned(),
+            Self::Server { .. } => {
+                "check that stdin/stdout are connected and not owned by another process".to_owned()
+            }
         }
     }
 }
