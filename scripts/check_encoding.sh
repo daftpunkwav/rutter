@@ -6,7 +6,7 @@
 # skipped by git grep. The allowlist below reserves explicit exceptions
 # (open decision OD-1); it stays empty until the owner approves one.
 
-set -euo pipefail
+set -u
 cd "$(git rev-parse --show-toplevel)"
 export LC_ALL=C.UTF-8
 
@@ -21,9 +21,15 @@ for entry in "${allowlist[@]}"; do
   exclusions+=(":!$entry")
 done
 
-violations=$(git grep -nIP "$pattern" -- . "${exclusions[@]}" || true)
+violations=$(git grep -nIP "$pattern" -- . "${exclusions[@]}")
+status=$?
+# git grep: 0 = matches found, 1 = no matches, >= 2 = git grep itself failed.
+if [[ $status -ge 2 ]]; then
+  printf 'encoding gate: git grep failed (exit %s); PCRE support missing?\n' "$status" >&2
+  exit 1
+fi
 
-if [[ -n $violations ]]; then
+if [[ $status -eq 0 ]]; then
   printf 'encoding gate: CJK codepoints found in tracked files:\n' >&2
   printf '%s\n' "$violations" >&2
   exit 1

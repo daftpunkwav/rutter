@@ -1,10 +1,10 @@
 //! Stable handles to elements inside snapshots.
 //!
-//! Boundary: references are minted by the observation layer from engine
-//! backend node ids and stay usable across snapshots of the same page
-//! where possible. Callers treat them as opaque tokens passed back inside
-//! actions; resolution to a concrete node happens below, in the engine
-//! implementation.
+//! Boundary: references are minted by the page serializer's in-page
+//! counter (`docs/SNAPSHOT_SPEC.md` §4) and stay usable across snapshots
+//! of the same page; a navigation invalidates them. Callers treat them
+//! as opaque tokens passed back inside actions; resolution to a concrete
+//! node happens below, in the engine implementation.
 
 use std::fmt;
 

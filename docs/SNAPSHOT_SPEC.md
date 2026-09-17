@@ -76,10 +76,10 @@ reported as a single node without children).
 
 ## 4. Reference minting (v1)
 
-- The serializer keeps a per-page counter on `window` (`__rutterRefs`:
-  `WeakMap<Element, string>` plus an integer). An actionable element
-  receives `e<N>` the first time it is observed and keeps it for later
-  snapshots of the same page.
+- The serializer keeps a per-page store on `window`
+  (`__rutterRefStore`: a `WeakMap<Element, string>` plus an integer
+  counter). An actionable element receives `e<N>` the first time it is
+  observed and keeps it for later snapshots of the same page.
 - Actionable roles v1: `button`, `link`, `textbox`, `searchbox`,
   `checkbox`, `radio`, `combobox`, `listbox`, `option`, `menuitem`,
   `tab`, `slider`, `spinbutton`, `switch`, `treeitem`.

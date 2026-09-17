@@ -2,7 +2,7 @@
 //!
 //! Boundary: pure data plus its text rendering. Building a snapshot from
 //! a serialized DOM tree lives in `rutter-observe`; culling and folding
-//! policy is specified by `docs/SNAPSHOT_SPEC.md` once written. The text
+//! policy is specified by `docs/SNAPSHOT_SPEC.md`. The text
 //! rendering follows the Playwright-compatible YAML style, one node per
 //! line: `- button "Sign in" [ref=e17]`, children indented two spaces.
 

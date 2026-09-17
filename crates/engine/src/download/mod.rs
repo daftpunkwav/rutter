@@ -127,6 +127,9 @@ pub async fn ensure(
     let manifest_value = fetch::fetch_json(manifest::MANIFEST_URL).await?;
     let artifact = manifest::parse_stable_artifact(&manifest_value, product.name(), platform)?;
 
+    // Unreachable in a single process (the cache was already a miss),
+    // but a concurrent rutter may have installed this exact version
+    // while we fetched the manifest; reuse it instead of re-downloading.
     if let Some(installed) = store.installed(product.name())? {
         if installed.version == artifact.version {
             return Ok(installed);
@@ -134,7 +137,7 @@ pub async fn ensure(
     }
 
     eprintln!(
-        "rutter: downloading {} {} ({platform}); this happens once per version",
+        "rutter: downloading {} {} ({platform}); the cache pins it until cleared",
         product.name(),
         artifact.version
     );

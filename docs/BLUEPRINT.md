@@ -203,8 +203,8 @@ affected sessions with a clear error instead of thrashing).
 
 - **Format:** Playwright-compatible YAML-style accessibility tree,
   `- button "Sign in" [ref=e17]`. Agents already read this format; refs
-  map to engine backend node ids and stay stable across snapshots where
-  possible.
+  are minted by the page serializer and stay stable across snapshots of
+  the same page (`docs/SNAPSHOT_SPEC.md` §4).
 - **Mechanics:** a serializer script owned by `rutter-observe` (embedded
   JS asset) is evaluated in the page; it walks the composed DOM including
   shadow roots and reports a plain JSON tree. `observe::build` converts
