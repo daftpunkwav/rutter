@@ -106,8 +106,30 @@ impl ContextHandle for CdpContext {
         let serial = self.page_counter.fetch_add(1, Ordering::Relaxed);
         let page_id = PageId::new(format!("{}:page-{}", self.id, serial));
         let handle = Arc::new(CdpPage::new(page, self.config.navigation_timeout));
-        self.lock_pages()
-            .insert(page_id.clone(), Arc::clone(&handle));
+
+        // The cap protects the shared engine process, so it is re-checked
+        // under the lock that owns registration: a concurrent open may
+        // have slipped past the pre-check. The guard's scope must end
+        // before the awaits below (the future must stay `Send`).
+        let over_cap = {
+            let mut pages = self.lock_pages();
+            let over = pages.len() >= self.config.max_pages;
+            if !over {
+                pages.insert(page_id.clone(), Arc::clone(&handle));
+            }
+            over
+        };
+        if over_cap {
+            let target_id = handle.target_id();
+            let browser = self.browser.lock().await;
+            let _ = browser.execute(CloseTargetParams::new(target_id)).await;
+            return Err(EngineError::Capacity {
+                detail: format!(
+                    "context '{}' reached its cap of {} pages; close a page first",
+                    self.id, self.config.max_pages
+                ),
+            });
+        }
         Ok((page_id, handle))
     }
 
