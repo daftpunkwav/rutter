@@ -26,6 +26,7 @@ use crate::error;
 pub struct CdpLauncher {
     executable: PathBuf,
     backend: EngineBackend,
+    extra_args: Vec<String>,
 }
 
 impl CdpLauncher {
@@ -35,7 +36,15 @@ impl CdpLauncher {
         Self {
             executable,
             backend,
+            extra_args: Vec::new(),
         }
+    }
+
+    /// Passes arguments verbatim to the browser process, for example
+    /// `--no-sandbox` in root containers or a proxy flag.
+    pub fn with_extra_args(mut self, args: Vec<String>) -> Self {
+        self.extra_args = args;
+        self
     }
 }
 
@@ -47,6 +56,9 @@ impl EngineLauncher for CdpLauncher {
 
     async fn launch(&self, mode: LaunchMode) -> Result<Arc<dyn Engine>, EngineError> {
         let mut builder = BrowserConfig::builder().chrome_executable(&self.executable);
+        for argument in &self.extra_args {
+            builder = builder.arg(argument.clone());
+        }
         if mode == LaunchMode::Headed {
             builder = builder.with_head();
         }

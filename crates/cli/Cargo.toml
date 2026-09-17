@@ -17,7 +17,6 @@ rutter-engine = { workspace = true }
 rutter-engine-cdp = { workspace = true }
 rutter-observe = { workspace = true }
 clap = { workspace = true }
-dirs = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

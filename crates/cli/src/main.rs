@@ -40,6 +40,10 @@ struct Cli {
     /// Engine cache directory (default: OS cache dir + rutter).
     #[arg(long, global = true, value_name = "DIR", env = "RUTTER_CACHE_DIR")]
     cache_dir: Option<std::path::PathBuf>,
+
+    /// Extra argument passed to the engine process (repeatable).
+    #[arg(long = "engine-arg", global = true, value_name = "ARG")]
+    engine_args: Vec<String>,
 }
 
 /// Available subcommands; no subcommand selects browse mode.
@@ -66,9 +70,13 @@ fn main() -> ExitCode {
         Some(Command::Open { url }) => EntryMode::Open { url },
     };
 
-    let Ok(settings) = Settings::resolve(cli.engine_executable, cli.cache_dir) else {
-        eprintln!("rutter: cannot resolve settings; set RUTTER_CACHE_DIR to a writable path");
-        return ExitCode::FAILURE;
+    let settings = match Settings::resolve(cli.engine_executable, cli.cache_dir, cli.engine_args) {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("rutter: {error}");
+            eprintln!("rutter: hint - set RUTTER_CACHE_DIR to a writable path");
+            return ExitCode::FAILURE;
+        }
     };
 
     let runtime = match tokio::runtime::Runtime::new() {

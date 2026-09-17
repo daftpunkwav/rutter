@@ -32,15 +32,17 @@ Global flags (valid on every mode):
 |------|-------------|---------|
 | `--engine-executable <PATH>` | — | Use this browser binary; skips download and cache |
 | `--cache-dir <DIR>` | `RUTTER_CACHE_DIR` | Engine cache root (default: OS cache dir + `rutter`) |
+| `--engine-arg <ARG>` | — | Extra argument passed to the engine process (repeatable) |
 
 ### Engine acquisition
 
 On first use rutter resolves a browser binary in this order: an
 explicit `--engine-executable`, the engine cache, then the Chrome for
 Testing stable channel (headless shell for `open`, full Chrome for
-browse mode when no system browser is found). The download happens once
-per version; offline reuse of the cache always works. Browse mode
-prefers a system-installed Chrome or Edge when present.
+browse mode when no system browser is found). The download happens
+once; the cached version is reused until the cache directory is
+cleared, including offline. Browse mode prefers a system-installed
+Chrome or Edge when present.
 
 The engine is supervised: heartbeats detect a dead process, restarts
 use capped exponential backoff, and a sliding-window circuit breaker

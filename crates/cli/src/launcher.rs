@@ -17,10 +17,10 @@ use crate::config::Settings;
 /// Headless diagnostic (`open`) and MCP serving use the headless shell.
 pub async fn headless_launcher(settings: &Settings) -> Result<CdpLauncher, EngineError> {
     let executable = explicit_or(settings, Product::ChromeHeadlessShell).await?;
-    Ok(CdpLauncher::new(
-        executable,
-        EngineBackend::ChromiumHeadlessShell,
-    ))
+    Ok(
+        CdpLauncher::new(executable, EngineBackend::ChromiumHeadlessShell)
+            .with_extra_args(settings.extra_engine_args.clone()),
+    )
 }
 
 /// Browse mode needs a visible window: an explicit binary wins, then a
@@ -34,7 +34,8 @@ pub async fn headed_launcher(settings: &Settings) -> Result<CdpLauncher, EngineE
         let installed = ensure(Product::Chrome, &settings.cache_root, None).await?;
         installed.executable
     };
-    Ok(CdpLauncher::new(executable, EngineBackend::Chromium))
+    Ok(CdpLauncher::new(executable, EngineBackend::Chromium)
+        .with_extra_args(settings.extra_engine_args.clone()))
 }
 
 /// Resolves the executable for the mode's default product, honoring an

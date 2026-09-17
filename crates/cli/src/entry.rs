@@ -68,9 +68,12 @@ mod tests {
 
     #[tokio::test]
     async fn serve_is_honest_about_m1() {
-        let settings =
-            Settings::resolve(None, Some(std::env::temp_dir().join("rutter-test-serve")))
-                .expect("settings");
+        let settings = Settings::resolve(
+            None,
+            Some(std::env::temp_dir().join("rutter-test-serve")),
+            Vec::new(),
+        )
+        .expect("settings");
         let error = run(EntryMode::Serve { headed: false }, &settings)
             .await
             .expect_err("serve must stay unavailable in M0");

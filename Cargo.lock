@@ -1404,7 +1404,6 @@ name = "rutter"
 version = "0.1.0"
 dependencies = [
  "clap",
- "dirs",
  "rutter-core",
  "rutter-engine",
  "rutter-engine-cdp",

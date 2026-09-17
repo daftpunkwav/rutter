@@ -20,6 +20,8 @@ pub struct Settings {
     pub engine_executable: Option<PathBuf>,
     /// Root of the engine cache (default: OS cache dir + `rutter`).
     pub cache_root: PathBuf,
+    /// Arguments passed verbatim to the engine process.
+    pub extra_engine_args: Vec<String>,
     /// Deadline for one navigation.
     pub navigation_timeout: Duration,
 }
@@ -29,6 +31,7 @@ impl Settings {
     pub fn resolve(
         engine_executable: Option<PathBuf>,
         cache_dir: Option<PathBuf>,
+        extra_engine_args: Vec<String>,
     ) -> Result<Self, EngineError> {
         let cache_root = match cache_dir {
             Some(dir) => dir,
@@ -37,6 +40,7 @@ impl Settings {
         Ok(Self {
             engine_executable,
             cache_root,
+            extra_engine_args,
             navigation_timeout: DEFAULT_NAVIGATION_TIMEOUT,
         })
     }
@@ -51,6 +55,7 @@ mod tests {
         let settings = Settings::resolve(
             Some(PathBuf::from("browser.exe")),
             Some(PathBuf::from("cache")),
+            Vec::new(),
         )
         .expect("resolve");
         assert_eq!(
