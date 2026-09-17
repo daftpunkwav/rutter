@@ -1,0 +1,24 @@
+# rutter-session: orchestration of actions, contexts, and pages.
+
+[package]
+name = "rutter-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Session orchestration for rutter: contexts, pages, actions, auto-wait"
+
+[lints]
+workspace = true
+
+[dependencies]
+rutter-core = { workspace = true }
+rutter-engine = { workspace = true }
+rutter-events = { workspace = true }
+rutter-observe = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,8 +1,8 @@
 //! Error surface of the CLI with agent- and human-readable hints.
 //!
 //! Boundary: presentation-level error folding. Engine errors keep their
-//! identities; the CLI adds the actionable hint and decides nothing
-//! about retry semantics.
+//! identities and hints (defined with the error itself in
+//! `rutter-engine`); the CLI adds only the mode-unavailable case.
 
 use thiserror::Error;
 
@@ -33,30 +33,7 @@ impl CliError {
     /// Returns an actionable, English hint for the failure.
     pub fn hint(&self) -> String {
         match self {
-            Self::Engine { source } => match source {
-                EngineError::NavigationFailed { .. } => {
-                    "re-check that the URL is spelled correctly and reachable                      from this machine, then retry"
-                        .to_owned()
-                }
-                EngineError::DownloadFailed { .. } => {
-                    "set --engine-executable to an existing browser binary, \
-                     or --cache-dir to a writable directory and retry"
-                        .to_owned()
-                }
-                EngineError::LaunchFailed { .. } => {
-                    "verify the browser binary runs on its own; pass a \
-                     different one via --engine-executable if needed"
-                        .to_owned()
-                }
-                EngineError::Timeout { .. } => {
-                    "the target page was slow; retry, or check the URL in a \
-                     normal browser"
-                        .to_owned()
-                }
-                _ => "inspect the error above; most engine failures are \
-                      transient and a retry is safe"
-                    .to_owned(),
-            },
+            Self::Engine { source } => source.hint().to_owned(),
             Self::Unavailable { .. } => "track milestone M1 for the MCP server surface".to_owned(),
         }
     }
@@ -74,7 +51,7 @@ mod tests {
             },
             CliError::Unavailable {
                 mode: "serve".to_owned(),
-                reason: "M1".to_owned(),
+                reason: "partially shipped: stdio serves in M1".to_owned(),
             },
         ];
         for error in &errors {

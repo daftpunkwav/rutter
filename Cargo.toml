@@ -10,6 +10,7 @@ members = [
     "crates/engine-cdp",
     "crates/events",
     "crates/observe",
+    "crates/session",
 ]
 
 [workspace.package]
@@ -24,6 +25,7 @@ rutter-engine = { path = "crates/engine" }
 rutter-engine-cdp = { path = "crates/engine-cdp" }
 rutter-events = { path = "crates/events" }
 rutter-observe = { path = "crates/observe" }
+rutter-session = { path = "crates/session" }
 async-trait = "0.1"
 clap = { version = "4", features = ["derive", "env"] }
 dirs = "6"

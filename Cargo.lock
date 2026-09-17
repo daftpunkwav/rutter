@@ -1490,6 +1490,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rutter-session"
+version = "0.1.0"
+dependencies = [
+ "rutter-core",
+ "rutter-engine",
+ "rutter-events",
+ "rutter-observe",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"

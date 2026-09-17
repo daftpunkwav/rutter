@@ -73,3 +73,36 @@ pub enum EngineError {
         detail: String,
     },
 }
+
+impl EngineError {
+    /// Returns an actionable, English hint for the failure; every
+    /// surface that reports engine errors shows it next to the message.
+    pub fn hint(&self) -> &'static str {
+        match self {
+            Self::NavigationFailed { .. } => {
+                "re-check that the URL is spelled correctly and reachable from \
+                 this machine, then retry"
+            }
+            Self::DownloadFailed { .. } => {
+                "set --engine-executable to an existing browser binary, or \
+                 --cache-dir to a writable directory and retry"
+            }
+            Self::LaunchFailed { .. } => {
+                "verify the browser binary runs on its own; pass a different \
+                 one via --engine-executable if needed"
+            }
+            Self::Timeout { .. } => {
+                "the target page was slow; retry, or check the URL in a normal \
+                 browser"
+            }
+            Self::Capacity { .. } => {
+                "close a page or context before opening more; the caps protect \
+                 the shared engine process"
+            }
+            _ => {
+                "inspect the error above; most engine failures are transient and \
+                 a retry is safe"
+            }
+        }
+    }
+}
