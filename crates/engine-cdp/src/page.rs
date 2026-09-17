@@ -6,7 +6,8 @@
 //! Chromiumoxide types are implementation details and never appear in
 //! the public `rutter-engine` trait signatures.
 
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use chromiumoxide::Page;
@@ -27,14 +28,24 @@ use crate::error::{self, COMMAND_TIMEOUT, fold, fold_navigation, with_deadline, 
 pub struct CdpPage {
     page: Page,
     navigation_timeout: Duration,
+    /// Minimum interval between captures, from the context caps; `None`
+    /// disables the rate limit.
+    screenshot_min_interval: Option<Duration>,
+    last_capture: Mutex<Option<Instant>>,
 }
 
 impl CdpPage {
     /// Creates a handle over a chromiumoxide page.
-    pub fn new(page: Page, navigation_timeout: Duration) -> Self {
+    pub fn new(
+        page: Page,
+        navigation_timeout: Duration,
+        screenshot_min_interval: Option<Duration>,
+    ) -> Self {
         Self {
             page,
             navigation_timeout,
+            screenshot_min_interval,
+            last_capture: Mutex::new(None),
         }
     }
 
@@ -120,6 +131,27 @@ impl rutter_engine::page::PageHandle for CdpPage {
     }
 
     async fn capture_screenshot(&self) -> Result<Screenshot, EngineError> {
+        // Enforce the context's capture-rate cap so one caller cannot
+        // flood the engine with captures.
+        if let Some(min_interval) = self.screenshot_min_interval {
+            let due = {
+                let mut last = self
+                    .last_capture
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let wait = match *last {
+                    Some(at) => min_interval.saturating_sub(at.elapsed()),
+                    None => Duration::ZERO,
+                };
+                *last = Some(Instant::now() + wait);
+                Instant::now() + wait
+            };
+            let now = Instant::now();
+            if due > now {
+                tokio::time::sleep(due - now).await;
+            }
+        }
+
         let data = with_deadline(
             "screenshot",
             COMMAND_TIMEOUT,

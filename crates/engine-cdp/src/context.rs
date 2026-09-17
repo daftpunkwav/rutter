@@ -105,7 +105,11 @@ impl ContextHandle for CdpContext {
 
         let serial = self.page_counter.fetch_add(1, Ordering::Relaxed);
         let page_id = PageId::new(format!("{}:page-{}", self.id, serial));
-        let handle = Arc::new(CdpPage::new(page, self.config.navigation_timeout));
+        let handle = Arc::new(CdpPage::new(
+            page,
+            self.config.navigation_timeout,
+            Some(self.config.screenshot_min_interval),
+        ));
 
         // The cap protects the shared engine process, so it is re-checked
         // under the lock that owns registration: a concurrent open may
@@ -141,7 +145,9 @@ impl ContextHandle for CdpContext {
     }
 
     async fn close_page(&self, id: PageId) -> Result<(), EngineError> {
-        let handle = self.lock_pages().remove(&id);
+        // Close the target first: on failure the page stays registered
+        // and the close can be retried; only a confirmed close removes it.
+        let handle = self.lock_pages().get(&id).cloned();
         let Some(handle) = handle else {
             return Ok(());
         };
@@ -153,6 +159,7 @@ impl ContextHandle for CdpContext {
             browser.execute(CloseTargetParams::new(target_id)),
         )
         .await?;
+        self.lock_pages().remove(&id);
         Ok(())
     }
 }
