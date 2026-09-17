@@ -56,6 +56,24 @@ use capped exponential backoff, and a sliding-window circuit breaker
 stops restart storms — a crashed engine surfaces as an error on
 affected operations, never as a crash of rutter.
 
+## Installation
+
+From source (requires Rust 1.85+):
+
+```sh
+cargo install --path crates/cli
+```
+
+Release archives for Windows (msvc), macOS (x64/arm64), and Linux
+(x64) are attached to GitHub releases by cargo-dist; see
+[`.github/workflows/release.yml`](.github/workflows/release.yml). The
+browser engine itself is not bundled — rutter downloads Chrome for
+Testing into its cache on first use (or point `--engine-executable`
+at an existing binary).
+
+Contributions follow [`CONTRIBUTING.md`](CONTRIBUTING.md); the
+architecture map is [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## Repository layout
 
 ```
