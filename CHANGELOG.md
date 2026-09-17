@@ -13,3 +13,12 @@ and the project adheres to
   `rutter-observe`, and the `rutter` CLI crate.
 - Quality-gate scripts (header gate, encoding gate), a CI workflow, and
   supply-chain configuration for cargo-deny.
+- Snapshot specification (`docs/SNAPSHOT_SPEC.md`) and a snapshot
+  builder with depth budget, sibling folding, viewport-first culling,
+  and a hard character budget.
+- Engine binary downloader for Chrome for Testing products (manifest,
+  cache, retries) with system-browser discovery for headed runs.
+- Engine supervisor: heartbeat health probes, capped-backoff restarts,
+  and a sliding-window circuit breaker.
+- CDP engine backend on chromiumoxide with an `#[ignore]`d integration
+  suite, wired into `rutter open` (snapshot to stdout) and browse mode.
