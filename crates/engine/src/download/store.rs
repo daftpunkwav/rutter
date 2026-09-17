@@ -136,13 +136,23 @@ impl EngineStore {
                 ),
             })?;
         }
-        fs::rename(&staging, &final_dir).map_err(|error| EngineError::DownloadFailed {
-            detail: format!(
-                "cannot move engine into place {} -> {}: {error}",
-                staging.display(),
-                final_dir.display()
-            ),
-        })?;
+        if let Err(error) = fs::rename(&staging, &final_dir) {
+            let _ = fs::remove_dir_all(&staging);
+            // Another process may have installed the same version while
+            // we extracted; a winning race is as good as our own install.
+            if let Ok(Some(installed)) = self.installed(product) {
+                if installed.version == version {
+                    return Ok(installed);
+                }
+            }
+            return Err(EngineError::DownloadFailed {
+                detail: format!(
+                    "cannot move engine into place {} -> {}: {error}",
+                    staging.display(),
+                    final_dir.display()
+                ),
+            });
+        }
 
         Ok(InstalledEngine {
             product: product.to_owned(),
