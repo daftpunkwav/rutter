@@ -1,0 +1,41 @@
+# Release publishing: cargo-dist builds and attaches archives when a
+# release is tagged (blueprint §10, M3). Generated following the
+# cargo-dist workflow template, trimmed to this repository's targets.
+
+name: release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  # Build the artifacts for every target and upload them to the
+  # GitHub release draft.
+  upload-assets:
+    name: build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/github-actions/install-rust-dist@v1
+      - name: Build archives and installers
+        run: cargo dist build --target=${{ matrix.target }} --output-format=json
+      - name: Upload dist artifacts to the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo dist upload-artifacts --target=${{ matrix.target }}

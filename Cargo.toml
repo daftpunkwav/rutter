@@ -22,6 +22,22 @@ edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
 
+# Packaging via cargo-dist (blueprint §10, M3): `cargo dist build`
+# produces the rutter binary archives; tagging a release triggers the
+# publish workflow. The engine is not bundled — rutter downloads the
+# Chrome for Testing binary into its cache on first use.
+[dist]
+cargo-dist-version = "0.28.0"
+ci = ["github"]
+installers = ["shell", "powershell"]
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+]
+pr-run-mode = "skip"
+
 [workspace.dependencies]
 rutter-core = { path = "crates/core" }
 rutter-dashboard = { path = "crates/dashboard" }
