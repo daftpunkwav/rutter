@@ -530,7 +530,7 @@ pub struct CookiesParams {
 fn snapshot_result(snapshot: &rutter_core::snapshot::Snapshot) -> CallToolResult {
     let mut text = snapshot.to_string();
     if snapshot.truncated {
-        text.push_str("... truncated\n");
+        text.push_str("… truncated\n");
     }
     CallToolResult::success(vec![ContentBlock::text(text)])
 }
