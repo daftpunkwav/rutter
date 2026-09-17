@@ -32,7 +32,8 @@ rutter-mcp = { path = "crates/mcp" }
 rutter-observe = { path = "crates/observe" }
 rutter-policy = { path = "crates/policy" }
 rutter-session = { path = "crates/session" }
-rmcp = { version = "3.4", features = ["server", "client", "macros", "transport-io", "transport-child-process"] }
+axum = { version = "0.8", features = ["ws"] }
+rmcp = { version = "3.4", features = ["server", "client", "macros", "transport-io", "transport-child-process", "transport-streamable-http-server", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
 async-trait = "0.1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }

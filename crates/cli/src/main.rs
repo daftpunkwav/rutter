@@ -53,6 +53,11 @@ struct Cli {
     /// Enable the supervision dashboard on 127.0.0.1:PORT (serve mode).
     #[arg(long, global = true, value_name = "PORT")]
     dashboard: Option<u16>,
+
+    /// Serve MCP over streamable HTTP at ADDR instead of stdio
+    /// (serve mode), for example 127.0.0.1:9800.
+    #[arg(long, global = true, value_name = "ADDR")]
+    http: Option<std::net::SocketAddr>,
 }
 
 /// Available subcommands; no subcommand selects browse mode.
@@ -112,7 +117,7 @@ fn main() -> ExitCode {
         }
     });
 
-    match runtime.block_on(entry::run(mode, &settings, policy, cli.dashboard)) {
+    match runtime.block_on(entry::run(mode, &settings, policy, cli.dashboard, cli.http)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("rutter: {error}");

@@ -1,8 +1,9 @@
-//! `rutter serve`: the MCP server over stdio.
+//! `rutter serve`: the MCP server over stdio or streamable HTTP.
 //!
-//! Boundary: one stdio connection is one session; the engine starts
-//! lazily on the first tool call (TOOL_SPEC §1). Nothing on stdout is
-//! written by rutter itself while serving — the protocol owns it.
+//! Boundary: one connection is one session; the engine starts lazily on
+//! the first tool call through [`launcher::LazyLauncher`], so the server
+//! is MCP-ready before any engine I/O (blueprint §8.5, TOOL_SPEC §1).
+//! stdio owns stdout — nothing else writes to it while serving.
 
 use std::sync::Arc;
 
@@ -18,31 +19,28 @@ use crate::config::Settings;
 use crate::error::CliError;
 use crate::launcher;
 
-/// Serves MCP over stdio until the client disconnects; the dashboard
-/// (optional port) and the policy file (optional TOML) attach here.
+/// Serves MCP until the client disconnects. Transports are mutually
+/// exclusive: `--http ADDR` serves streamable HTTP, anything else
+/// speaks stdio. The dashboard (optional port) and the policy file
+/// (optional TOML) attach here.
 pub async fn run(
     settings: &Settings,
     headed: bool,
     policy: Option<rutter_policy::RuleSet>,
     dashboard_port: Option<u16>,
+    http_addr: Option<std::net::SocketAddr>,
 ) -> Result<(), CliError> {
-    let launcher = if headed {
-        launcher::headed_launcher(settings).await?
-    } else {
-        launcher::headless_launcher(settings).await?
-    };
-    let mode = if headed {
-        LaunchMode::Headed
-    } else {
-        LaunchMode::Headless
-    };
     // Policy: the built-in conservative set unless a --policy TOML file
     // overrides it per deployment. Storage states persist under the
     // cache root (blueprint §7.4).
     let state_dir = Some(settings.cache_root.join("sessions"));
     let manager = Arc::new(SessionManager::new(
-        Arc::new(launcher),
-        mode,
+        Arc::new(launcher::LazyLauncher::new(settings.clone(), headed)),
+        if headed {
+            LaunchMode::Headed
+        } else {
+            LaunchMode::Headless
+        },
         SessionConfig::default(),
         Arc::new(policy.unwrap_or_else(RuleSet::default_set)),
         Arc::new(ApprovalBroker::new()),
@@ -59,17 +57,22 @@ pub async fn run(
         });
     }
 
-    let session_id = SessionId::new(format!("stdio-{}", std::process::id()));
-    let server = RutterMcp::new(Arc::clone(&manager), session_id);
-    let running = server
-        .serve(rmcp::transport::stdio())
-        .await
-        .map_err(|error| CliError::Server {
+    if let Some(addr) = http_addr {
+        rutter_mcp::http::serve_http(manager, addr)
+            .await
+            .map_err(|message| CliError::Server { message })
+    } else {
+        let session_id = SessionId::new(format!("stdio-{}", std::process::id()));
+        let server = RutterMcp::new(manager, session_id);
+        let running = server
+            .serve(rmcp::transport::stdio())
+            .await
+            .map_err(|error| CliError::Server {
+                message: error.to_string(),
+            })?;
+        running.waiting().await.map_err(|error| CliError::Server {
             message: error.to_string(),
         })?;
-    running.waiting().await.map_err(|error| CliError::Server {
-        message: error.to_string(),
-    })?;
-    manager.shutdown().await;
-    Ok(())
+        Ok(())
+    }
 }

@@ -12,6 +12,7 @@ description = "Headless browser orchestration service for AI agents"
 workspace = true
 
 [dependencies]
+async-trait = { workspace = true }
 rutter-core = { workspace = true }
 rutter-dashboard = { workspace = true }
 rutter-engine = { workspace = true }

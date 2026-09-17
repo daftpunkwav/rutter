@@ -10,6 +10,7 @@
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod http;
 pub mod server;
 
 pub use server::RutterMcp;
