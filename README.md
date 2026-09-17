@@ -7,11 +7,14 @@ snapshots) instead of pixels, executes typed actions with deterministic
 semantics, and offers a local supervision dashboard with human approval
 for sensitive operations.
 
-Status: milestone M0 works end to end — `rutter open` navigates and
-prints snapshots through a real Chrome for Testing engine. The MCP
-server surface is milestone M1. The canonical architecture reference is
-[`docs/BLUEPRINT.md`](docs/BLUEPRINT.md); the snapshot contract is
-[`docs/SNAPSHOT_SPEC.md`](docs/SNAPSHOT_SPEC.md).
+Status: milestones M0 and M1 work end to end — `rutter open` prints
+snapshots, and `rutter serve` speaks MCP over stdio with the full tool
+surface (navigate, snapshot, click, type, tabs, cookies, ...) against a
+real, supervised Chrome for Testing engine. The supervision dashboard
+and policy approvals are milestone M2. The canonical architecture
+reference is [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md); contracts:
+[`docs/SNAPSHOT_SPEC.md`](docs/SNAPSHOT_SPEC.md) and
+[`docs/TOOL_SPEC.md`](docs/TOOL_SPEC.md).
 
 ## Usage
 
@@ -19,11 +22,12 @@ server surface is milestone M1. The canonical architecture reference is
 # One-shot diagnostic: navigate and print a YAML snapshot to stdout.
 rutter open https://example.com
 
+# MCP server over stdio: connect any MCP client (engine headless;
+# --headed runs a visible window instead).
+rutter serve
+
 # Browse mode (no subcommand): a headed engine window you drive by hand.
 rutter
-
-# MCP server: milestone M1; reports itself as unavailable for now.
-rutter serve --headed
 ```
 
 Global flags (valid on every mode):
@@ -64,12 +68,15 @@ rutter/
 | `rutter-core` | Shared domain vocabulary: actions, snapshots, references, errors |
 | `rutter-engine` | Engine and page traits, binary downloader, supervisor |
 | `rutter-engine-cdp` | The only crate that speaks CDP (chromiumoxide) |
-| `rutter-observe` | In-page serializer plus the snapshot builder |
+| `rutter-observe` | In-page scripts plus the snapshot builder |
+| `rutter-events` | Typed event backbone: bus, ring buffers, replay |
+| `rutter-session` | Orchestration: contexts, pages, actions, auto-wait |
+| `rutter-mcp` | MCP tool surface (rmcp) |
 | `rutter` (cli) | Binary entry modes: browse, serve, open |
 
-Further crates (`rutter-events`, `rutter-policy`, `rutter-session`,
-`rutter-mcp`, `rutter-dashboard`) materialize with the milestone that
-needs them; empty crates are forbidden by the blueprint (§10).
+Further crates (`rutter-policy`, `rutter-dashboard`) materialize with
+the milestone that needs them; empty crates are forbidden by the
+blueprint (§10).
 
 ## Development
 
@@ -95,6 +102,7 @@ fills):
 
 ```sh
 cargo test -p rutter-engine-cdp --test integration -- --ignored
+cargo test -p rutter --test mcp_e2e -- --ignored
 ```
 
 `scripts/smoke_open.sh` runs the M0 acceptance corpus (10 real sites)

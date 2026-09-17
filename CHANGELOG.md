@@ -22,3 +22,12 @@ and the project adheres to
   and a sliding-window circuit breaker.
 - CDP engine backend on chromiumoxide with an `#[ignore]`d integration
   suite, wired into `rutter open` (snapshot to stdout) and browse mode.
+- MCP server over stdio (`rutter serve`) on rmcp: the full TOOL_SPEC
+  tool surface — navigate, history, snapshot, screenshot, click, hover,
+  type, press_key, select_option, scroll, wait_for, tabs, cookies,
+  close_session — with three-phase auto-wait and snapshot-after-action
+  semantics.
+- Typed event backbone (bus, per-session ring buffers, replay) and
+  session orchestration (`rutter-session`).
+- End-to-end acceptance tests driving `rutter serve` over stdio with an
+  MCP client against the real engine.
