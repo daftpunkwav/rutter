@@ -1,10 +1,11 @@
 //! The session manager: one supervised engine, many client sessions.
 //!
-//! Boundary: session lifecycle and engine ownership. The engine starts
-//! lazily on the first session request (blueprint §8.5) and shuts down
-//! when the manager does; per-session state beyond pages (cookies,
-//! storage) persists only as far as the engine process in M1 — storage
-//! state replay is M2.
+//! Boundary: session lifecycle, engine ownership, and supervision
+//! wiring. The engine starts lazily on the first session request
+//! (blueprint §8.5) and shuts down when the manager does; every session
+//! evaluates the shared policy and parks approvals on the shared broker
+//! (blueprint §7.6). Storage state replay across engine restarts is
+//! wired by the recovery module.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -15,6 +16,7 @@ use rutter_engine::engine::Engine;
 use rutter_engine::error::EngineError;
 use rutter_engine::supervisor::{EngineLauncher, Supervisor};
 use rutter_events::{Backbone, Event};
+use rutter_policy::{ApprovalBroker, RuleSet};
 
 use crate::config::SessionConfig;
 use crate::session::Session;
@@ -32,6 +34,8 @@ pub struct SessionManager {
     launcher: Arc<dyn EngineLauncher>,
     mode: LaunchMode,
     config: SessionConfig,
+    policy: Arc<RuleSet>,
+    broker: Arc<ApprovalBroker>,
     /// The async mutex is deliberate: starting the engine and creating
     /// contexts await, and concurrent session requests must serialize on
     /// one engine.
@@ -40,13 +44,26 @@ pub struct SessionManager {
 
 impl SessionManager {
     /// Creates a manager; nothing starts until the first session.
-    pub fn new(launcher: Arc<dyn EngineLauncher>, mode: LaunchMode, config: SessionConfig) -> Self {
+    pub fn new(
+        launcher: Arc<dyn EngineLauncher>,
+        mode: LaunchMode,
+        config: SessionConfig,
+        policy: Arc<RuleSet>,
+        broker: Arc<ApprovalBroker>,
+    ) -> Self {
         Self {
             launcher,
             mode,
             config,
+            policy,
+            broker,
             running: tokio::sync::Mutex::new(None),
         }
+    }
+
+    /// The approval broker human decisions go to (dashboard policy API).
+    pub fn broker(&self) -> Arc<ApprovalBroker> {
+        Arc::clone(&self.broker)
     }
 
     /// Returns the session for `id`, starting the engine and creating
@@ -87,6 +104,8 @@ impl SessionManager {
             context,
             Arc::clone(&running.backbone),
             self.config.clone(),
+            Arc::clone(&self.policy),
+            Arc::clone(&self.broker),
         ));
         running.sessions.insert(id.clone(), Arc::clone(&session));
         running.backbone.publish(id, Event::SessionStarted);

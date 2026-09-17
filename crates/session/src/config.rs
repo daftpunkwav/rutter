@@ -25,6 +25,9 @@ pub struct SessionConfig {
     pub wait_for_budget: Duration,
     /// Poll interval for auto-wait phases and `wait_for`.
     pub poll_interval: Duration,
+    /// Window a human has to answer an approval request
+    /// (blueprint §7.6: default 120 s).
+    pub approval_timeout: Duration,
 }
 
 impl SessionConfig {
@@ -48,6 +51,7 @@ impl Default for SessionConfig {
             settle: Duration::from_millis(250),
             wait_for_budget: Duration::from_secs(10),
             poll_interval: Duration::from_millis(100),
+            approval_timeout: Duration::from_secs(120),
         }
     }
 }

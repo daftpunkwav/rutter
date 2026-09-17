@@ -75,6 +75,22 @@ pub enum Event {
         /// Why the action failed.
         error: ActionError,
     },
+    /// Policy parked an action until a human decides.
+    ApprovalRequested {
+        /// Broker-minted identifier humans answer with.
+        request_id: String,
+        /// Page the parked action targets.
+        page: PageId,
+        /// The parked action.
+        action: Action,
+    },
+    /// A human answered (or the window timed out).
+    ApprovalResolved {
+        /// Identifier of the resolved request.
+        request_id: String,
+        /// Whether the action may proceed.
+        granted: bool,
+    },
 }
 
 #[cfg(test)]

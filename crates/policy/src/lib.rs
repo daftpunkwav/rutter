@@ -24,7 +24,7 @@ pub mod config;
 pub mod pattern;
 pub mod rules;
 
-pub use broker::{ApprovalBroker, ApprovalId, Decision};
+pub use broker::{ApprovalBroker, ApprovalId, ApprovalOutcome, Decision};
 pub use class::{ActionClass, class_of};
 pub use config::parse_policy;
 pub use pattern::Pattern;

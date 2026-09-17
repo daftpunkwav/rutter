@@ -272,6 +272,17 @@ pub(crate) struct PageOps<'a> {
 }
 
 impl PageOps<'_> {
+    /// Reads the page's current URL; degrades to `about:blank` when the
+    /// page does not answer.
+    pub async fn url(&self) -> String {
+        self.page
+            .evaluate("location.href")
+            .await
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .unwrap_or_else(|| "about:blank".to_owned())
+    }
+
     /// Renders the current page as a snapshot.
     pub async fn snapshot(&self) -> Result<Snapshot, SessionError> {
         let url = self

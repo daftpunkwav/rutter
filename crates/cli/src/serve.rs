@@ -10,6 +10,7 @@ use rmcp::ServiceExt;
 use rutter_core::ids::SessionId;
 use rutter_engine::config::LaunchMode;
 use rutter_mcp::RutterMcp;
+use rutter_policy::{ApprovalBroker, RuleSet};
 use rutter_session::SessionConfig;
 use rutter_session::manager::SessionManager;
 
@@ -29,10 +30,14 @@ pub async fn run(settings: &Settings, headed: bool) -> Result<(), CliError> {
     } else {
         LaunchMode::Headless
     };
+    // Policy: the built-in conservative set; a --policy TOML file can
+    // override it per deployment.
     let manager = Arc::new(SessionManager::new(
         Arc::new(launcher),
         mode,
         SessionConfig::default(),
+        Arc::new(RuleSet::default_set()),
+        Arc::new(ApprovalBroker::new()),
     ));
 
     let session_id = SessionId::new(format!("stdio-{}", std::process::id()));

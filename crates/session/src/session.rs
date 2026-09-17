@@ -19,6 +19,7 @@ use rutter_engine::context::ContextHandle;
 use rutter_engine::error::EngineError;
 use rutter_engine::page::{PageHandle, Screenshot};
 use rutter_events::{Backbone, Event};
+use rutter_policy::{ActionClass, ApprovalBroker, ApprovalOutcome, RuleSet, Verdict};
 
 use crate::actions::{Executor, PageOps};
 use crate::config::SessionConfig;
@@ -41,6 +42,8 @@ pub struct Session {
     context: Arc<dyn ContextHandle>,
     backbone: Arc<Backbone>,
     config: SessionConfig,
+    policy: Arc<RuleSet>,
+    broker: Arc<ApprovalBroker>,
     active: Mutex<Option<ActivePage>>,
 }
 
@@ -56,13 +59,79 @@ impl Session {
         context: Arc<dyn ContextHandle>,
         backbone: Arc<Backbone>,
         config: SessionConfig,
+        policy: Arc<RuleSet>,
+        broker: Arc<ApprovalBroker>,
     ) -> Self {
         Self {
             id,
             context,
             backbone,
             config,
+            policy,
+            broker,
             active: Mutex::new(None),
+        }
+    }
+
+    /// The approval broker decisions are submitted to.
+    pub fn broker(&self) -> Arc<ApprovalBroker> {
+        Arc::clone(&self.broker)
+    }
+
+    /// Enforces the policy for one operation against `url`: `Allow`
+    /// passes, `Deny` fails with `ApprovalDenied`, and
+    /// `RequireApproval` publishes the request and parks until a human
+    /// answers or the window closes (blueprint §7.6).
+    async fn enforce_policy(
+        &self,
+        class: ActionClass,
+        url: &str,
+        page_id: &PageId,
+        action: &Action,
+    ) -> Result<(), SessionError> {
+        match self.policy.evaluate(class, url) {
+            Verdict::Allow => return Ok(()),
+            Verdict::Deny => {
+                return Err(SessionError::Action(ActionError::ApprovalDenied {
+                    reference: action_reference(action),
+                }));
+            }
+            Verdict::RequireApproval => {}
+        }
+
+        let denied = || {
+            SessionError::Action(ActionError::ApprovalDenied {
+                reference: action_reference(action),
+            })
+        };
+
+        let (request_id, receiver) = self.broker.open();
+        self.backbone.publish(
+            self.id.clone(),
+            Event::ApprovalRequested {
+                request_id: request_id.as_str().to_owned(),
+                page: page_id.clone(),
+                action: action.clone(),
+            },
+        );
+        let outcome = self
+            .broker
+            .wait(&request_id, receiver, self.config.approval_timeout)
+            .await;
+        let granted = outcome == ApprovalOutcome::Granted;
+        self.backbone.publish(
+            self.id.clone(),
+            Event::ApprovalResolved {
+                request_id: request_id.as_str().to_owned(),
+                granted,
+            },
+        );
+        match outcome {
+            ApprovalOutcome::Granted => Ok(()),
+            ApprovalOutcome::Denied => Err(denied()),
+            ApprovalOutcome::TimedOut => Err(SessionError::Action(ActionError::ApprovalTimedOut {
+                waited: self.config.approval_timeout,
+            })),
         }
     }
 
@@ -102,6 +171,21 @@ impl Session {
     /// snapshot; requested/completed/failed land on the event backbone.
     pub async fn execute(&self, action: Action, origin: Origin) -> Result<Snapshot, SessionError> {
         let (page_id, page) = self.active_page().await.map_err(engine_error)?;
+
+        // Supervision gate (blueprint §7.6): agent-origin actions are
+        // evaluated against the current page URL; human-origin actions
+        // bypass approval and are recorded identically.
+        if origin == Origin::Agent {
+            let url = PageOps {
+                page: page.as_ref(),
+                config: &self.config,
+            }
+            .url()
+            .await;
+            self.enforce_policy(rutter_policy::class_of(&action), &url, &page_id, &action)
+                .await?;
+        }
+
         self.backbone.publish(
             self.id.clone(),
             Event::ActionRequested {
@@ -241,8 +325,20 @@ impl Session {
         Ok(format!("closed {page_id}"))
     }
 
-    /// Sets cookies on the session's context.
+    /// Sets cookies on the session's context, subject to the policy's
+    /// `cookies` class rules (approval-required by default). Policy
+    /// events carry `Reload` as the closest action payload since cookie
+    /// changes have no `Action` variant.
     pub async fn set_cookies(&self, cookies: &[Cookie]) -> Result<(), SessionError> {
+        let (page_id, page) = self.active_page().await.map_err(engine_error)?;
+        let url = PageOps {
+            page: page.as_ref(),
+            config: &self.config,
+        }
+        .url()
+        .await;
+        self.enforce_policy(ActionClass::Cookies, &url, &page_id, &Action::Reload)
+            .await?;
         self.context
             .set_cookies(cookies)
             .await
@@ -262,6 +358,22 @@ impl Session {
         self.active
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// The reference an approval denial names; actions without a target
+/// element use an empty reference.
+fn action_reference(action: &Action) -> rutter_core::reference::Reference {
+    match action {
+        Action::Click { reference }
+        | Action::Hover { reference }
+        | Action::Type { reference, .. }
+        | Action::SelectOption { reference, .. } => reference.clone(),
+        Action::Scroll {
+            reference: Some(reference),
+            ..
+        } => reference.clone(),
+        _ => rutter_core::reference::Reference::new(""),
     }
 }
 

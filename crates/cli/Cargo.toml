@@ -17,6 +17,7 @@ rutter-engine = { workspace = true }
 rutter-engine-cdp = { workspace = true }
 rutter-mcp = { workspace = true }
 rutter-observe = { workspace = true }
+rutter-policy = { workspace = true }
 rutter-session = { workspace = true }
 rmcp = { workspace = true }
 clap = { workspace = true }
