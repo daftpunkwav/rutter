@@ -54,7 +54,20 @@ async fn fetch_with_budget(url: &str, budget: Duration) -> Result<Vec<u8>, Engin
                     Ok(bytes) => return Ok(bytes.to_vec()),
                     Err(error) => last_error = Some(format!("cannot read body: {error}")),
                 },
-                Err(error) => last_error = Some(format!("server rejected the request: {error}")),
+                Err(error) => {
+                    // Client errors are deterministic: retrying changes
+                    // nothing, so fail fast. Server and transport errors
+                    // stay retriable.
+                    if error
+                        .status()
+                        .is_some_and(|status| status.is_client_error())
+                    {
+                        return Err(EngineError::DownloadFailed {
+                            detail: format!("server rejected the request: {error}"),
+                        });
+                    }
+                    last_error = Some(format!("server rejected the request: {error}"));
+                }
             },
             Err(error) => last_error = Some(format!("request failed: {error}")),
         }
