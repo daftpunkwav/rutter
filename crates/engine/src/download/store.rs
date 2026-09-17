@@ -190,8 +190,7 @@ impl EngineStore {
             if relative.is_empty() {
                 continue;
             }
-
-            let target = staging.join(relative);
+            let target = safe_join(staging, relative)?;
             if let Some(parent) = target.parent() {
                 fs::create_dir_all(parent).map_err(|error| EngineError::DownloadFailed {
                     detail: format!("cannot create {}: {error}", parent.display()),
@@ -227,6 +226,31 @@ impl EngineStore {
             executable,
         })
     }
+}
+
+/// Joins `relative` onto `base`, refusing hostile archive paths:
+/// components must be plain names (no `..`, `.`, empty parts, absolute
+/// prefixes, or Windows drive/UNC syntax), and the result must stay
+/// inside `base`. Archive entries are hostile input (blueprint §8.4).
+fn safe_join(base: &Path, relative: &str) -> Result<PathBuf, EngineError> {
+    let hostile = relative.is_empty()
+        || relative.starts_with(['/', '\\'])
+        || relative.contains(':')
+        || !relative
+            .split(['/', '\\'])
+            .all(|part| !part.is_empty() && part != "." && part != "..");
+    if hostile {
+        return Err(EngineError::DownloadFailed {
+            detail: format!("engine zip contains a hostile path entry: '{relative}'"),
+        });
+    }
+    let target = base.join(relative);
+    if !target.starts_with(base) {
+        return Err(EngineError::DownloadFailed {
+            detail: format!("engine zip entry escapes the cache directory: '{relative}'"),
+        });
+    }
+    Ok(target)
 }
 
 /// Launchable file name of a product's binary.
@@ -352,6 +376,29 @@ mod tests {
             executable: fake.clone(),
         };
         assert!(installed.executable.is_file());
+    }
+
+    #[test]
+    fn hostile_zip_paths_are_rejected() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = EngineStore::new(root.path());
+        let binary = format!("chrome-headless-shell-win64/{}", product());
+        let zip = build_zip(&[
+            (binary.as_str(), b"MZ" as &[u8]),
+            (
+                "chrome-headless-shell-win64/../../evil.exe",
+                b"evil" as &[u8],
+            ),
+        ]);
+
+        let error = store
+            .install("chrome-headless-shell", "141.0.1", &zip)
+            .expect_err("zip slip must fail");
+        assert!(error.to_string().contains("hostile path"));
+        let outside = root.path().join("evil.exe");
+        assert!(!outside.exists(), "no file may land outside the cache");
+        let found = store.installed("chrome-headless-shell").expect("scan");
+        assert!(found.is_none(), "failed install must not be visible");
     }
 
     #[test]
