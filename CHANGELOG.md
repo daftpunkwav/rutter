@@ -38,5 +38,6 @@ and the project adheres to
   change and replayed automatically when the supervisor replaces a dead
   engine, with an `EngineRestarted` event per session.
 - Supervision dashboard: localhost web server with token auth, Host
-  validation, WebSocket event replay + live stream, and approval
-  controls (screencast live view pending).
+  validation, WebSocket event replay + live stream, approval controls,
+  and an on-demand JPEG screencast live view (frames stream only while
+  a viewer watches; the capture restarts across navigations).

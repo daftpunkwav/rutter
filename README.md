@@ -12,9 +12,10 @@ snapshots, `rutter serve` speaks MCP over stdio with the full tool
 surface (navigate, snapshot, click, type, tabs, cookies, ...) against a
 real, supervised Chrome for Testing engine, sessions carry a policy
 with human approvals, storage state survives engine restarts, and the
-supervision dashboard (events, approvals) serves on localhost. The
-screencast live view and packaging remain. The canonical architecture
-reference is [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md); contracts:
+supervision dashboard (live screencast, events, approvals) serves on
+localhost. Packaging and the public 0.1.0 release remain (milestone
+M3). The canonical architecture reference is
+[`docs/BLUEPRINT.md`](docs/BLUEPRINT.md); contracts:
 [`docs/SNAPSHOT_SPEC.md`](docs/SNAPSHOT_SPEC.md) and
 [`docs/TOOL_SPEC.md`](docs/TOOL_SPEC.md).
 
@@ -104,6 +105,7 @@ fills):
 cargo test -p rutter-engine-cdp --test integration -- --ignored
 cargo test -p rutter --test mcp_e2e -- --ignored
 cargo test -p rutter --test approval_e2e -- --ignored
+cargo test -p rutter-engine-cdp --test screencast -- --ignored
 ```
 
 `scripts/benchmark.sh` runs the 20-site navigate+snapshot benchmark
