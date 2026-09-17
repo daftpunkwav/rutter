@@ -51,32 +51,26 @@ const MAX_ROLE_CHARS: usize = 64;
 const MAX_REF_CHARS: usize = 64;
 const MAX_TEXT_CHARS: usize = 200;
 
-/// Viewport and scroll position of the page a tree came from, in CSS
-/// pixels. Unknown dimensions disable viewport-first culling; the
-/// remaining budgets still apply.
+/// Viewport size of the page a tree came from, in CSS pixels. Unknown
+/// dimensions disable viewport-first culling; the remaining budgets
+/// still apply.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PageMeta {
     /// Viewport width, if the serializer reported one.
     pub viewport_width: Option<f64>,
     /// Viewport height, if the serializer reported one.
     pub viewport_height: Option<f64>,
-    /// Horizontal scroll offset.
-    pub scroll_x: f64,
-    /// Vertical scroll offset.
-    pub scroll_y: f64,
 }
 
 impl PageMeta {
-    /// Whether a subtree spanning `[page_y, page_y + height]` in page
-    /// coordinates intersects the viewport expanded by its margin.
-    /// Always true without viewport data.
+    /// Whether a subtree spanning `[page_y, page_y + height]` in
+    /// viewport-relative coordinates intersects the viewport rect
+    /// expanded by its margin.
     pub fn in_viewport(&self, page_y: f64, height: f64) -> bool {
         let Some(viewport_height) = self.viewport_height else {
             return true;
         };
-        let top = self.scroll_y - VIEWPORT_MARGIN_PX;
-        let bottom = self.scroll_y + viewport_height + VIEWPORT_MARGIN_PX;
-        page_y <= bottom && page_y + height >= top
+        page_y <= viewport_height + VIEWPORT_MARGIN_PX && page_y + height >= -VIEWPORT_MARGIN_PX
     }
 }
 
@@ -440,8 +434,6 @@ mod tests {
         PageMeta {
             viewport_width: Some(1280.0),
             viewport_height: Some(720.0),
-            scroll_x: 0.0,
-            scroll_y: 0.0,
         }
     }
 
@@ -449,6 +441,25 @@ mod tests {
         (0..count)
             .map(|_| json!({ "role": "listitem", "name": name, "rect": { "y": 10, "height": 20 } }))
             .collect()
+    }
+
+    #[test]
+    fn viewport_classification_uses_rect_extents_alone() {
+        // Rects are viewport-relative (spec §3); classification must not
+        // depend on any scroll offset.
+        let meta = meta();
+
+        assert!(meta.in_viewport(100.0, 40.0), "in-view content stays");
+        assert!(meta.in_viewport(880.0, 40.0), "bottom margin stays");
+        assert!(meta.in_viewport(-180.0, 40.0), "top margin stays");
+        assert!(meta.in_viewport(-220.0, 40.0), "partial overlap stays");
+        assert!(!meta.in_viewport(-260.0, 50.0), "fully above folds");
+        assert!(!meta.in_viewport(5000.0, 40.0), "far below folds");
+        assert!(!meta.in_viewport(-900.0, 40.0), "far above folds");
+        assert!(
+            PageMeta::default().in_viewport(999_999.0, 40.0),
+            "no viewport data disables culling"
+        );
     }
 
     #[test]
@@ -743,8 +754,6 @@ mod tests {
                 let meta = PageMeta {
                     viewport_width: Some(1280.0),
                     viewport_height: Some(720.0),
-                    scroll_x: 0.0,
-                    scroll_y: 300.0,
                 };
                 let tree = json!({ "role": "root", "rect": { "y": 0, "height": 5000 }, "children": trees });
                 let snapshot = build("https://example.com", &meta, &tree);

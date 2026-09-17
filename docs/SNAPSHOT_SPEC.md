@@ -36,9 +36,12 @@ then converts the returned JSON with `observe::snapshot_from_response()`.
 - `truncated` — the serializer hit its own node guard (50 000 nodes)
   and omitted part of the composed DOM.
 - `viewport` / `scroll` — CSS pixels of the page's viewport and scroll
-  position; consumed by the viewport-aware budget (§6). If absent or
-  malformed the converter treats the viewport as unbounded (no
-  viewport-first folding) and relies on the remaining budgets.
+  position. The budget consumes only `viewport`: node rects are
+  viewport-relative (§3), so scroll offsets play no part in
+  classification and `scroll` is reserved for future consumers
+  (screencast framing in milestone M2). If the viewport is absent or
+  malformed the converter treats it as unbounded (no viewport-first
+  folding) and relies on the remaining budgets.
 - `root` — one node for the document root (role `root`).
 
 The serializer walks the composed DOM including open shadow roots and
@@ -110,10 +113,10 @@ budget-induced change sets `Snapshot::truncated = true`.
 2. **Sibling folding.** A run of ≥ 8 consecutive same-role siblings
    with no name is folded into one summary node (role kept, `× N`
    set). Runs shorter than 8 pass through unchanged.
-3. **Viewport-first culling.** Any subtree entirely below/above the
-   viewport (rect outside the viewport rect expanded by a 200 px
-   margin) whose rendered size exceeds 400 characters is replaced by a
-   summary node of its root (`× N` counts the folded children),
+3. **Viewport-first culling.** Node rects are viewport-relative; any
+   subtree entirely outside the band `[-200 px, viewport height + 200 px]`
+   on the y axis whose rendered size exceeds 400 characters is replaced
+   by a summary node of its root (`× N` counts the folded children),
    regardless of the remaining budget.
 4. **Hard budget.** The remaining budget is spent in document order:
    children keep their full text while it fits; a child that no longer

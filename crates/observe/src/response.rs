@@ -50,16 +50,6 @@ pub fn snapshot_from_response(url: &str, response: &Value) -> Snapshot {
             .and_then(|viewport| viewport.get("height"))
             .and_then(Value::as_f64)
             .map(|height| height.max(0.0)),
-        scroll_x: object
-            .and_then(|object| object.get("scroll"))
-            .and_then(|scroll| scroll.get("x"))
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0),
-        scroll_y: object
-            .and_then(|object| object.get("scroll"))
-            .and_then(|scroll| scroll.get("y"))
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0),
     };
 
     let root_present = object
