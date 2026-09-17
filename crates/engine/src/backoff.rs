@@ -11,25 +11,30 @@ use std::time::Duration;
 #[derive(Debug, Clone)]
 pub struct Backoff {
     base: Duration,
-    factor: f64,
     max: Duration,
 }
 
 impl Backoff {
     /// Creates a backoff that starts at `base` and never exceeds `max`.
     pub fn new(base: Duration, max: Duration) -> Self {
-        Self {
-            base,
-            factor: 2.0,
-            max,
-        }
+        Self { base, max }
     }
 
     /// Delay before retry number `attempt` (0-based): `base * 2^attempt`,
-    /// clamped to `max`. Saturates instead of overflowing.
+    /// clamped to `max`. Doubling is saturating, so huge attempt counts
+    /// stay panic-free and simply return `max`.
     pub fn delay(&self, attempt: u32) -> Duration {
-        let scaled = self.base.mul_f64(self.factor.powi(attempt as i32));
-        scaled.min(self.max)
+        let mut delay = self.base;
+        for _ in 0..attempt.min(64) {
+            if delay >= self.max {
+                break;
+            }
+            match delay.checked_mul(2) {
+                Some(doubled) => delay = doubled,
+                None => break,
+            }
+        }
+        delay.min(self.max)
     }
 }
 
@@ -44,5 +49,11 @@ mod tests {
         assert_eq!(backoff.delay(1), Duration::from_secs(4));
         assert_eq!(backoff.delay(2), Duration::from_secs(8));
         assert_eq!(backoff.delay(10), Duration::from_secs(8));
+    }
+
+    #[test]
+    fn huge_attempt_counts_stay_panic_free() {
+        let backoff = Backoff::new(Duration::from_secs(2), Duration::from_secs(8));
+        assert_eq!(backoff.delay(u32::MAX), Duration::from_secs(8));
     }
 }
