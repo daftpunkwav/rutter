@@ -94,13 +94,32 @@ impl StorageState {
         }
     }
 
-    /// Writes the state as JSON; the session's persistence file.
+    /// Writes the state as JSON; the session's persistence file. The
+    /// write is atomic: the JSON lands in a sibling temporary file that
+    /// replaces the real one in one rename, so a crash or a full disk
+    /// can never leave a half-written file (which would read back as an
+    /// empty state and silently drop the session's login).
     pub fn write(&self, path: &Path) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string(self).unwrap_or_else(|_| "{}".to_owned());
-        std::fs::write(path, json)
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("storage.json");
+        let staging = path.with_file_name(format!(".{file_name}.tmp-{}", std::process::id()));
+        if let Err(error) = std::fs::write(&staging, json) {
+            let _ = std::fs::remove_file(&staging);
+            return Err(error);
+        }
+        match std::fs::rename(&staging, path) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let _ = std::fs::remove_file(&staging);
+                Err(error)
+            }
+        }
     }
 
     /// Reads a previously written state; a missing or corrupt file is
@@ -166,5 +185,41 @@ mod tests {
         let state = StorageState::read(&dir.path().join("missing.json"));
         assert!(state.cookies.is_empty());
         assert!(state.origins.is_empty());
+    }
+
+    #[test]
+    fn rewriting_replaces_the_file_and_leaves_no_temporary() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.json");
+
+        let first = StorageState {
+            cookies: vec![Cookie {
+                name: "a".to_owned(),
+                value: "1".to_owned(),
+                domain: "example.com".to_owned(),
+                path: None,
+                secure: false,
+                http_only: false,
+                same_site: None,
+                expires: None,
+            }],
+            origins: Vec::new(),
+        };
+        first.write(&path).expect("first write");
+
+        let second = StorageState::default();
+        second.write(&path).expect("second write over an existing file");
+
+        assert_eq!(StorageState::read(&path), second, "the rename replaced it");
+        let left_behind: Vec<_> = std::fs::read_dir(dir.path())
+            .expect("read dir")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name())
+            .collect();
+        assert_eq!(
+            left_behind,
+            vec![std::ffi::OsString::from("state.json")],
+            "no staging files may survive"
+        );
     }
 }
