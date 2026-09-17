@@ -169,12 +169,30 @@ impl Session {
         }
         let context = self.context.read().await.clone();
         let (page_id, handle) = context.open_page().await?;
-        *self.lock_pages() = vec![PageSlot {
-            id: page_id.clone(),
-            url: String::new(),
-            handle: Arc::clone(&handle),
-            active: true,
-        }];
+        // Decide under the lock without awaiting: either register this
+        // page as the active one, or note that a racing caller already
+        // opened one (its page wins; this call's page is closed after
+        // the lock is released — guards never cross an await).
+        let raced = {
+            let mut pages = self.lock_pages();
+            let existing = pages
+                .iter()
+                .find(|slot| slot.active)
+                .map(|slot| Arc::clone(&slot.handle));
+            if existing.is_none() {
+                pages.push(PageSlot {
+                    id: page_id.clone(),
+                    url: String::new(),
+                    handle: Arc::clone(&handle),
+                    active: true,
+                });
+            }
+            existing
+        };
+        if let Some(existing) = raced {
+            let _ = context.close_page(page_id).await;
+            return Ok(existing);
+        }
         self.backbone
             .publish(self.id.clone(), Event::PageOpened { page: page_id });
         Ok(handle)
@@ -463,12 +481,12 @@ impl Session {
             let _ = context.set_cookies(&state.cookies).await;
         }
 
-        let active_url = saved
-            .iter()
-            .find(|slot| slot.active)
-            .map(|slot| slot.url.clone());
+        // Track the active slot by position: two tabs can share a URL,
+        // and both must not come back active (one active page is the
+        // invariant every caller relies on).
+        let active_index = saved.iter().position(|slot| slot.active);
         let mut restored = Vec::new();
-        for slot in saved {
+        for (index, slot) in saved.into_iter().enumerate() {
             if slot.url.is_empty() || slot.url == "about:blank" {
                 continue;
             }
@@ -485,7 +503,7 @@ impl Session {
             state
                 .restore(context.as_ref(), &[(origin, Arc::clone(&handle))])
                 .await;
-            let was_active = Some(slot.url.clone()) == active_url;
+            let was_active = active_index == Some(index);
             restored.push(PageSlot {
                 id: id.clone(),
                 url: slot.url,

@@ -166,18 +166,20 @@ impl Executor<'_> {
     }
 
     /// Runs the three-phase auto-wait: visible, then stable, then
-    /// enabled. A gone reference fails fast; phase budgets map to
-    /// `TimedOut` with the phase that was pending.
+    /// enabled. A gone reference fails fast; each phase gets its own
+    /// budget and exhaustion maps to `TimedOut` naming the phase that
+    /// was pending (TOOL_SPEC §3). The budget restarts only when the
+    /// wait advances to a later phase, so a flickering page cannot
+    /// stretch the wait indefinitely.
     async fn auto_wait(&self, reference: &Reference) -> Result<ElementBox, SessionError> {
         let reference = reference.as_str();
-        let deadline = Instant::now() + self.config.phase_timeout;
+        let mut deadline = Instant::now() + self.config.phase_timeout;
+        let mut pending = WaitPhase::Visible;
         let mut previous: Option<ElementBox> = None;
-        let mut last: Option<ElementBox> = None;
         loop {
             match resolve::resolve(self.page, reference).await {
                 Ok(None) => return Err(expired(reference)),
                 Ok(Some(element_box)) => {
-                    last = Some(element_box);
                     let visible = element_box.visible();
                     let stable = previous
                         .as_ref()
@@ -186,6 +188,21 @@ impl Executor<'_> {
                         return Ok(element_box);
                     }
                     previous = if visible { Some(element_box) } else { None };
+                    // The phases run in order, so the first unsatisfied
+                    // one is the phase the wait is stuck in.
+                    let now_pending = if !visible {
+                        WaitPhase::Visible
+                    } else if !stable {
+                        WaitPhase::Stable
+                    } else {
+                        WaitPhase::Enabled
+                    };
+                    if now_pending != pending {
+                        if phase_rank(now_pending) > phase_rank(pending) {
+                            deadline = Instant::now() + self.config.phase_timeout;
+                        }
+                        pending = now_pending;
+                    }
                 }
                 // A page mid-navigation can reject evaluates; keep trying
                 // within the phase budget (TOOL_SPEC §3).
@@ -196,17 +213,14 @@ impl Executor<'_> {
                 }
             }
             if Instant::now() >= deadline {
-                let phase = match &last {
-                    Some(box_state) if box_state.disabled => WaitPhase::Enabled,
-                    Some(_) if previous.is_some() => WaitPhase::Stable,
-                    _ => WaitPhase::Visible,
-                };
                 return Err(SessionError::Action(ActionError::TimedOut {
-                    phase,
+                    phase: pending,
                     elapsed: self.config.phase_timeout,
                 }));
             }
-            tokio::time::sleep(self.config.poll_interval).await;
+            // The two stability samples sit one interval apart, so the
+            // loop cadence is the stability interval (TOOL_SPEC §3).
+            tokio::time::sleep(self.config.stability_sample_interval).await;
         }
     }
 
@@ -329,6 +343,17 @@ impl PageOps<'_> {
                 elapsed: budget,
             })),
         }
+    }
+}
+
+/// Order of the auto-wait phases for budget restarts: visible, then
+/// stable, then enabled. Other phases rank above and never restart.
+fn phase_rank(phase: WaitPhase) -> u8 {
+    match phase {
+        WaitPhase::Visible => 0,
+        WaitPhase::Stable => 1,
+        WaitPhase::Enabled => 2,
+        WaitPhase::Act | WaitPhase::Settle => 3,
     }
 }
 

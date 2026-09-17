@@ -118,6 +118,9 @@ impl SessionManager {
     pub async fn session(&self, id: SessionId) -> Result<Arc<Session>, EngineError> {
         let mut guard = self.inner.running.lock().await;
         if guard.is_none() {
+            // start_running spawns the single recovery task for this
+            // supervisor; spawning here as well would run recovery twice
+            // per restart.
             let running = start_running(&self.inner).await?;
             let descriptor = running.engine.descriptor();
             // The engine event lands in the first session's history: it
@@ -129,7 +132,6 @@ impl SessionManager {
                     version: descriptor.version,
                 },
             );
-            spawn_recovery(&self.inner, running.supervisor.restart_watcher());
             *guard = Some(running);
         }
 
