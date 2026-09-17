@@ -7,11 +7,13 @@ snapshots) instead of pixels, executes typed actions with deterministic
 semantics, and offers a local supervision dashboard with human approval
 for sensitive operations.
 
-Status: milestones M0 and M1 work end to end — `rutter open` prints
-snapshots, and `rutter serve` speaks MCP over stdio with the full tool
+Status: milestones M0-M2 work end to end — `rutter open` prints
+snapshots, `rutter serve` speaks MCP over stdio with the full tool
 surface (navigate, snapshot, click, type, tabs, cookies, ...) against a
-real, supervised Chrome for Testing engine. The supervision dashboard
-and policy approvals are milestone M2. The canonical architecture
+real, supervised Chrome for Testing engine, sessions carry a policy
+with human approvals, storage state survives engine restarts, and the
+supervision dashboard (events, approvals) serves on localhost. The
+screencast live view and packaging remain. The canonical architecture
 reference is [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md); contracts:
 [`docs/SNAPSHOT_SPEC.md`](docs/SNAPSHOT_SPEC.md) and
 [`docs/TOOL_SPEC.md`](docs/TOOL_SPEC.md).
@@ -72,11 +74,9 @@ rutter/
 | `rutter-events` | Typed event backbone: bus, ring buffers, replay |
 | `rutter-session` | Orchestration: contexts, pages, actions, auto-wait |
 | `rutter-mcp` | MCP tool surface (rmcp) |
+| `rutter-policy` | Rule set, verdicts, approval broker |
+| `rutter-dashboard` | Local supervision dashboard (events, approvals) |
 | `rutter` (cli) | Binary entry modes: browse, serve, open |
-
-Further crates (`rutter-policy`, `rutter-dashboard`) materialize with
-the milestone that needs them; empty crates are forbidden by the
-blueprint (§10).
 
 ## Development
 
@@ -103,7 +103,11 @@ fills):
 ```sh
 cargo test -p rutter-engine-cdp --test integration -- --ignored
 cargo test -p rutter --test mcp_e2e -- --ignored
+cargo test -p rutter --test approval_e2e -- --ignored
 ```
+
+`scripts/benchmark.sh` runs the 20-site navigate+snapshot benchmark
+(M2 gate: 90 percent success).
 
 `scripts/smoke_open.sh` runs the M0 acceptance corpus (10 real sites)
 and prints a pass/fail summary.

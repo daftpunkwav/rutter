@@ -31,3 +31,12 @@ and the project adheres to
   session orchestration (`rutter-session`).
 - End-to-end acceptance tests driving `rutter serve` over stdio with an
   MCP client against the real engine.
+- Policy engine (`rutter-policy`): TOML rules (action class x URL
+  pattern -> verdict), conservative defaults, approval broker with
+  configurable windows, and dashboard decision submission.
+- Storage state per session (cookies plus localStorage), persisted on
+  change and replayed automatically when the supervisor replaces a dead
+  engine, with an `EngineRestarted` event per session.
+- Supervision dashboard: localhost web server with token auth, Host
+  validation, WebSocket event replay + live stream, and approval
+  controls (screencast live view pending).
