@@ -18,9 +18,11 @@
 
 pub mod assets;
 pub mod builder;
+pub mod resolver;
 pub mod response;
 
 pub use builder::PageMeta;
+pub use resolver::resolver_script;
 pub use response::snapshot_from_response;
 
 /// Returns the embedded serializer script for evaluation inside a page.

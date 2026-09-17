@@ -36,6 +36,15 @@ pub trait PageHandle: Send + Sync {
     /// redirects.
     async fn navigate(&self, url: &str) -> Result<String, EngineError>;
 
+    /// Reloads the current page.
+    async fn reload(&self) -> Result<(), EngineError>;
+
+    /// Goes back one history entry; resolves with the effective URL.
+    async fn go_back(&self) -> Result<String, EngineError>;
+
+    /// Goes forward one history entry; resolves with the effective URL.
+    async fn go_forward(&self) -> Result<String, EngineError>;
+
     /// Evaluates a JavaScript expression in the page and resolves with
     /// its JSON result.
     async fn evaluate(&self, expression: &str) -> Result<Value, EngineError>;

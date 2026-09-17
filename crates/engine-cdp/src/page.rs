@@ -14,9 +14,12 @@ use chromiumoxide::Page;
 use chromiumoxide::cdp::browser_protocol::input::{
     DispatchKeyEventType, DispatchMouseEventType, InsertTextParams,
 };
-use chromiumoxide::cdp::browser_protocol::page::NavigateParams;
+use chromiumoxide::cdp::browser_protocol::page::{
+    GetNavigationHistoryParams, NavigateParams, NavigateToHistoryEntryParams,
+};
 use chromiumoxide::cdp::browser_protocol::target::TargetId;
 use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
+use chromiumoxide::error::CdpError;
 use chromiumoxide::page::ScreenshotParams;
 use serde_json::Value;
 
@@ -56,6 +59,37 @@ impl CdpPage {
     pub fn target_id(&self) -> TargetId {
         self.page.target_id().clone()
     }
+
+    /// Walks the session history by `offset` entries and resolves with
+    /// the effective URL after the navigation settles.
+    async fn navigate_history(&self, offset: i64) -> Result<String, EngineError> {
+        with_deadline("history", self.navigation_timeout, async {
+            let history = self
+                .page
+                .execute(GetNavigationHistoryParams::default())
+                .await?;
+            let target = history.result.current_index as i64 + offset;
+            if target < 0 || target >= history.result.entries.len() as i64 {
+                return Err(CdpError::ChromeMessage(format!(
+                    "no history entry at offset {offset}"
+                )));
+            }
+            let entry_id = history.result.entries[target as usize].id;
+            self.page
+                .execute(NavigateToHistoryEntryParams::new(entry_id))
+                .await?;
+            self.page.wait_for_navigation().await
+        })
+        .await?;
+
+        self.page
+            .url()
+            .await
+            .map_err(fold)?
+            .ok_or_else(|| EngineError::Internal {
+                detail: "page URL unavailable after history navigation".to_owned(),
+            })
+    }
 }
 
 #[async_trait]
@@ -79,6 +113,19 @@ impl rutter_engine::page::PageHandle for CdpPage {
             .ok_or_else(|| EngineError::Internal {
                 detail: "page URL unavailable after navigation".to_owned(),
             })
+    }
+
+    async fn reload(&self) -> Result<(), EngineError> {
+        with_deadline("reload", self.navigation_timeout, self.page.reload()).await?;
+        Ok(())
+    }
+
+    async fn go_back(&self) -> Result<String, EngineError> {
+        self.navigate_history(-1).await
+    }
+
+    async fn go_forward(&self) -> Result<String, EngineError> {
+        self.navigate_history(1).await
     }
 
     async fn evaluate(&self, expression: &str) -> Result<Value, EngineError> {

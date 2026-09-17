@@ -59,7 +59,14 @@
   function ensureRefStore() {
     try {
       if (!window.__rutterRefStore) {
-        window.__rutterRefStore = { map: new WeakMap(), counter: 0 };
+        // `map` mints refs (element -> ref); `reverse` resolves them
+        // (ref -> WeakRef<element>) for the action executor. WeakRefs
+        // let garbage-collected elements resolve to nothing.
+        window.__rutterRefStore = {
+          map: new WeakMap(),
+          reverse: new Map(),
+          counter: 0
+        };
       }
       return window.__rutterRefStore;
     } catch (err) {
@@ -193,6 +200,7 @@
       store.counter += 1;
       var ref = 'e' + String(store.counter);
       store.map.set(el, ref);
+      store.reverse.set(ref, new WeakRef(el));
       return ref;
     } catch (err) {
       return null;
