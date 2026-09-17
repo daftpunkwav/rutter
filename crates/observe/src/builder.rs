@@ -734,15 +734,16 @@ mod tests {
             ]
         }
 
-        /// Arbitrary JSON node strategy: bounded depth and fan-out with
-        /// optional names and scattered vertical positions.
+        /// Arbitrary JSON node strategy: deep and wide enough that the
+        /// rendered text regularly exceeds the 20k budget, so the size
+        /// property is exercised against real folding pressure.
         fn arb_tree() -> impl Strategy<Value = Value> {
-            let leaf = (role_name(), prop::option::of("[^\"]{0,40}"), 0.0f64..5000.0)
+            let leaf = (role_name(), prop::option::of("[^\"]{0,160}"), 0.0f64..5000.0)
                 .prop_map(|(role, name, y)| {
                     json!({ "role": role, "name": name, "rect": { "y": y, "height": 10 } })
                 });
-            leaf.prop_recursive(4, 64, 8, |inner| {
-                prop::collection::vec(inner, 0..8).prop_map(|children| {
+            leaf.prop_recursive(6, 400, 24, |inner| {
+                prop::collection::vec(inner, 4..40).prop_map(|children| {
                     json!({ "role": "list", "rect": { "y": 0, "height": 10 }, "children": children })
                 })
             })
@@ -750,7 +751,7 @@ mod tests {
 
         proptest! {
             #[test]
-            fn rendered_size_never_exceeds_budget(trees in prop::collection::vec(arb_tree(), 0..30)) {
+            fn rendered_size_never_exceeds_budget(trees in prop::collection::vec(arb_tree(), 0..12)) {
                 let meta = PageMeta {
                     viewport_width: Some(1280.0),
                     viewport_height: Some(720.0),
