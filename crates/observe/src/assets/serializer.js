@@ -43,6 +43,17 @@
     tab: 1, slider: 1, spinbutton: 1, switch: 1, treeitem: 1
   };
 
+  // Roles whose accessible name may come from their text content.
+  // Containers (generic, list, group, ...) must not inherit the page
+  // text: their names stay empty like the ARIA spec requires.
+  var TEXT_NAME_ROLES = {
+    heading: 1, button: 1, link: 1, listitem: 1, option: 1,
+    cell: 1, columnheader: 1, rowheader: 1, menuitem: 1, tab: 1,
+    treeitem: 1, term: 1, definition: 1, alert: 1, status: 1,
+    paragraph: 1, caption: 1, code: 1, emphasis: 1, strong: 1,
+    time: 1, blockquote: 1, note: 1, tooltip: 1
+  };
+
   var state = { count: 0, truncated: false };
 
   function ensureRefStore() {
@@ -117,6 +128,7 @@
       if (placeholder && placeholder.trim()) return clip(placeholder, NAME_LIMIT);
       var title = el.getAttribute('title');
       if (title && title.trim()) return clip(title, NAME_LIMIT);
+      if (!TEXT_NAME_ROLES[role]) return null;
       var text = (el.textContent || '').replace(/\s+/g, ' ').trim();
       return text ? clip(text, NAME_LIMIT) : null;
     } catch (err) {
