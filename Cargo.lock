@@ -1790,7 +1790,6 @@ dependencies = [
  "rmcp",
  "rutter-core",
  "rutter-engine",
- "rutter-events",
  "rutter-session",
  "schemars",
  "serde",
