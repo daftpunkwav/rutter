@@ -1,27 +1,29 @@
 //! Builds token-budgeted accessibility snapshots from serialized DOM trees.
 //!
 //! Responsibilities:
-//! - Expose the embedded page serializer ([`assets::SERIALIZER_JS`]).
-//! - Convert its response into a [`Snapshot`] via
-//!   [`response::snapshot_from_response`], with the pure conversion in
-//!   [`builder`].
+//! - Expose the embedded page serializer (through
+//!   [`serializer_script`]).
+//! - Convert its response into a [`rutter_core::snapshot::Snapshot`] via
+//!   [`snapshot_from_response`], with the pure conversion in the
+//!   internal builder.
 //!
 //! Boundary: pure data transformation only. DOM serialization (the
 //! injected script owned by this crate), engine access, and action
 //! execution live in other crates. This crate contains no async code and
 //! performs no I/O; callers inject the script through an engine's
-//! `evaluate` and hand the JSON back here.
+//! `evaluate` and hand the JSON back here. The page-side helper scripts
+//! for references, focus, select, wait, and storage round-trips are
+//! re-exported below for the orchestration layer.
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
-pub mod assets;
-pub mod builder;
-pub mod resolver;
-pub mod response;
+mod assets;
+mod builder;
+mod resolver;
+mod response;
 
-pub use builder::PageMeta;
 pub use resolver::{
     focus_script, resolver_script, select_script, storage_dump_script, storage_restore_script,
     wait_for_script,

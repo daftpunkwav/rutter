@@ -11,10 +11,13 @@
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
-pub mod context;
-pub mod engine;
-pub mod error;
-pub mod launch;
-pub mod page;
+// The implementation modules stay private on purpose: their items take
+// chromiumoxide types, and the crate boundary is `EngineLauncher` alone
+// (blueprint §5: no CDP type crosses a public signature).
+mod context;
+mod engine;
+mod error;
+mod launch;
+mod page;
 
 pub use launch::CdpLauncher;
