@@ -11,13 +11,14 @@
 //!   client submits approval decisions through the same socket.
 //!
 //! Boundary: observation plus verdict submission — the dashboard never
-//! executes actions (blueprint §5). The screencast live view (§7.7) is
-//! not wired yet and lands with the remaining M2 work.
+//! executes actions (blueprint §5). The screencast live view (§7.7)
+//! streams binary frames on demand through the same WebSocket.
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::Router;
@@ -197,20 +198,24 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+/// Gate every endpoint shares: the `Host` header must name loopback and
+/// the request must carry the token (query parameter or cookie). Any
+/// new route must pass through this check.
+fn access_allowed(state: &Dashboard, headers: &HeaderMap, query: &HashMap<String, String>) -> bool {
+    host_allowed(headers) && token_ok(state, headers, query.get("token"))
+}
+
 async fn index(
     State(state): State<Dashboard>,
     headers: HeaderMap,
-    Query(query): Query<std::collections::HashMap<String, String>>,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Result<Response, StatusCode> {
-    if !host_allowed(&headers) {
+    if !access_allowed(&state, &headers, &query) {
         return Err(StatusCode::FORBIDDEN);
     }
     // First visit carries the token in the query; the answer exchanges
     // it for a session cookie (blueprint §7.7), and later requests
     // authenticate through the cookie alone.
-    if !token_ok(&state, &headers, query.get("token")) {
-        return Err(StatusCode::FORBIDDEN);
-    }
     let mut response = Html(assets::INDEX_HTML).into_response();
     if let Some(cookie) = token_cookie_header(&state.token) {
         response
@@ -223,9 +228,9 @@ async fn index(
 async fn app_js(
     State(state): State<Dashboard>,
     headers: HeaderMap,
-    Query(query): Query<std::collections::HashMap<String, String>>,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Result<([(String, String); 1], &'static str), StatusCode> {
-    if !host_allowed(&headers) || !token_ok(&state, &headers, query.get("token")) {
+    if !access_allowed(&state, &headers, &query) {
         return Err(StatusCode::FORBIDDEN);
     }
     Ok((
@@ -240,9 +245,9 @@ async fn app_js(
 async fn i18n(
     State(state): State<Dashboard>,
     headers: HeaderMap,
-    Query(query): Query<std::collections::HashMap<String, String>>,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Result<([(String, String); 1], &'static str), StatusCode> {
-    if !host_allowed(&headers) || !token_ok(&state, &headers, query.get("token")) {
+    if !access_allowed(&state, &headers, &query) {
         return Err(StatusCode::FORBIDDEN);
     }
     Ok((
@@ -255,10 +260,10 @@ async fn i18n(
 async fn ws_upgrade(
     State(state): State<Dashboard>,
     headers: HeaderMap,
-    Query(query): Query<std::collections::HashMap<String, String>>,
+    Query(query): Query<HashMap<String, String>>,
     upgrade: WebSocketUpgrade,
 ) -> Result<axum::response::Response, StatusCode> {
-    if !host_allowed(&headers) || !token_ok(&state, &headers, query.get("token")) {
+    if !access_allowed(&state, &headers, &query) {
         return Err(StatusCode::FORBIDDEN);
     }
     Ok(upgrade.on_upgrade(move |socket| ws_loop(state, socket)))
@@ -472,10 +477,10 @@ async fn send_envelope(socket: &mut WebSocket, envelope: &Envelope) -> Result<()
 async fn decide(
     State(state): State<Dashboard>,
     headers: HeaderMap,
-    Query(query): Query<std::collections::HashMap<String, String>>,
+    Query(query): Query<HashMap<String, String>>,
     body: String,
 ) -> Result<StatusCode, StatusCode> {
-    if !host_allowed(&headers) || !token_ok(&state, &headers, query.get("token")) {
+    if !access_allowed(&state, &headers, &query) {
         return Err(StatusCode::FORBIDDEN);
     }
     let value: Value = serde_json::from_str(&body).map_err(|_| StatusCode::BAD_REQUEST)?;

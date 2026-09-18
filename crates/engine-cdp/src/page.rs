@@ -37,6 +37,18 @@ use crate::error::{self, COMMAND_TIMEOUT, fold, fold_navigation, with_deadline, 
 /// bare await forever, so it gets its own deadline like every call.
 const URL_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Screencast capture parameters, shared by the initial start and the
+/// post-navigation restart: the two must stay identical so the viewer
+/// sees one continuous stream across navigations.
+fn screencast_params() -> StartScreencastParams {
+    StartScreencastParams::builder()
+        .format(StartScreencastFormat::Jpeg)
+        .quality(50)
+        .max_width(1024)
+        .every_nth_frame(1)
+        .build()
+}
+
 /// One CDP target (tab) wrapped as a page handle.
 pub struct CdpPage {
     page: Page,
@@ -251,12 +263,7 @@ impl rutter_engine::page::PageHandle for CdpPage {
             .event_listener::<EventFrameNavigated>()
             .await
             .map_err(fold)?;
-        let start = StartScreencastParams::builder()
-            .format(StartScreencastFormat::Jpeg)
-            .quality(50)
-            .max_width(1024)
-            .every_nth_frame(1)
-            .build();
+        let start = screencast_params();
         with_deadline(
             "start_screencast",
             COMMAND_TIMEOUT,
@@ -293,16 +300,10 @@ impl rutter_engine::page::PageHandle for CdpPage {
                     }
                     Some(_) = navigations.next() => {
                         // CDP stops the capture on navigation; restart it.
-                        let restart = StartScreencastParams::builder()
-                            .format(StartScreencastFormat::Jpeg)
-                            .quality(50)
-                            .max_width(1024)
-                            .every_nth_frame(1)
-                            .build();
                         let _ = with_deadline(
                             "screencast_restart",
                             COMMAND_TIMEOUT,
-                            task_page.execute(restart),
+                            task_page.execute(screencast_params()),
                         )
                         .await;
                     }

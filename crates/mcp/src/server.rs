@@ -34,6 +34,10 @@ use rutter_session::session::Session;
 /// (`docs/TOOL_SPEC.md` §2).
 const SERVER_ERROR_CODE: i32 = -32000;
 
+/// Default `wait_for` budget when the caller sends no timeout
+/// (`docs/TOOL_SPEC.md` §4: 10 000 ms).
+const WAIT_FOR_DEFAULT_BUDGET: Duration = Duration::from_secs(10);
+
 /// Scroll directions accepted by the scroll tool.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -84,7 +88,6 @@ impl From<SameSiteInput> for SameSite {
 
 /// One cookie as agents set it (`docs/TOOL_SPEC.md` §4).
 #[derive(Debug, Clone, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
-/// Tool parameters.
 pub struct CookieInput {
     /// Cookie name.
     pub name: String,
@@ -121,7 +124,6 @@ impl TryFrom<&CookieInput> for Cookie {
 
 /// The per-connection MCP server.
 #[derive(Clone)]
-/// Tool parameters.
 pub struct RutterMcp {
     manager: Arc<SessionManager>,
     session_id: SessionId,
@@ -173,29 +175,22 @@ impl RutterMcp {
         &self,
         Parameters(NavigateParams { url }): Parameters<NavigateParams>,
     ) -> Result<CallToolResult, McpError> {
-        let session = self.session().await?;
-        match session
-            .execute(Action::Navigate { url }, Origin::Agent)
-            .await
-        {
-            Ok(snapshot) => Ok(snapshot_result(&snapshot)),
-            Err(error) => Ok(error_result(&error)),
-        }
+        self.run_action(Action::Navigate { url }).await
     }
 
     #[tool(description = "Go back one history entry and return a fresh snapshot")]
     async fn back(&self) -> Result<CallToolResult, McpError> {
-        self.simple_action(Action::Back).await
+        self.run_action(Action::Back).await
     }
 
     #[tool(description = "Go forward one history entry and return a fresh snapshot")]
     async fn forward(&self) -> Result<CallToolResult, McpError> {
-        self.simple_action(Action::Forward).await
+        self.run_action(Action::Forward).await
     }
 
     #[tool(description = "Reload the active page and return a fresh snapshot")]
     async fn reload(&self) -> Result<CallToolResult, McpError> {
-        self.simple_action(Action::Reload).await
+        self.run_action(Action::Reload).await
     }
 
     #[tool(description = "Render the active page as a YAML accessibility snapshot")]
@@ -230,19 +225,10 @@ impl RutterMcp {
         &self,
         Parameters(ReferenceParams { reference }): Parameters<ReferenceParams>,
     ) -> Result<CallToolResult, McpError> {
-        let session = self.session().await?;
-        match session
-            .execute(
-                Action::Click {
-                    reference: Reference::new(reference),
-                },
-                Origin::Agent,
-            )
-            .await
-        {
-            Ok(snapshot) => Ok(snapshot_result(&snapshot)),
-            Err(error) => Ok(error_result(&error)),
-        }
+        self.run_action(Action::Click {
+            reference: Reference::new(reference),
+        })
+        .await
     }
 
     #[tool(description = "Hover the element a snapshot reference points to")]
@@ -250,19 +236,10 @@ impl RutterMcp {
         &self,
         Parameters(ReferenceParams { reference }): Parameters<ReferenceParams>,
     ) -> Result<CallToolResult, McpError> {
-        let session = self.session().await?;
-        match session
-            .execute(
-                Action::Hover {
-                    reference: Reference::new(reference),
-                },
-                Origin::Agent,
-            )
-            .await
-        {
-            Ok(snapshot) => Ok(snapshot_result(&snapshot)),
-            Err(error) => Ok(error_result(&error)),
-        }
+        self.run_action(Action::Hover {
+            reference: Reference::new(reference),
+        })
+        .await
     }
 
     #[tool(
@@ -273,20 +250,11 @@ impl RutterMcp {
         &self,
         Parameters(TypeParams { reference, text }): Parameters<TypeParams>,
     ) -> Result<CallToolResult, McpError> {
-        let session = self.session().await?;
-        match session
-            .execute(
-                Action::Type {
-                    reference: Reference::new(reference),
-                    text,
-                },
-                Origin::Agent,
-            )
-            .await
-        {
-            Ok(snapshot) => Ok(snapshot_result(&snapshot)),
-            Err(error) => Ok(error_result(&error)),
-        }
+        self.run_action(Action::Type {
+            reference: Reference::new(reference),
+            text,
+        })
+        .await
     }
 
     #[tool(description = "Press a single key (for example Enter or Tab) on the active page")]
@@ -294,14 +262,7 @@ impl RutterMcp {
         &self,
         Parameters(PressKeyParams { key }): Parameters<PressKeyParams>,
     ) -> Result<CallToolResult, McpError> {
-        let session = self.session().await?;
-        match session
-            .execute(Action::PressKey { key }, Origin::Agent)
-            .await
-        {
-            Ok(snapshot) => Ok(snapshot_result(&snapshot)),
-            Err(error) => Ok(error_result(&error)),
-        }
+        self.run_action(Action::PressKey { key }).await
     }
 
     #[tool(description = "Select options by value on a select element")]
@@ -309,20 +270,11 @@ impl RutterMcp {
         &self,
         Parameters(SelectOptionParams { reference, values }): Parameters<SelectOptionParams>,
     ) -> Result<CallToolResult, McpError> {
-        let session = self.session().await?;
-        match session
-            .execute(
-                Action::SelectOption {
-                    reference: Reference::new(reference),
-                    values,
-                },
-                Origin::Agent,
-            )
-            .await
-        {
-            Ok(snapshot) => Ok(snapshot_result(&snapshot)),
-            Err(error) => Ok(error_result(&error)),
-        }
+        self.run_action(Action::SelectOption {
+            reference: Reference::new(reference),
+            values,
+        })
+        .await
     }
 
     #[tool(description = "Scroll the page or a container by an amount in pixels")]
@@ -339,21 +291,12 @@ impl RutterMcp {
                 "amount must be greater than zero".to_owned(),
             ));
         }
-        let session = self.session().await?;
-        match session
-            .execute(
-                Action::Scroll {
-                    reference: reference.map(Reference::new),
-                    direction: direction.into(),
-                    amount,
-                },
-                Origin::Agent,
-            )
-            .await
-        {
-            Ok(snapshot) => Ok(snapshot_result(&snapshot)),
-            Err(error) => Ok(error_result(&error)),
-        }
+        self.run_action(Action::Scroll {
+            reference: reference.map(Reference::new),
+            direction: direction.into(),
+            amount,
+        })
+        .await
     }
 
     #[tool(description = "Wait until text appears on the page, then return a snapshot")]
@@ -364,7 +307,7 @@ impl RutterMcp {
         let session = self.session().await?;
         let budget = timeout_ms
             .map(Duration::from_millis)
-            .unwrap_or(Duration::from_secs(10));
+            .unwrap_or(WAIT_FOR_DEFAULT_BUDGET);
         match session.wait_for(&text, budget).await {
             Ok(snapshot) => Ok(snapshot_result(&snapshot)),
             Err(error) => Ok(error_result(&error)),
@@ -461,8 +404,10 @@ impl RutterMcp {
 }
 
 impl RutterMcp {
-    /// Runs one of the parameter-less history actions.
-    async fn simple_action(&self, action: Action) -> Result<CallToolResult, McpError> {
+    /// Executes one action on this connection's session and maps the
+    /// outcome onto a tool result (snapshot text, or the failure as
+    /// `isError` with its hint).
+    async fn run_action(&self, action: Action) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
         match session.execute(action, Origin::Agent).await {
             Ok(snapshot) => Ok(snapshot_result(&snapshot)),
@@ -490,7 +435,7 @@ impl ServerHandler for RutterMcp {
 
 /// Parameter sets; schemas are generated by rmcp + schemars.
 #[derive(Debug, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
-/// Tool parameters.
+/// Parameters of the navigate tool.
 pub struct NavigateParams {
     /// Absolute URL to load.
     pub url: String,

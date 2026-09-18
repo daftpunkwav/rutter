@@ -97,7 +97,8 @@ impl Session {
         &self.id
     }
 
-    /// The event backbone, for M2 consumers that replay history.
+    /// The event backbone, for consumers that replay session history
+    /// (the manager's recovery task, the dashboard).
     pub fn backbone(&self) -> Arc<Backbone> {
         Arc::clone(&self.backbone)
     }
@@ -203,21 +204,24 @@ impl Session {
         Ok(handle)
     }
 
+    /// The id of the active page slot. Callers guarantee an active slot
+    /// exists ([`Self::active_page`] ran first), so an empty id here is
+    /// only a harmless event payload placeholder.
+    fn active_page_id(&self) -> PageId {
+        let pages = self.lock_pages();
+        match pages.iter().find(|slot| slot.active) {
+            Some(slot) => slot.id.clone(),
+            None => PageId::new(String::new()),
+        }
+    }
+
     /// Executes one action with the given origin and returns the fresh
     /// snapshot; requested/completed/failed land on the event backbone.
     /// After a completed action the page URL and the storage state are
     /// refreshed (blueprint §7.4: persist on change).
     pub async fn execute(&self, action: Action, origin: Origin) -> Result<Snapshot, SessionError> {
         let page = self.active_page().await.map_err(engine_error)?;
-        let page_id = {
-            let pages = self.lock_pages();
-            match pages.iter().find(|slot| slot.active) {
-                Some(slot) => slot.id.clone(),
-                // active_page guarantees an active slot; an empty id is
-                // harmless for event payloads.
-                None => PageId::new(String::new()),
-            }
-        };
+        let page_id = self.active_page_id();
 
         // Supervision gate (blueprint §7.6): agent-origin actions are
         // evaluated against the current page URL; human-origin actions
@@ -382,13 +386,7 @@ impl Session {
     /// changes have no `Action` variant.
     pub async fn set_cookies(&self, cookies: &[Cookie]) -> Result<(), SessionError> {
         let page = self.active_page().await.map_err(engine_error)?;
-        let page_id = {
-            let pages = self.lock_pages();
-            match pages.iter().find(|slot| slot.active) {
-                Some(slot) => slot.id.clone(),
-                None => PageId::new(String::new()),
-            }
-        };
+        let page_id = self.active_page_id();
         let url = PageOps {
             page: page.as_ref(),
             config: &self.config,
@@ -403,16 +401,20 @@ impl Session {
         Ok(())
     }
 
+    /// The open pages as `(url, handle)` pairs, the shape
+    /// `StorageState` capture and restore consume.
+    fn page_pairs(&self) -> Vec<(String, Arc<dyn PageHandle>)> {
+        self.lock_pages()
+            .iter()
+            .map(|slot| (slot.url.clone(), Arc::clone(&slot.handle)))
+            .collect()
+    }
+
     /// Captures the session's storage state (cookies plus localStorage
     /// of every open page).
     pub async fn capture_storage(&self) -> StorageState {
         let context = self.context.read().await.clone();
-        let pairs = self
-            .lock_pages()
-            .iter()
-            .map(|slot| (slot.url.clone(), Arc::clone(&slot.handle)))
-            .collect::<Vec<_>>();
-        StorageState::capture(context.as_ref(), &pairs).await
+        StorageState::capture(context.as_ref(), &self.page_pairs()).await
     }
 
     /// Saves the current storage state to the session's persistence
@@ -441,11 +443,7 @@ impl Session {
             }
         };
         let context = self.context.read().await.clone();
-        let pairs = self
-            .lock_pages()
-            .iter()
-            .map(|slot| (slot.url.clone(), Arc::clone(&slot.handle)))
-            .collect::<Vec<_>>();
+        let pairs = self.page_pairs();
         state.restore(context.as_ref(), &pairs).await;
         *self.lock_last_storage() = state;
         Ok(())

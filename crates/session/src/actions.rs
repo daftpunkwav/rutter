@@ -3,7 +3,8 @@
 //! Boundary: one action per call, executed against one page handle
 //! (`docs/TOOL_SPEC.md` §3). Reference actions auto-wait through the
 //! page resolver; every mutating action returns a fresh snapshot.
-//! Policy verdicts and approval are M2 and never run here.
+//! Policy verdicts and approval are decided by the session layer and
+//! never run here.
 
 use std::time::{Duration, Instant};
 
@@ -299,13 +300,7 @@ impl PageOps<'_> {
 
     /// Renders the current page as a snapshot.
     pub async fn snapshot(&self) -> Result<Snapshot, SessionError> {
-        let url = self
-            .page
-            .evaluate("location.href")
-            .await
-            .ok()
-            .and_then(|value| value.as_str().map(str::to_owned))
-            .unwrap_or_else(|| "about:blank".to_owned());
+        let url = self.url().await;
         let raw = self
             .page
             .evaluate(serializer_script())
