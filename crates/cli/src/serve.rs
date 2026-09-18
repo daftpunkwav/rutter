@@ -48,8 +48,7 @@ pub async fn run(
     ));
 
     if let Some(port) = dashboard_port {
-        let dashboard =
-            rutter_dashboard::DashboardServer::new(Arc::clone(&manager), manager.broker(), port);
+        let dashboard = rutter_dashboard::DashboardServer::new(Arc::clone(&manager), port);
         tokio::spawn(async move {
             if let Err(error) = dashboard.run().await {
                 eprintln!("rutter: {error}");

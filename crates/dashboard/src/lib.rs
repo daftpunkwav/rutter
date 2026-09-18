@@ -61,11 +61,13 @@ pub struct DashboardServer {
 
 impl DashboardServer {
     /// Binds the dashboard to a port; the access token is generated
-    /// here and printed once by [`DashboardServer::token`].
-    pub fn new(manager: Arc<SessionManager>, broker: Arc<ApprovalBroker>, port: u16) -> Self {
+    /// here and printed once by [`DashboardServer::token`]. Approval
+    /// decisions always go through the manager's broker — the one the
+    /// sessions park on — so it is derived here, never passed in.
+    pub fn new(manager: Arc<SessionManager>, port: u16) -> Self {
         Self {
+            broker: manager.broker(),
             manager,
-            broker,
             port,
         }
     }
@@ -524,7 +526,6 @@ mod tests {
                 Arc::new(rutter_policy::ApprovalBroker::new()),
                 None,
             )),
-            Arc::new(rutter_policy::ApprovalBroker::new()),
             0,
         );
         let token = server.token();
