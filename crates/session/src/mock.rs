@@ -15,15 +15,10 @@ use serde_json::{Value, json};
 
 use rutter_core::cookie::Cookie;
 use rutter_core::ids::{ContextId, PageId};
-use rutter_engine::config::{ContextConfig, LaunchMode};
 use rutter_engine::context::ContextHandle;
-use rutter_engine::descriptor::{EngineBackend, EngineCapabilities, EngineDescriptor};
-use rutter_engine::engine::Engine;
 use rutter_engine::error::EngineError;
-use rutter_engine::health::HealthReport;
 use rutter_engine::input::InputEvent;
 use rutter_engine::page::{ImageFormat, PageHandle, ScreencastStream, Screenshot};
-use rutter_engine::supervisor::EngineLauncher;
 
 fn lock<T, R>(mutex: &Mutex<T>, f: impl FnOnce(&mut T) -> R) -> R {
     let mut guard = mutex
@@ -223,11 +218,6 @@ impl MockContext {
         }
     }
 
-    /// Whether [`ContextHandle::close`] ran.
-    pub fn is_closed(&self) -> bool {
-        self.inner.closed.load(Ordering::SeqCst)
-    }
-
     /// The cookie batches handed to [`ContextHandle::set_cookies`].
     pub fn set_cookie_calls(&self) -> Vec<Vec<Cookie>> {
         lock(&self.inner.set_cookie_calls, |calls| calls.clone())
@@ -306,123 +296,5 @@ impl ContextHandle for MockContext {
         self.inner.closed.store(true, Ordering::SeqCst);
         lock(&self.inner.pages, |pages| pages.clear());
         Ok(())
-    }
-}
-
-/// An engine handing out [`MockContext`]s; clones of the engine share
-/// the context list so tests can grab the contexts it created.
-pub struct MockEngine {
-    contexts: Mutex<Vec<MockContext>>,
-}
-
-impl MockEngine {
-    pub fn new() -> Self {
-        Self {
-            contexts: Mutex::new(Vec::new()),
-        }
-    }
-
-    /// The context created by the `serial`th `create_context` call.
-    pub fn context(&self, serial: usize) -> MockContext {
-        self.contexts
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .get(serial)
-            .cloned()
-            .expect("context with serial")
-    }
-}
-
-impl Default for MockEngine {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl Engine for MockEngine {
-    fn descriptor(&self) -> EngineDescriptor {
-        EngineDescriptor {
-            backend: EngineBackend::ChromiumHeadlessShell,
-            version: "mock".to_owned(),
-            capabilities: EngineCapabilities {
-                headless: true,
-                headed: false,
-                screencast: false,
-                per_context_isolation: true,
-            },
-        }
-    }
-
-    async fn create_context(
-        &self,
-        _config: ContextConfig,
-    ) -> Result<Arc<dyn ContextHandle>, EngineError> {
-        let context = MockContext::new();
-        self.contexts
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(context.clone());
-        Ok(Arc::new(context))
-    }
-
-    async fn health(&self) -> Result<HealthReport, EngineError> {
-        Ok(HealthReport {
-            healthy: true,
-            backend_version: Some("mock".to_owned()),
-            detail: None,
-        })
-    }
-
-    async fn shutdown(&self) -> Result<(), EngineError> {
-        Ok(())
-    }
-}
-
-/// A launcher producing [`MockEngine`]s, keeping typed handles so tests
-/// can reach the engines (and their contexts) without downcasts.
-pub struct MockLauncher {
-    engines: Mutex<Vec<Arc<MockEngine>>>,
-}
-
-impl MockLauncher {
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self {
-            engines: Mutex::new(Vec::new()),
-        })
-    }
-
-    /// The engine produced by the `serial`th launch.
-    pub fn engine(&self, serial: usize) -> Arc<MockEngine> {
-        self.engines
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .get(serial)
-            .cloned()
-            .expect("engine with serial")
-    }
-}
-
-impl Default for MockLauncher {
-    fn default() -> Self {
-        Self {
-            engines: Mutex::new(Vec::new()),
-        }
-    }
-}
-
-#[async_trait]
-impl EngineLauncher for MockLauncher {
-    fn describe(&self) -> String {
-        "mock".to_owned()
-    }
-
-    async fn launch(&self, _mode: LaunchMode) -> Result<Arc<dyn Engine>, EngineError> {
-        let engine = Arc::new(MockEngine::new());
-        self.engines
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(Arc::clone(&engine));
-        Ok(engine)
     }
 }

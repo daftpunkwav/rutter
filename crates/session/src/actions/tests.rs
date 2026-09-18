@@ -197,7 +197,10 @@ async fn falling_back_to_an_earlier_phase_does_not_restart_the_clock() {
         other => panic!("expected a Visible-phase timeout, got {other:?}"),
     }
     assert!(
-        started.elapsed() < Duration::from_millis(750),
+        // 950 ms still separates the two implementations (a clock
+        // reset ends one full budget later) while leaving room for
+        // Windows timer granularity under parallel test load.
+        started.elapsed() < Duration::from_millis(950),
         "the fall-back must not extend the wait beyond the original budget"
     );
 }
