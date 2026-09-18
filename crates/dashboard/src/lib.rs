@@ -4,8 +4,9 @@
 //! Responsibilities:
 //! - Serve the static frontend (embedded, no build step) on
 //!   127.0.0.1 only, gated by a per-launch random token printed to the
-//!   terminal; `Host` headers are validated against DNS rebinding
-//!   (blueprint §7.7).
+//!   terminal; the first visit exchanges the query token for an
+//!   HttpOnly session cookie, and `Host` headers are validated against
+//!   DNS rebinding (blueprint §7.7).
 //! - Stream events over one WebSocket: replay first, then live; the
 //!   client submits approval decisions through the same socket.
 //!
@@ -13,13 +14,17 @@
 //! executes actions (blueprint §5). The screencast live view (§7.7) is
 //! not wired yet and lands with the remaining M2 work.
 
+// Restriction lints are denied workspace-wide; tests may use plain
+// assertions and unwrapping on fixtures.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
 use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::Html;
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use rutter_core::ids::SessionId;
 use rutter_engine::page::ScreencastStream;
@@ -67,16 +72,18 @@ impl DashboardServer {
 
     /// The per-launch access token (blueprint §7.7). The
     /// `RUTTER_DASHBOARD_TOKEN` override exists for automation; without
-    /// it the token mixes time and process id, enough to resist
-    /// accidental observers on a single-user machine.
+    /// it the token hashes the launch time and process id with a
+    /// randomly keyed hasher seeded from OS entropy, so its value is
+    /// unpredictable from launch circumstances alone.
     pub fn token(&self) -> String {
         if let Ok(token) = std::env::var("RUTTER_DASHBOARD_TOKEN") {
             if !token.is_empty() {
                 return token;
             }
         }
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        use std::collections::hash_map::RandomState;
+        use std::hash::{BuildHasher, Hash, Hasher};
+        let mut hasher = RandomState::new().build_hasher();
         std::time::SystemTime::now().hash(&mut hasher);
         std::process::id().hash(&mut hasher);
         format!("{:016x}", hasher.finish())
@@ -132,8 +139,51 @@ fn host_allowed(headers: &HeaderMap) -> bool {
     name == "127.0.0.1" || name.eq_ignore_ascii_case("localhost") || name == "::1"
 }
 
-fn token_ok(state: &Dashboard, provided: Option<&String>) -> bool {
-    provided.is_some_and(|token| constant_time_eq(token, &state.token))
+fn token_ok(state: &Dashboard, headers: &HeaderMap, provided: Option<&String>) -> bool {
+    let provided = provided
+        .map(String::to_owned)
+        .or_else(|| cookie_token(headers));
+    provided.is_some_and(|token| constant_time_eq(&token, &state.token))
+}
+
+/// Name of the HttpOnly cookie carrying the dashboard token after the
+/// first visit (blueprint §7.7: the query token is exchanged for a
+/// cookie on first connect).
+const TOKEN_COOKIE: &str = "rutter_token";
+
+/// Extracts the token cookie from `Cookie` headers, if present.
+fn cookie_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get_all(axum::http::header::COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|header| header.split(';'))
+        .find_map(|part| {
+            let part = part.trim();
+            part.strip_prefix(&format!("{TOKEN_COOKIE}="))
+                .map(str::to_owned)
+        })
+}
+
+/// Whether the token can travel in a cookie value: generated tokens
+/// are hex, so an automation override with characters outside the
+/// cookie-safe set keeps using the query parameter only.
+fn cookie_safe(token: &str) -> bool {
+    token.chars().all(|c| {
+        c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '~')
+    })
+}
+
+/// The `Set-Cookie` header exchanging the query token for a session
+/// cookie; `HttpOnly` keeps page scripts from reading it back.
+fn token_cookie_header(token: &str) -> Option<axum::http::HeaderValue> {
+    if !cookie_safe(token) {
+        return None;
+    }
+    axum::http::HeaderValue::from_str(&format!(
+        "{TOKEN_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict"
+    ))
+    .ok()
 }
 
 /// Equality without early exit; tokens are short so this is cheap.
@@ -149,16 +199,23 @@ async fn index(
     State(state): State<Dashboard>,
     headers: HeaderMap,
     Query(query): Query<std::collections::HashMap<String, String>>,
-) -> Result<Html<&'static str>, StatusCode> {
+) -> Result<Response, StatusCode> {
     if !host_allowed(&headers) {
         return Err(StatusCode::FORBIDDEN);
     }
-    // First visit carries the token in the query; the page then stores
-    // it in localStorage and reconnects without it.
-    if !token_ok(&state, query.get("token")) {
+    // First visit carries the token in the query; the answer exchanges
+    // it for a session cookie (blueprint §7.7), and later requests
+    // authenticate through the cookie alone.
+    if !token_ok(&state, &headers, query.get("token")) {
         return Err(StatusCode::FORBIDDEN);
     }
-    Ok(Html(assets::INDEX_HTML))
+    let mut response = Html(assets::INDEX_HTML).into_response();
+    if let Some(cookie) = token_cookie_header(&state.token) {
+        response
+            .headers_mut()
+            .insert(axum::http::header::SET_COOKIE, cookie);
+    }
+    Ok(response)
 }
 
 async fn app_js(
@@ -166,7 +223,7 @@ async fn app_js(
     headers: HeaderMap,
     Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> Result<([(String, String); 1], &'static str), StatusCode> {
-    if !host_allowed(&headers) || !token_ok(&state, query.get("token")) {
+    if !host_allowed(&headers) || !token_ok(&state, &headers, query.get("token")) {
         return Err(StatusCode::FORBIDDEN);
     }
     Ok((
@@ -183,7 +240,7 @@ async fn i18n(
     headers: HeaderMap,
     Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> Result<([(String, String); 1], &'static str), StatusCode> {
-    if !host_allowed(&headers) || !token_ok(&state, query.get("token")) {
+    if !host_allowed(&headers) || !token_ok(&state, &headers, query.get("token")) {
         return Err(StatusCode::FORBIDDEN);
     }
     Ok((
@@ -199,7 +256,7 @@ async fn ws_upgrade(
     Query(query): Query<std::collections::HashMap<String, String>>,
     upgrade: WebSocketUpgrade,
 ) -> Result<axum::response::Response, StatusCode> {
-    if !host_allowed(&headers) || !token_ok(&state, query.get("token")) {
+    if !host_allowed(&headers) || !token_ok(&state, &headers, query.get("token")) {
         return Err(StatusCode::FORBIDDEN);
     }
     Ok(upgrade.on_upgrade(move |socket| ws_loop(state, socket)))
@@ -390,7 +447,7 @@ async fn decide(
     Query(query): Query<std::collections::HashMap<String, String>>,
     body: String,
 ) -> Result<StatusCode, StatusCode> {
-    if !host_allowed(&headers) || !token_ok(&state, query.get("token")) {
+    if !host_allowed(&headers) || !token_ok(&state, &headers, query.get("token")) {
         return Err(StatusCode::FORBIDDEN);
     }
     let value: Value = serde_json::from_str(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -419,4 +476,85 @@ async fn decide(
 
 async fn not_found() -> StatusCode {
     StatusCode::NOT_FOUND
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cookie_headers(parts: &[&str]) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        for part in parts {
+            headers.append(
+                axum::http::header::COOKIE,
+                axum::http::HeaderValue::from_str(part).expect("cookie header"),
+            );
+        }
+        headers
+    }
+
+    #[test]
+    fn cookie_token_is_extracted_from_mixed_headers() {
+        let headers = cookie_headers(&["a=1; rutter_token=abc123", "b=2"]);
+        assert_eq!(cookie_token(&headers).as_deref(), Some("abc123"));
+        assert_eq!(cookie_token(&HeaderMap::new()), None);
+    }
+
+    #[test]
+    fn cookie_safety_rejects_separator_characters() {
+        assert!(cookie_safe("0123abcdEF-_.~"));
+        assert!(!cookie_safe("a b"));
+        assert!(!cookie_safe("a;b"));
+    }
+
+    #[test]
+    fn generated_tokens_are_cookie_safe_and_hex() {
+        let server = DashboardServer::new(
+            Arc::new(SessionManager::new(
+                Arc::new(UnsupportedLauncher),
+                rutter_engine::config::LaunchMode::Headless,
+                rutter_session::config::SessionConfig::default(),
+                Arc::new(rutter_policy::RuleSet::default_set()),
+                Arc::new(rutter_policy::ApprovalBroker::new()),
+                None,
+            )),
+            Arc::new(rutter_policy::ApprovalBroker::new()),
+            0,
+        );
+        let token = server.token();
+        assert_eq!(token.len(), 16, "64-bit hex token: {token}");
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(cookie_safe(&token), "generated tokens travel in cookies");
+    }
+
+    #[test]
+    fn cookie_header_carries_httponly_and_samesite() {
+        let header = token_cookie_header("0123abcd").expect("safe token");
+        let text = header.to_str().expect("ascii header");
+        assert!(text.contains("rutter_token=0123abcd"));
+        assert!(text.contains("HttpOnly"));
+        assert!(text.contains("SameSite=Strict"));
+        assert!(token_cookie_header("not safe").is_none());
+    }
+
+    /// Launcher stub satisfying the manager constructor; the dashboard
+    /// tests never launch an engine through it.
+    struct UnsupportedLauncher;
+
+    #[async_trait::async_trait]
+    impl rutter_engine::supervisor::EngineLauncher for UnsupportedLauncher {
+        fn describe(&self) -> String {
+            "unsupported".to_owned()
+        }
+
+        async fn launch(
+            &self,
+            _mode: rutter_engine::config::LaunchMode,
+        ) -> Result<Arc<dyn rutter_engine::engine::Engine>, rutter_engine::error::EngineError> {
+            Err(rutter_engine::error::EngineError::Unsupported {
+                operation: "launch".to_owned(),
+                reason: "dashboard tests never launch engines".to_owned(),
+            })
+        }
+    }
 }

@@ -1728,6 +1728,7 @@ dependencies = [
 name = "rutter-dashboard"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "rutter-core",
  "rutter-engine",

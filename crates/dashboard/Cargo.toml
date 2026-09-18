@@ -21,3 +21,7 @@ axum = { version = "0.8", features = ["ws"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+
+# Tests may use plain assertions and unwrapping on fixtures.
+[dev-dependencies]
+async-trait = { workspace = true }

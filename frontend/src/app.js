@@ -1,20 +1,25 @@
 /**
  * @fileoverview rutter dashboard client: connects to the event stream,
  * renders the action timeline and pending approvals, and submits human
- * decisions. No build step; vanilla ES2017+ only.
+ * decisions. No build step; vanilla ES2017+ only. The access token
+ * arrives in the first visit's query and is exchanged for an HttpOnly
+ * cookie by the server; this script never persists it.
  */
 (function () {
   'use strict';
   var I18N = {};
-  var token = new URLSearchParams(window.location.search).get('token') ||
-    window.localStorage.getItem('rutterToken');
-  if (!token) {
-    document.body.textContent = 'missing token';
-    return;
-  }
-  window.localStorage.setItem('rutterToken', token);
+  // First visit carries the token in the query; the server exchanges it
+  // for an HttpOnly session cookie (blueprint 7.7), so page scripts
+  // never store or read it. Requests below fall back to the cookie
+  // when no query token is present (a refresh, a bookmarked path).
+  var token = new URLSearchParams(window.location.search).get('token');
+  try { window.localStorage.removeItem('rutterToken'); } catch (error) {}
 
-  fetch('/i18n/en.json?token=' + encodeURIComponent(token))
+  function withToken(path) {
+    return token ? path + '?token=' + encodeURIComponent(token) : path;
+  }
+
+  fetch(withToken('/i18n/en.json'))
     .then(function (response) { return response.json(); })
     .then(function (catalog) {
       I18N = catalog;
@@ -36,7 +41,7 @@
   function connect() {
     var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     socket = new WebSocket(
-      protocol + '//' + window.location.host + '/ws?token=' + encodeURIComponent(token));
+      protocol + '//' + window.location.host + withToken('/ws'));
     socket.binaryType = 'arraybuffer';
 
     socket.onmessage = function (message) {
@@ -51,6 +56,7 @@
       render(envelope);
     };
     socket.onclose = function () {
+      append('events', t('reconnecting'));
       setTimeout(connect, 1000);
     };
   }
@@ -131,7 +137,7 @@
   }
 
   function decide(requestId, grant) {
-    fetch('/api/decisions?token=' + encodeURIComponent(token), {
+    fetch(withToken('/api/decisions'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ request_id: requestId, grant: grant })

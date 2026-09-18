@@ -6,5 +6,6 @@
   "deny": "deny",
   "live": "live view",
   "start": "start",
-  "stop": "stop"
+  "stop": "stop",
+  "reconnecting": "connection lost; reconnecting..."
 }
