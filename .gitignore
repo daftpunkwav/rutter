@@ -32,3 +32,6 @@ CLAUDE.local.md
 # Insta snapshot journals and inline-snapshot backups
 *.pending-snap
 *.snap.new
+
+# Local review/audit reports (working notes, not shipped docs)
+/docs-local/
