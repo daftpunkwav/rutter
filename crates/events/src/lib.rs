@@ -5,12 +5,12 @@
 //!   that carries it with a sequence number and RFC 3339 timestamp.
 //! - Publish fire-and-forget on a tokio broadcast bus; publishing never
 //!   blocks action execution (blueprint §7.5).
-//! - Keep a bounded per-session ring so the dashboard (M2) can backfill
+//! - Keep a bounded per-session ring so the dashboard can backfill
 //!   history on connect through [`backbone::Backbone::replay`].
 //!
 //! Boundary: event data and its fan-out only. Emitting events is the
-//! orchestration layer's job; screencast frames and their latest-wins
-//! backpressure arrive with the dashboard (M2).
+//! orchestration layer's job; screencast frames flow outside the
+//! backbone (binary WebSocket frames, latest-wins backpressure).
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.

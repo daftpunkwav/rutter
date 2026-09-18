@@ -11,9 +11,8 @@
 //!   does (blueprint §7.5).
 //!
 //! Boundary: the only place where engine, observation, and events meet.
-//! Policy verdicts and approval flow arrive with M2; storage-state
-//! persistence and recovery replay are M2 concerns and never happen
-//! here (a supervisor restart yields a fresh engine).
+//! Policy verdicts and approval flow through this crate's executor;
+//! storage-state persistence and recovery replay happen here too.
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.

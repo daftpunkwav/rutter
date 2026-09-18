@@ -2,7 +2,7 @@
 //!
 //! Boundary: a headed engine window operated directly by a human, kept
 //! alive by the supervisor until Ctrl-C. The supervision dashboard is
-//! milestone M2 and not wired yet; this mode is honest about that.
+//! enabled through `rutter serve --dashboard`, not by this mode.
 
 use rutter_engine::config::LaunchMode;
 use rutter_engine::supervisor::Supervisor;
@@ -18,7 +18,7 @@ pub async fn run(settings: &Settings) -> Result<(), CliError> {
     supervisor.start().await?;
     println!(
         "rutter: browse mode is running; the engine window is yours.\
-         \nPress Ctrl-C to exit. (The supervision dashboard arrives in milestone M2.)"
+         \nPress Ctrl-C to exit."
     );
 
     tokio::signal::ctrl_c()

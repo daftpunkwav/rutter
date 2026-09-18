@@ -1,9 +1,9 @@
 //! Runtime settings for the rutter binary.
 //!
-//! Boundary: flag and environment resolution only. A TOML config file
-//! arrives with the policy rules in M2; until then the CLI is
-//! configured exclusively through flags and the environment. Every
-//! default is overridable; nothing is read from the network here.
+//! Boundary: flag and environment resolution only. The CLI is
+//! configured exclusively through flags and the environment; the
+//! policy file is passed as `--policy`. Every default is overridable;
+//! nothing is read from the network here.
 
 use std::path::PathBuf;
 use std::time::Duration;

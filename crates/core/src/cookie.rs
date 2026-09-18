@@ -1,8 +1,7 @@
 //! Cookies as part of the domain vocabulary.
 //!
 //! Boundary: pure data passed to engine backends. Persistence across
-//! restarts (storage state) is a session-layer concern (blueprint §7.4)
-//! and arrives in M2.
+//! restarts (storage state) is a session-layer concern (blueprint §7.4).
 
 use serde::{Deserialize, Serialize};
 

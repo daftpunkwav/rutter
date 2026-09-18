@@ -1,9 +1,9 @@
 //! The event vocabulary: structured facts published on the backbone.
 //!
 //! Boundary: events are data, derived from what the orchestration layer
-//! does. Policy and approval events arrive with M2; screencast frame
-//! events arrive with the dashboard and follow the latest-wins
-//! backpressure rule (blueprint §7.5).
+//! does. Screencast frames are not events on the backbone — they flow
+//! as binary WebSocket frames with their own latest-wins backpressure
+//! rule (blueprint §7.5, §7.7).
 
 use serde::{Deserialize, Serialize};
 
