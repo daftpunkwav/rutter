@@ -19,8 +19,14 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+# MSRV tracks the highest rust-version among locked dependencies
+# (rmcp 3.4 / time 0.3.55 require 1.88).
+rust-version = "1.88"
 license = "Apache-2.0"
+# Binary distribution via cargo-dist archives; nothing is published to
+# crates.io, which also lets cargo-deny exempt intra-workspace path
+# dependencies from the wildcard-version deny.
+publish = false
 
 # Packaging via cargo-dist (blueprint §10, M3): `cargo dist build`
 # produces the rutter binary archives; tagging a release triggers the
@@ -49,22 +55,29 @@ rutter-observe = { path = "crates/observe" }
 rutter-policy = { path = "crates/policy" }
 rutter-session = { path = "crates/session" }
 axum = { version = "0.8", features = ["ws"] }
-rmcp = { version = "3.4", features = ["server", "client", "macros", "transport-io", "transport-child-process", "transport-streamable-http-server", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
+# Server-side surface only: stdio (transport-io) + streamable HTTP.
+# The client-side transports live in crates/cli's dev-dependencies —
+# only the e2e tests speak MCP as a client.
+rmcp = { version = "3.4", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 async-trait = "0.1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
+chromiumoxide = "0.9"
 dirs = "6"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 insta = "1"
 proptest = "1"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
+# Needed by name: rmcp::schemars::JsonSchema derive expands to
+# `schemars::` paths, so rutter-mcp must declare the crate itself.
 schemars = "1.0"
 serde_json = "1"
 tempfile = "3"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "signal", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+toml = "0.8"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Lint policy (blueprint §8.4): no unwrap/expect/panic outside tests and

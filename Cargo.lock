@@ -1713,7 +1713,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
- "toml",
 ]
 
 [[package]]
@@ -1766,7 +1765,6 @@ dependencies = [
  "rutter-core",
  "rutter-engine",
  "serde_json",
- "tempfile",
  "tokio",
 ]
 

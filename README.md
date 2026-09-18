@@ -58,7 +58,7 @@ affected operations, never as a crash of rutter.
 
 ## Installation
 
-From source (requires Rust 1.85+):
+From source (requires Rust 1.88+):
 
 ```sh
 cargo install --path crates/cli
@@ -99,7 +99,7 @@ rutter/
 
 ## Development
 
-Requires a stable Rust toolchain (1.85 or newer).
+Requires a stable Rust toolchain (1.88 or newer).
 
 ```sh
 cargo build

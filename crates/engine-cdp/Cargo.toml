@@ -6,6 +6,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+publish.workspace = true
 description = "CDP engine backend for rutter (chromiumoxide)"
 
 [lints]
@@ -16,10 +17,7 @@ rutter-core = { workspace = true }
 rutter-engine = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
-chromiumoxide = "0.9"
+chromiumoxide = { workspace = true }
 futures = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }
