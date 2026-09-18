@@ -93,6 +93,7 @@ rutter/
 ├── docs/         # blueprint, snapshot spec (the contracts)
 ├── scripts/      # quality-gate helpers run by CI
 ├── crates/       # workspace members (see below)
+├── tests/        # cross-crate acceptance tests driving the binary
 └── frontend/     # dashboard sources (vanilla JS, no build step)
 ```
 
@@ -136,8 +137,8 @@ fills):
 
 ```sh
 cargo test -p rutter-engine-cdp --test integration -- --ignored
-cargo test -p rutter --test mcp_e2e -- --ignored
-cargo test -p rutter --test approval_e2e -- --ignored
+cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
+cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-engine-cdp --test screencast -- --ignored
 ```
 

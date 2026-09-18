@@ -21,3 +21,7 @@ seams exist so that each crate has one reason to change
 Adding a crate: register it in the root `Cargo.toml` members list,
 declare workspace deps there (no loose version numbers), and keep the
 directions above — a lower crate must never import a higher one.
+
+Tests: every crate has a `tests/` directory exercising its public API;
+unit tests for private paths stay beside the code in `src/`. Tests that
+span crates live in the workspace-root `tests/` package.
