@@ -38,6 +38,15 @@ pub async fn serve_http(
     );
 
     let app = axum::Router::new().route_service("/mcp", service);
+    if !addr.ip().is_loopback() {
+        // rmcp's built-in Host validation fail-closes non-loopback
+        // clients, and every reachable loopback client can drive the
+        // browser without further authentication — say so up front.
+        eprintln!(
+            "rutter: warning: MCP HTTP transport binds {addr}, a non-loopback address; \
+             anyone who can reach it and presents a loopback Host can drive the browser"
+        );
+    }
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|error| format!("cannot bind {addr}: {error}"))?;
