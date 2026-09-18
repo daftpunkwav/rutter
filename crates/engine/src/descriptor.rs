@@ -1,5 +1,7 @@
 //! Static descriptions of engine backends and their capabilities.
 
+use std::fmt;
+
 /// Which browser backend an engine runs.
 ///
 /// New backends (any CDP-compatible engine) are added behind the same
@@ -11,6 +13,18 @@ pub enum EngineBackend {
     ChromiumHeadlessShell,
     /// The full Chrome for Testing browser; required for headed windows.
     Chromium,
+}
+
+impl fmt::Display for EngineBackend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Kebab-case names as reported to event consumers
+        // (`Event::EngineStarted`): `chrome-headless-shell`.
+        let name = match self {
+            Self::ChromiumHeadlessShell => "chrome-headless-shell",
+            Self::Chromium => "chrome",
+        };
+        f.write_str(name)
+    }
 }
 
 /// What an engine backend can do; consumers must check before relying on

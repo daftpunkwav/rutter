@@ -128,7 +128,7 @@ impl SessionManager {
             running.backbone.publish(
                 id.clone(),
                 Event::EngineStarted {
-                    backend: format!("{:?}", descriptor.backend),
+                    backend: descriptor.backend.to_string(),
                     version: descriptor.version,
                 },
             );

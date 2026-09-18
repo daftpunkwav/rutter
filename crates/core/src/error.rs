@@ -15,7 +15,12 @@ use crate::ids::SessionId;
 use crate::reference::Reference;
 
 /// Why a requested action failed.
+///
+/// Serialized with the event vocabulary's convention (`"type"` tag,
+/// snake_case names) so event consumers, for example the dashboard, can
+/// name the failure the same way they name events.
 #[derive(Debug, Clone, PartialEq, Error, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum ActionError {
     /// The page could not be loaded over the network.
     #[error("navigation to '{url}' failed ({cause})")]
