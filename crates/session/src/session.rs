@@ -61,6 +61,10 @@ pub struct Session {
     /// Where the storage state persists; `None` disables persistence.
     state_path: Option<PathBuf>,
     last_storage: Mutex<StorageState>,
+    /// Whether the persistence file currently reflects `last_storage`;
+    /// a failed write forces a rewrite on the next capture even when
+    /// the captured state is unchanged.
+    last_persist_ok: Mutex<bool>,
 }
 
 impl Session {
@@ -84,6 +88,7 @@ impl Session {
             pages: Mutex::new(Vec::new()),
             state_path,
             last_storage: Mutex::new(StorageState::default()),
+            last_persist_ok: Mutex::new(false),
         }
     }
 
@@ -502,15 +507,31 @@ impl Session {
 
     /// Captures and persists the storage state; the in-memory copy
     /// updates first so recovery works even if the file write fails.
+    /// The disk write is skipped when the captured state is identical to
+    /// the last persisted one: "persist on change" (blueprint §7.4)
+    /// needs no rewrite when nothing changed, and rewriting identical
+    /// JSON on every action only burns file I/O.
     async fn persist_storage(&self, page: &Arc<dyn PageHandle>, url: &str) {
         let context = self.context.read().await.clone();
         let state =
             StorageState::capture(context.as_ref(), &[(url.to_owned(), Arc::clone(page))]).await;
-        *self.lock_last_storage() = state.clone();
-        if let Some(path) = &self.state_path
-            && let Err(error) = state.write(path)
-        {
-            eprintln!("rutter: cannot write storage state: {error}");
+        let (unchanged, persist_ok) = {
+            let mut last = self.lock_last_storage();
+            let unchanged = *last == state;
+            *last = state.clone();
+            (unchanged, *self.lock_last_persist_ok())
+        };
+        if unchanged && persist_ok {
+            return;
+        }
+        if let Some(path) = &self.state_path {
+            match state.write(path) {
+                Ok(()) => *self.lock_last_persist_ok() = true,
+                Err(error) => {
+                    *self.lock_last_persist_ok() = false;
+                    eprintln!("rutter: cannot write storage state: {error}");
+                }
+            }
         }
     }
 
@@ -532,6 +553,12 @@ impl Session {
 
     fn lock_last_storage(&self) -> std::sync::MutexGuard<'_, StorageState> {
         self.last_storage
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn lock_last_persist_ok(&self) -> std::sync::MutexGuard<'_, bool> {
+        self.last_persist_ok
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
