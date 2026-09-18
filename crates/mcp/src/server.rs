@@ -139,8 +139,23 @@ impl RutterMcp {
         }
     }
 
-    /// The session for this connection, created on first use.
+    /// The session for this connection, created on first use. After a
+    /// `close_session` call the manager no longer knows the session, so
+    /// the cached one is discarded and later calls fail fast instead of
+    /// resurrecting a closed session.
     async fn session(&self) -> Result<Arc<Session>, McpError> {
+        if let Some(session) = self.session.get() {
+            return match self.manager.get_session(&self.session_id).await {
+                Some(_) => Ok(Arc::clone(session)),
+                None => Err(McpError::invalid_params(
+                    format!(
+                        "session '{}' is closed; reconnect to open a new one",
+                        self.session_id
+                    ),
+                    None,
+                )),
+            };
+        }
         let session = self
             .session
             .get_or_try_init(|| {
