@@ -30,5 +30,5 @@ pub mod wait;
 pub use config::SessionConfig;
 pub use error::SessionError;
 pub use manager::SessionManager;
-pub use session::{Session, TabInfo};
+pub use session::{PageInfo, Session};
 pub use storage::StorageState;

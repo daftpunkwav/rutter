@@ -318,16 +318,16 @@ impl RutterMcp {
     async fn tabs_list(&self) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
         let mut text = String::new();
-        for tab in session.tabs().await {
+        for page in session.pages().await {
             text.push_str(&format!(
                 "{} {}{}\n",
-                tab.page,
-                if tab.url.is_empty() {
+                page.id,
+                if page.url.is_empty() {
                     "(unknown url)"
                 } else {
-                    &tab.url
+                    &page.url
                 },
-                if tab.active { " (active)" } else { "" }
+                if page.active { " (active)" } else { "" }
             ));
         }
         if text.is_empty() {
@@ -345,14 +345,14 @@ impl RutterMcp {
         // TOOL_SPEC §4: an unknown page id is invalid_params, not an
         // action failure.
         if !session
-            .tabs()
+            .pages()
             .await
             .iter()
-            .any(|tab| tab.page.as_str() == page_id)
+            .any(|page| page.id.as_str() == page_id)
         {
             return Err(invalid_params(format!("no open page with id '{page_id}'")));
         }
-        match session.select_tab(PageId::new(page_id)).await {
+        match session.select_page(PageId::new(page_id)).await {
             Ok(snapshot) => Ok(snapshot_result(&snapshot)),
             Err(error) => Ok(error_result(&error)),
         }
@@ -364,7 +364,7 @@ impl RutterMcp {
         Parameters(PageParams { page_id }): Parameters<PageParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
-        match session.close_tab(PageId::new(page_id)).await {
+        match session.close_page(PageId::new(page_id)).await {
             Ok(confirmation) => Ok(CallToolResult::success(vec![ContentBlock::text(
                 confirmation,
             )])),

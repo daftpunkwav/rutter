@@ -30,9 +30,9 @@ use crate::storage::StorageState;
 
 /// One open page as reported by `tabs_list`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TabInfo {
+pub struct PageInfo {
     /// Stable page identifier.
-    pub page: PageId,
+    pub id: PageId,
     /// Last known URL.
     pub url: String,
     /// Whether this page is the session's active page.
@@ -324,11 +324,11 @@ impl Session {
     }
 
     /// Lists the session's pages with their last known URLs.
-    pub async fn tabs(&self) -> Vec<TabInfo> {
+    pub async fn pages(&self) -> Vec<PageInfo> {
         self.lock_pages()
             .iter()
-            .map(|slot| TabInfo {
-                page: slot.id.clone(),
+            .map(|slot| PageInfo {
+                id: slot.id.clone(),
                 url: slot.url.clone(),
                 active: slot.active,
             })
@@ -336,11 +336,11 @@ impl Session {
     }
 
     /// Makes another page active and returns its snapshot.
-    pub async fn select_tab(&self, page_id: PageId) -> Result<Snapshot, SessionError> {
+    pub async fn select_page(&self, page_id: PageId) -> Result<Snapshot, SessionError> {
         let handle = {
             let mut pages = self.lock_pages();
             let Some(slot) = pages.iter_mut().find(|slot| slot.id == page_id) else {
-                return Err(unknown_tab(&page_id));
+                return Err(unknown_page(&page_id));
             };
             let handle = Arc::clone(&slot.handle);
             pages
@@ -358,7 +358,7 @@ impl Session {
 
     /// Closes a page; closing the active page promotes the first
     /// remaining page.
-    pub async fn close_tab(&self, page_id: PageId) -> Result<String, SessionError> {
+    pub async fn close_page(&self, page_id: PageId) -> Result<String, SessionError> {
         let context = self.context.read().await.clone();
         context
             .close_page(page_id.clone())
@@ -606,7 +606,7 @@ fn engine_error(error: EngineError) -> SessionError {
     SessionError::Engine(error)
 }
 
-fn unknown_tab(page_id: &PageId) -> SessionError {
+fn unknown_page(page_id: &PageId) -> SessionError {
     SessionError::Action(ActionError::NotInteractable {
         reference: rutter_core::reference::Reference::new(page_id.as_str()),
         reason: format!("no open page with id '{page_id}'"),
