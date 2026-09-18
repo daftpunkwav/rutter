@@ -301,14 +301,17 @@ async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
     // viewer asked for them, as binary WebSocket frames.
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<Message>(64);
     let mut current: Option<ScreencastStream> = None;
+    // Highest sequence number sent to this client; live envelopes at or
+    // below it are duplicates and are skipped.
+    let mut sent_up_to = watermark;
 
     loop {
         tokio::select! {
             envelope = live.recv() => {
                 match envelope {
                     Ok(envelope) => {
-                        // Already covered by the replay snapshot.
-                        if watermark.is_some_and(|seen| envelope.seq <= seen) {
+                        // Already covered by the replay snapshot or a gap refill.
+                        if sent_up_to.is_some_and(|seen| envelope.seq <= seen) {
                             continue;
                         }
                         let Ok(json) = serde_json::to_string(&envelope) else {
@@ -317,10 +320,28 @@ async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                         if socket.send(Message::text(json)).await.is_err() {
                             break;
                         }
+                        sent_up_to = Some(envelope.seq);
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        // Semantic events survive via replay; a lagging
-                        // dashboard re-syncs on reconnect (blueprint §7.5).
+                        // The bus dropped envelopes while this client was
+                        // slow, but the rings still hold the semantic
+                        // events (blueprint §7.5): resync from the last
+                        // sequence sent instead of losing the gap until a
+                        // reconnect.
+                        let mut gap: Vec<Envelope> = Vec::new();
+                        for session in state.manager.session_ids().await {
+                            gap.extend(backbone.replay(&session));
+                        }
+                        gap.retain(|envelope| {
+                            sent_up_to.is_none_or(|seen| envelope.seq > seen)
+                        });
+                        gap.sort_by_key(|envelope| envelope.seq);
+                        for envelope in gap {
+                            if send_envelope(&mut socket, &envelope).await.is_err() {
+                                return;
+                            }
+                            sent_up_to = Some(envelope.seq);
+                        }
                         continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
