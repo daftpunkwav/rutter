@@ -59,7 +59,7 @@ pub fn parse_policy(toml_text: &str) -> Result<RuleSet, ConfigError> {
             if ActionClass::parse(name).is_none() {
                 return Err(ConfigError {
                     detail: format!(
-                        "unknown action_class '{name}'; use navigation, pointer,                          keyboard, selection, scroll, or cookies"
+                        "unknown action_class '{name}'; use navigation, pointer, keyboard, selection, scroll, or cookies"
                     ),
                 });
             }
