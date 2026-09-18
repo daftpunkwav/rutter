@@ -1,11 +1,25 @@
 //! Supervisor lifecycle tests over a scripted launcher and engine:
-//! heartbeat replacement, backoff, breaker, failed-start recovery.
+//! heartbeat replacement, backoff, breaker, failed-start recovery —
+//! all through the public `Supervisor` API.
 
-use super::*;
-use crate::config::ContextConfig;
-use crate::context::ContextHandle;
-use crate::descriptor::{EngineBackend, EngineCapabilities, EngineDescriptor};
+// Restriction lints are denied workspace-wide; tests may use plain
+// assertions and unwrapping on fixtures.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
+
+use async_trait::async_trait;
+
+use rutter_engine::config::{ContextConfig, LaunchMode};
+use rutter_engine::context::ContextHandle;
+use rutter_engine::descriptor::{EngineBackend, EngineCapabilities, EngineDescriptor};
+use rutter_engine::engine::Engine;
+use rutter_engine::error::EngineError;
+use rutter_engine::health::HealthReport;
+use rutter_engine::supervisor::{EngineLauncher, RestartPolicy, Supervisor};
 
 /// Scriptable engine: starts healthy, dies on demand; after
 /// [`MockEngine::die`] every health probe fails.
@@ -82,10 +96,10 @@ impl MockLauncher {
         self.launches.load(Ordering::SeqCst)
     }
 
-    async fn engine(&self, serial: usize) -> Arc<MockEngine> {
+    fn engine(&self, serial: usize) -> Arc<MockEngine> {
         self.launched
             .lock()
-            .await
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(serial)
             .cloned()
             .expect("engine with serial")
@@ -104,21 +118,23 @@ impl EngineLauncher for MockLauncher {
             alive: AtomicBool::new(true),
             serial,
         });
-        self.launched.lock().await.push(Arc::clone(&engine));
+        self.launched
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(Arc::clone(&engine));
         Ok(engine)
     }
 }
 
 fn fast_supervisor(launcher: Arc<dyn EngineLauncher>) -> Supervisor {
-    let mut supervisor =
-        Supervisor::new(launcher, LaunchMode::Headless).with_heartbeat(Duration::from_millis(10));
-    supervisor.policy = RestartPolicy::with_backoff(
-        5,
-        Duration::from_millis(500),
-        Duration::from_millis(1),
-        Duration::from_millis(5),
-    );
-    supervisor
+    Supervisor::new(launcher, LaunchMode::Headless)
+        .with_heartbeat(Duration::from_millis(10))
+        .with_policy(RestartPolicy::with_backoff(
+            5,
+            Duration::from_millis(500),
+            Duration::from_millis(1),
+            Duration::from_millis(5),
+        ))
 }
 
 /// Polls until the supervisor reports an engine whose version
@@ -176,7 +192,7 @@ async fn heartbeat_replaces_dead_engine() {
         "mock-0"
     );
 
-    launcher.engine(0).await.die();
+    launcher.engine(0).die();
     let version = wait_for_replacement(&supervisor, "mock-0").await;
     assert_eq!(version, "mock-1");
     assert!(launcher.launch_count() >= 2);
@@ -197,14 +213,14 @@ async fn breaker_open_fails_engine_calls_with_terminated() {
         }
     }
 
-    let mut supervisor = Supervisor::new(Arc::new(FailingLauncher), LaunchMode::Headless)
-        .with_heartbeat(Duration::from_millis(5));
-    supervisor.policy = RestartPolicy::with_backoff(
-        2,
-        Duration::from_millis(100),
-        Duration::from_millis(1),
-        Duration::from_millis(1),
-    );
+    let supervisor = Supervisor::new(Arc::new(FailingLauncher), LaunchMode::Headless)
+        .with_heartbeat(Duration::from_millis(5))
+        .with_policy(RestartPolicy::with_backoff(
+            2,
+            Duration::from_millis(100),
+            Duration::from_millis(1),
+            Duration::from_millis(1),
+        ));
     // The initial start exhausts the window; the breaker opens and
     // every engine() call reports Terminated.
     assert!(matches!(
@@ -245,20 +261,20 @@ impl EngineLauncher for FlakyLauncher {
 
 #[tokio::test]
 async fn supervisor_recovers_after_a_failed_start() {
-    let mut supervisor = Supervisor::new(
+    let supervisor = Supervisor::new(
         Arc::new(FlakyLauncher {
             failures_left: AtomicUsize::new(3),
             launches: AtomicUsize::new(0),
         }),
         LaunchMode::Headless,
     )
-    .with_heartbeat(Duration::from_millis(5));
-    supervisor.policy = RestartPolicy::with_backoff(
+    .with_heartbeat(Duration::from_millis(5))
+    .with_policy(RestartPolicy::with_backoff(
         2,
         Duration::from_millis(100),
         Duration::from_millis(1),
         Duration::from_millis(1),
-    );
+    ));
 
     // The initial start exhausts its window and reports failure, but
     // the heartbeat keeps retrying and the engine comes back.

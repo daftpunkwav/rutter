@@ -8,7 +8,8 @@ and clean shutdown.
 |---|---|
 | `mod.rs` | `Supervisor`: `start`/`engine`/`shutdown`, heartbeat + restart loops |
 | `policy.rs` | `RestartPolicy`: window, limits, backoff schedule, breaker decisions |
-| `tests.rs` | Scripted launcher/engine fixtures for the lifecycle tests |
+
+Lifecycle tests live in the crate's `tests/supervisor_flow.rs`.
 
 Consumers must ask `engine()` fresh every time — the slot changes
 under restarts, and caching the `Arc` pins a dead instance (the bug

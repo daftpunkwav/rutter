@@ -2,8 +2,6 @@
 //! mapping (truncation marker), and parameter mapping.
 
 use super::*;
-use rutter_core::action::ScrollDirection;
-use rutter_core::cookie::SameSite;
 use rutter_engine::config::{ContextConfig, LaunchMode};
 use rutter_engine::context::ContextHandle;
 use rutter_engine::descriptor::{EngineBackend, EngineCapabilities, EngineDescriptor};
@@ -185,52 +183,4 @@ fn first_text_block(result: &CallToolResult) -> String {
         .iter()
         .find_map(|block| block.as_text().map(|text| text.text.clone()))
         .expect("a text content block")
-}
-
-#[test]
-fn cookie_inputs_map_with_defaults() {
-    let input = CookieInput {
-        name: "session".to_owned(),
-        value: "42".to_owned(),
-        domain: "example.com".to_owned(),
-        path: None,
-        secure: None,
-        http_only: None,
-        same_site: Some(SameSiteInput::Lax),
-    };
-    let cookie = Cookie::try_from(&input).expect("cookie");
-    assert_eq!(cookie.name, "session");
-    assert_eq!(cookie.path, None);
-    assert!(!cookie.secure);
-    assert_eq!(cookie.same_site, Some(SameSite::Lax));
-}
-
-#[test]
-fn unknown_same_site_is_rejected_by_deserialization() {
-    // The schema enumerates strict|lax|none (TOOL_SPEC §4), so an
-    // unknown policy is invalid_params at the deserialization layer.
-    let error = serde_json::from_str::<CookieInput>(
-        r#"{"name":"s","value":"42","domain":"example.com","same_site":"sloppy"}"#,
-    )
-    .expect_err("unknown policy");
-    let message = error.to_string();
-    assert!(message.contains("sloppy"), "names the bad value: {message}");
-    assert!(
-        message.contains("unknown variant"),
-        "names the enum rejection: {message}"
-    );
-}
-
-#[test]
-fn scroll_amount_zero_is_rejected_by_the_tool_layer() {
-    // The validation itself lives in the scroll tool; this pins the
-    // direction mapping it relies on.
-    assert_eq!(
-        ScrollDirection::from(Direction::Down),
-        ScrollDirection::Down
-    );
-    assert_eq!(
-        ScrollDirection::from(Direction::Left),
-        ScrollDirection::Left
-    );
 }

@@ -25,9 +25,11 @@ use crate::config::LaunchMode;
 use crate::engine::Engine;
 use crate::error::EngineError;
 use crate::health::HealthReport;
-use crate::supervisor::policy::{RestartDecision, RestartHistory, RestartPolicy};
+use crate::supervisor::policy::{RestartDecision, RestartHistory};
 
 pub mod policy;
+
+pub use policy::RestartPolicy;
 
 /// How a factory produces engine instances; the engine registration
 /// point (blueprint §8.1). Backends plug in by implementing this trait;
@@ -104,6 +106,13 @@ impl Supervisor {
     /// Overrides the heartbeat cadence; tests use a short interval.
     pub fn with_heartbeat(mut self, interval: Duration) -> Self {
         self.heartbeat_interval = interval;
+        self
+    }
+
+    /// Overrides the restart policy (window, backoff, breaker); tests
+    /// use fast, deterministic schedules.
+    pub fn with_policy(mut self, policy: RestartPolicy) -> Self {
+        self.policy = policy;
         self
     }
 
@@ -282,6 +291,3 @@ async fn heartbeat_loop(
         }
     }
 }
-
-#[cfg(test)]
-mod tests;
