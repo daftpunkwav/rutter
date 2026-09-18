@@ -1,13 +1,11 @@
-# tests/ — end-to-end acceptance
+# tests/ — per-crate functional tests
 
-Drives the built `rutter serve` binary as an rmcp client against the
-real engine (`#[ignore]`d by default; run with `--ignored`):
+Tests the library target (`rutter_cli`) through its public API. The
+binary-level acceptance tests live in the workspace-root `tests/`
+package because they span every crate.
 
 | File | Covers |
 |---|---|
-| `mcp_e2e.rs` | TOOL_SPEC §6 task classes: read (navigate+snapshot), interact (click/type/select), form task, wait_for, close_session fail-fast |
-| `approval_e2e.rs` | Policy gating: require_approval parks, dashboard decision path, deny/timeout |
-| `http_e2e.rs` | Streamable HTTP transport: one session per connection over `/mcp` |
-
-Each test spawns a child `rutter` process — keep them behavioral
-(assert tool results), not implementation-coupled.
+| `settings.rs` | `Settings::resolve`: flag precedence, pass-through engine args |
+| `errors.rs` | `CliError`: hints present, engine errors keep their identity |
+| `entry_mode.rs` | `EntryMode` display names and value equality |

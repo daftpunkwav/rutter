@@ -54,21 +54,3 @@ pub async fn run(
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn modes_display_by_name() {
-        assert_eq!(EntryMode::Browse.to_string(), "browse");
-        assert_eq!(EntryMode::Serve { headed: false }.to_string(), "serve");
-        assert_eq!(
-            EntryMode::Open {
-                url: "https://example.com".to_owned()
-            }
-            .to_string(),
-            "open"
-        );
-    }
-}

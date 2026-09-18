@@ -52,24 +52,3 @@ impl CliError {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_error_carries_a_hint() {
-        let errors = [
-            CliError::Engine {
-                source: EngineError::Terminated,
-            },
-            CliError::SignalHandling {
-                mode: "browse".to_owned(),
-                reason: "signal handling failed".to_owned(),
-            },
-        ];
-        for error in &errors {
-            assert!(!error.hint().is_empty(), "missing hint for {error}");
-        }
-    }
-}

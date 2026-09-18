@@ -45,24 +45,3 @@ impl Settings {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn explicit_values_win_over_defaults() {
-        let settings = Settings::resolve(
-            Some(PathBuf::from("browser.exe")),
-            Some(PathBuf::from("cache")),
-            Vec::new(),
-        )
-        .expect("resolve");
-        assert_eq!(
-            settings.engine_executable,
-            Some(PathBuf::from("browser.exe"))
-        );
-        assert_eq!(settings.cache_root, PathBuf::from("cache"));
-        assert_eq!(settings.navigation_timeout, DEFAULT_NAVIGATION_TIMEOUT);
-    }
-}

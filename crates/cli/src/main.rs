@@ -12,20 +12,12 @@
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
-mod browse;
-mod config;
-mod entry;
-mod error;
-mod launcher;
-mod open;
-mod serve;
-
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use config::Settings;
-use entry::EntryMode;
+use rutter_cli::config::Settings;
+use rutter_cli::entry::EntryMode;
 
 /// Headless browser orchestration for AI agents.
 #[derive(Debug, Parser)]
@@ -117,7 +109,13 @@ fn main() -> ExitCode {
         }
     });
 
-    match runtime.block_on(entry::run(mode, &settings, policy, cli.dashboard, cli.http)) {
+    match runtime.block_on(rutter_cli::entry::run(
+        mode,
+        &settings,
+        policy,
+        cli.dashboard,
+        cli.http,
+    )) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("rutter: {error}");

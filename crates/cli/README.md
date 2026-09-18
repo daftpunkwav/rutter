@@ -16,5 +16,6 @@ server.
 
 ## Tests
 
-`tests/` drives the built binary as an MCP client against the real
-engine (`#[ignore]`d; see its README).
+`tests/` covers the library surface (settings, errors, entry modes).
+Binary-level acceptance tests live in the workspace-root `tests/`
+package.

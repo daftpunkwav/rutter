@@ -2,7 +2,8 @@
 
 | File | Role |
 |---|---|
-| `main.rs` | clap definitions, mode dispatch, process entry |
+| `lib.rs` | Library root: every module below is wired and exported here |
+| `main.rs` | clap definitions and process entry (a thin shell over `rutter_cli`) |
 | `entry.rs` | `EntryMode` enum: browse / serve / open |
 | `config.rs` | `Settings::resolve`: flags + environment → runtime settings |
 | `launcher.rs` | Engine launcher selection: cached CdpLauncher or explicit binary |
