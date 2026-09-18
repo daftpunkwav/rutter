@@ -21,10 +21,20 @@ const ENVELOPE_VERSION: f64 = 1.0;
 /// unreadable response yields an empty, truncated snapshot rather than
 /// an error; an unknown viewport disables viewport-first culling.
 pub fn snapshot_from_response(url: &str, response: &Value) -> Snapshot {
+    // Borrow the envelope when possible: a large DOM tree must not be
+    // deep-copied before the builder reads it. Only a JSON-string
+    // envelope needs an owned parse.
+    let parsed;
     let envelope = match response {
-        Value::Object(_) => response.clone(),
-        Value::String(text) => serde_json::from_str::<Value>(text).unwrap_or(Value::Null),
-        _ => Value::Null,
+        Value::Object(_) => response,
+        Value::String(text) => {
+            parsed = serde_json::from_str::<Value>(text).unwrap_or(Value::Null);
+            &parsed
+        }
+        _ => {
+            parsed = Value::Null;
+            &parsed
+        }
     };
 
     let empty = Value::Object(Default::default());
@@ -57,11 +67,10 @@ pub fn snapshot_from_response(url: &str, response: &Value) -> Snapshot {
         .is_some_and(Value::is_object);
     let root = object
         .and_then(|object| object.get("root"))
-        .cloned()
-        .filter(Value::is_object)
-        .unwrap_or_else(|| empty.clone());
+        .filter(|value| value.is_object())
+        .unwrap_or(&empty);
 
-    let mut snapshot = builder::build(url, &meta, &root);
+    let mut snapshot = builder::build(url, &meta, root);
     snapshot.truncated = snapshot.truncated || serializer_flagged || !version_ok || !root_present;
     snapshot
 }
