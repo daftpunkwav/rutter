@@ -28,8 +28,8 @@ impl RingBuffer {
         self.entries.push_back(envelope);
     }
 
-    /// Snapshot of the history, oldest first.
-    pub fn snapshot(&self) -> Vec<Envelope> {
+    /// History of the ring, oldest first.
+    pub fn history(&self) -> Vec<Envelope> {
         self.entries.iter().cloned().collect()
     }
 
@@ -66,7 +66,7 @@ mod tests {
             ring.push(envelope(seq));
         }
 
-        let replayed = ring.snapshot();
+        let replayed = ring.history();
         assert_eq!(ring.len(), 3);
         let seqs: Vec<u64> = replayed.iter().map(|envelope| envelope.seq).collect();
         assert_eq!(seqs, vec![3, 4, 5], "oldest evicted, order preserved");

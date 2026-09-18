@@ -72,7 +72,7 @@ impl Backbone {
     pub fn replay(&self, session: &SessionId) -> Vec<Envelope> {
         self.lock_rings()
             .get(session)
-            .map(RingBuffer::snapshot)
+            .map(RingBuffer::history)
             .unwrap_or_default()
     }
 }
