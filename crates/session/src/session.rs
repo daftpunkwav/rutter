@@ -326,28 +326,6 @@ impl Session {
             .collect()
     }
 
-    /// Opens a new page and makes it active (tabs_new tool).
-    pub async fn open_tab(&self) -> Result<PageId, SessionError> {
-        let context = self.context.read().await.clone();
-        let (page_id, handle) = context.open_page().await.map_err(engine_error)?;
-        self.lock_pages()
-            .iter_mut()
-            .for_each(|slot| slot.active = false);
-        self.lock_pages().push(PageSlot {
-            id: page_id.clone(),
-            url: String::new(),
-            handle: Arc::clone(&handle),
-            active: true,
-        });
-        self.backbone.publish(
-            self.id.clone(),
-            Event::PageOpened {
-                page: page_id.clone(),
-            },
-        );
-        Ok(page_id)
-    }
-
     /// Makes another page active and returns its snapshot.
     pub async fn select_tab(&self, page_id: PageId) -> Result<Snapshot, SessionError> {
         let handle = {
