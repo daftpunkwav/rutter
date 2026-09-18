@@ -161,11 +161,19 @@ impl ContextHandle for CdpContext {
         .await;
         // Disposing an already-dead context (engine restart raced the
         // session close) is a success: the caller wants it gone. CDP
-        // answers such disposals with "Browser context is not found".
+        // answers such disposals with several texts — "not found" and
+        // "Failed to find context with id ..." among them — all meaning
+        // the context is already gone.
         match disposed {
             Ok(()) => {}
-            Err(error) if error.to_string().to_lowercase().contains("not found") => {}
-            Err(error) => return Err(error),
+            Err(error) => {
+                let message = error.to_string().to_lowercase();
+                if message.contains("not found") || message.contains("failed to find") {
+                    // Already gone: treat as success.
+                } else {
+                    return Err(error);
+                }
+            }
         }
         self.lock_pages().drain();
         Ok(())

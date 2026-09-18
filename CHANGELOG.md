@@ -19,6 +19,9 @@ and the project adheres to
 
 ### Fixed
 
+- Closing an already-disposed browser context succeeds: Chrome answers
+  with several error texts ("Failed to find context with id ..." among
+  them), and all of them now fold into success.
 - Session recovery asks the supervisor for the live engine on every
   restart (a cached dead engine broke all recovery) and no longer runs
   twice per restart.
