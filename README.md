@@ -29,6 +29,10 @@ rutter open https://example.com
 # --headed runs a visible window instead).
 rutter serve
 
+# The same MCP server over streamable HTTP, with the supervision
+# dashboard and a policy file attached.
+rutter serve --http 127.0.0.1:8080 --dashboard 7700 --policy policy.toml
+
 # Browse mode (no subcommand): a headed engine window you drive by hand.
 rutter
 ```
@@ -40,6 +44,14 @@ Global flags (valid on every mode):
 | `--engine-executable <PATH>` | — | Use this browser binary; skips download and cache |
 | `--cache-dir <DIR>` | `RUTTER_CACHE_DIR` | Engine cache root (default: OS cache dir + `rutter`) |
 | `--engine-arg <ARG>` | — | Extra argument passed to the engine process (repeatable) |
+
+Serve flags (on `rutter serve` only):
+
+| Flag | Meaning |
+|------|---------|
+| `--http <ADDR>` | Serve MCP over streamable HTTP on that address instead of stdio |
+| `--dashboard <PORT>` | Attach the supervision dashboard on 127.0.0.1:`<PORT>` |
+| `--policy <FILE>` | Load the supervision rule set from a TOML file |
 
 ### Engine acquisition
 
@@ -78,11 +90,14 @@ architecture map is [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ```
 rutter/
-├── docs/         # blueprint, snapshot spec
+├── docs/         # blueprint, snapshot spec (the contracts)
 ├── scripts/      # quality-gate helpers run by CI
 ├── crates/       # workspace members (see below)
-└── frontend/     # dashboard sources (added with milestone M2)
+└── frontend/     # dashboard sources (vanilla JS, no build step)
 ```
+
+Every source directory carries a README stating its responsibility,
+boundary, and file map — start at [`crates/README.md`](crates/README.md).
 
 | Crate | Responsibility |
 |-------|----------------|

@@ -5,6 +5,45 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Dashboard access token derives from an OS-entropy source and is
+  exchanged for an HttpOnly, SameSite=Strict cookie on first visit; it
+  is no longer a weakly seeded hash persisted in localStorage.
+- Session storage state (cookies plus localStorage) is written
+  atomically and, on Unix, owner-only (0600).
+- Engine downloads reject non-https artifact URLs; the MCP HTTP
+  transport warns when bound to a non-loopback address.
+
+### Fixed
+
+- Session recovery asks the supervisor for the live engine on every
+  restart (a cached dead engine broke all recovery) and no longer runs
+  twice per restart.
+- Dashboard WebSocket no longer loses events between replay and
+  subscribe, resyncs from the event rings after broadcast lag, and the
+  loopback Host check rejects prefix-spoofed names.
+- Malformed inputs (absurd wait budgets, blank policy patterns,
+  oversized approval windows) are rejected or clamped instead of
+  panicking; browser targets that vanished on their own no longer
+  wedge the page cap.
+- Every serve exit path (client disconnect, Ctrl-C) shuts the
+  supervised engine down; closing a session disposes its browser
+  context; concurrent session and page counts are capped.
+
+### Changed
+
+- MSRV is 1.88 (locked rmcp 3.4 / time 0.3 require it); dependency
+  features trimmed to their used surface; cargo-deny runs clean.
+- Contracts updated to match behavior: wait_for budget clamp, actual
+  close_session semantics, serve flags, blueprint sketches.
+- Internal renames for accuracy (session `tabs_*` APIs are now
+  `pages`/`select_page`/`close_page`); MCP tool names unchanged.
+- Oversized modules split (dashboard auth/ws, MCP params; module tests
+  into sibling files) and every source directory gained a README.
+
 ## [0.1.0] - 2026-09-18
 
 ### Added
