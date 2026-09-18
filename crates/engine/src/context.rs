@@ -40,4 +40,9 @@ pub trait ContextHandle: Send + Sync {
     /// Reads every cookie scoped to this context (storage state
     /// capture, blueprint §7.4).
     async fn cookies(&self) -> Result<Vec<Cookie>, EngineError>;
+
+    /// Closes the context and every page inside it. Idempotent: closing
+    /// an already-closed context succeeds, so a session can always be
+    /// torn down regardless of what happened before.
+    async fn close(&self) -> Result<(), EngineError>;
 }

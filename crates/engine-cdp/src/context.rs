@@ -150,6 +150,27 @@ impl ContextHandle for CdpContext {
             .map(|handle| handle as Arc<dyn PageHandle>)
     }
 
+    async fn close(&self) -> Result<(), EngineError> {
+        // Disposing the context closes every target inside it.
+        let browser = self.browser.lock().await;
+        let disposed = crate::error::with_deadline(
+            "close_context",
+            crate::error::COMMAND_TIMEOUT,
+            browser.dispose_browser_context(self.cdp_context_id.clone()),
+        )
+        .await;
+        // Disposing an already-dead context (engine restart raced the
+        // session close) is a success: the caller wants it gone. CDP
+        // answers such disposals with "Browser context is not found".
+        match disposed {
+            Ok(()) => {}
+            Err(error) if error.to_string().to_lowercase().contains("not found") => {}
+            Err(error) => return Err(error),
+        }
+        self.lock_pages().drain();
+        Ok(())
+    }
+
     async fn close_page(&self, id: PageId) -> Result<(), EngineError> {
         // Close the target first: only a confirmed close (or a target
         // that is already gone) removes the registration, so a failed

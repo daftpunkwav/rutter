@@ -535,13 +535,14 @@ impl Session {
         }
     }
 
-    /// Closes every page of the session; page-close failures are
-    /// tolerated so a session always closes.
+    /// Closes the session's browser context (every page inside it goes
+    /// with it); failures are tolerated so a session always closes. The
+    /// manager removes the session before closing it, so no concurrent
+    /// recovery re-opens pages in between: close and recovery serialize
+    /// on the manager's running lock.
     pub async fn close(&self) {
         let context = self.context.read().await.clone();
-        for page_id in context.pages() {
-            let _ = context.close_page(page_id).await;
-        }
+        let _ = context.close().await;
         self.lock_pages().clear();
     }
 

@@ -31,6 +31,12 @@ use rutter_engine::page::{ImageFormat, ScreencastFrame, ScreencastStream, Screen
 
 use crate::error::{self, COMMAND_TIMEOUT, fold, fold_navigation, with_deadline, with_deadline_by};
 
+/// Budget for the page's URL query. The query is an untyped oneshot
+/// into the chromiumoxide handler: if the handler died (browser crash
+/// mid-navigation), the send fails, but a wedged handler would hang a
+/// bare await forever, so it gets its own deadline like every call.
+const URL_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// One CDP target (tab) wrapped as a page handle.
 pub struct CdpPage {
     page: Page,
@@ -62,6 +68,12 @@ impl CdpPage {
         self.page.target_id().clone()
     }
 
+    /// Reads the page URL under a deadline; see [`URL_TIMEOUT`] for why
+    /// this query cannot go bare.
+    async fn url(&self) -> Result<Option<String>, EngineError> {
+        with_deadline("page_url", URL_TIMEOUT, self.page.url()).await
+    }
+
     /// Walks the session history by `offset` entries and resolves with
     /// the effective URL after the navigation settles.
     async fn navigate_history(&self, offset: i64) -> Result<String, EngineError> {
@@ -84,13 +96,9 @@ impl CdpPage {
         })
         .await?;
 
-        self.page
-            .url()
-            .await
-            .map_err(fold)?
-            .ok_or_else(|| EngineError::Internal {
-                detail: "page URL unavailable after history navigation".to_owned(),
-            })
+        self.url().await?.ok_or_else(|| EngineError::Internal {
+            detail: "page URL unavailable after history navigation".to_owned(),
+        })
     }
 }
 
@@ -108,13 +116,9 @@ impl rutter_engine::page::PageHandle for CdpPage {
         )
         .await?;
 
-        self.page
-            .url()
-            .await
-            .map_err(fold)?
-            .ok_or_else(|| EngineError::Internal {
-                detail: "page URL unavailable after navigation".to_owned(),
-            })
+        self.url().await?.ok_or_else(|| EngineError::Internal {
+            detail: "page URL unavailable after navigation".to_owned(),
+        })
     }
 
     async fn reload(&self) -> Result<(), EngineError> {
@@ -253,21 +257,30 @@ impl rutter_engine::page::PageHandle for CdpPage {
             .max_width(1024)
             .every_nth_frame(1)
             .build();
-        self.page.execute(start).await.map_err(fold)?;
+        with_deadline(
+            "start_screencast",
+            COMMAND_TIMEOUT,
+            self.page.execute(start),
+        )
+        .await?;
 
         let (sender, receiver) = tokio::sync::mpsc::channel::<ScreencastFrame>(4);
         let task_page = self.page.clone();
         // The forwarding task owns the capture lifecycle: acks every
         // frame (blueprint §7.7), restarts after navigations where CDP
         // stops the capture on its own, and stops when the viewer drops
-        // the stream.
+        // the stream. Every CDP call inside stays under a deadline so a
+        // dead browser ends the stream instead of parking the task.
         tokio::spawn(async move {
             loop {
                 tokio::select! {
                     Some(event) = frames.next() => {
-                        let _ = task_page
-                            .execute(ScreencastFrameAckParams::new(event.session_id))
-                            .await;
+                        let _ = with_deadline(
+                            "screencast_ack",
+                            COMMAND_TIMEOUT,
+                            task_page.execute(ScreencastFrameAckParams::new(event.session_id)),
+                        )
+                        .await;
                         use base64::Engine as _;
                         let Ok(jpeg) =
                             base64::engine::general_purpose::STANDARD.decode(AsRef::<[u8]>::as_ref(&event.data))
@@ -286,12 +299,22 @@ impl rutter_engine::page::PageHandle for CdpPage {
                             .max_width(1024)
                             .every_nth_frame(1)
                             .build();
-                        let _ = task_page.execute(restart).await;
+                        let _ = with_deadline(
+                            "screencast_restart",
+                            COMMAND_TIMEOUT,
+                            task_page.execute(restart),
+                        )
+                        .await;
                     }
                     else => break,
                 }
             }
-            let _ = task_page.execute(StopScreencastParams::default()).await;
+            let _ = with_deadline(
+                "stop_screencast",
+                COMMAND_TIMEOUT,
+                task_page.execute(StopScreencastParams::default()),
+            )
+            .await;
         });
 
         Ok(ScreencastStream::new(receiver))

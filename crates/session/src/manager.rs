@@ -15,7 +15,6 @@ use std::sync::Arc;
 
 use rutter_core::ids::SessionId;
 use rutter_engine::config::LaunchMode;
-use rutter_engine::engine::Engine;
 use rutter_engine::error::EngineError;
 use rutter_engine::supervisor::{EngineLauncher, Supervisor};
 use rutter_events::{Backbone, Event};
@@ -24,10 +23,15 @@ use rutter_policy::{ApprovalBroker, RuleSet};
 use crate::config::SessionConfig;
 use crate::session::Session;
 
-/// The running engine plus every open session.
+/// The running supervisor plus every open sessions.
+///
+/// The engine is never stored here: the supervisor replaces dead
+/// engines under the same handle, so every consumer asks the
+/// supervisor for the current one. Caching an engine `Arc` here would
+/// pin the dead instance and break every context creation after the
+/// first restart.
 struct Running {
     supervisor: Arc<Supervisor>,
-    engine: Arc<dyn Engine>,
     backbone: Arc<Backbone>,
     sessions: HashMap<SessionId, Arc<Session>>,
 }
@@ -122,7 +126,8 @@ impl SessionManager {
             // supervisor; spawning here as well would run recovery twice
             // per restart.
             let running = start_running(&self.inner).await?;
-            let descriptor = running.engine.descriptor();
+            let engine = running.supervisor.engine().await?;
+            let descriptor = engine.descriptor();
             // The engine event lands in the first session's history: it
             // is the session that witnessed the launch.
             running.backbone.publish(
@@ -144,9 +149,20 @@ impl SessionManager {
         if let Some(session) = running.sessions.get(&id) {
             return Ok(Arc::clone(session));
         }
+        if running.sessions.len() >= self.inner.config.max_sessions {
+            return Err(EngineError::Capacity {
+                detail: format!(
+                    "this server holds {} session(s) already; close one before \
+                     opening another",
+                    self.inner.config.max_sessions
+                ),
+            });
+        }
 
-        let context = running
-            .engine
+        // Asked fresh every time: a restart may have swapped the engine
+        // while this caller waited on the manager lock.
+        let engine = running.supervisor.engine().await?;
+        let context = engine
             .create_context(self.inner.config.context_config())
             .await?;
         let state_path = self
@@ -203,12 +219,16 @@ impl SessionManager {
 /// Starts the engine and spawns the recovery task for its supervisor.
 async fn start_running(inner: &Arc<Inner>) -> Result<Running, EngineError> {
     let supervisor = Arc::new(Supervisor::new(Arc::clone(&inner.launcher), inner.mode));
-    supervisor.start().await?;
-    let engine = supervisor.engine().await?;
+    // On failure the supervisor's heartbeat keeps retrying in the
+    // background, so abort it here: leaving it running would orphan a
+    // task that relaunches a browser nobody owns.
+    if let Err(error) = supervisor.start().await {
+        supervisor.shutdown().await;
+        return Err(error);
+    }
     spawn_recovery(inner, supervisor.restart_watcher());
     Ok(Running {
         supervisor,
-        engine,
         backbone: Arc::new(Backbone::new()),
         sessions: HashMap::new(),
     })
@@ -235,12 +255,14 @@ fn spawn_recovery(inner: &Arc<Inner>, mut watcher: tokio::sync::watch::Receiver<
                 "rutter: engine restarted; recovering {} session(s)",
                 running.sessions.len()
             );
+            // Ask the supervisor for the engine that replaced the dead
+            // one; a cached `Arc` would still point at the dead instance.
+            let Ok(engine) = running.supervisor.engine().await else {
+                eprintln!("rutter: engine unavailable during recovery");
+                continue;
+            };
             for session in running.sessions.values() {
-                match running
-                    .engine
-                    .create_context(inner.config.context_config())
-                    .await
-                {
+                match engine.create_context(inner.config.context_config()).await {
                     Ok(context) => session.recover(context).await,
                     Err(error) => {
                         eprintln!("rutter: recovery context failed: {error}");

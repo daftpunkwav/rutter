@@ -13,6 +13,10 @@ use rutter_engine::config::ContextConfig;
 pub struct SessionConfig {
     /// Maximum pages per session context.
     pub max_pages: usize,
+    /// Maximum concurrent sessions this server hosts. Each session
+    /// holds a browser context, so the cap bounds the engine's memory
+    /// and target count against runaway clients.
+    pub max_sessions: usize,
     /// Deadline for one navigation.
     pub navigation_timeout: Duration,
     /// Budget of each auto-wait phase (visible, stable, enabled).
@@ -45,6 +49,7 @@ impl Default for SessionConfig {
     fn default() -> Self {
         Self {
             max_pages: 8,
+            max_sessions: 8,
             navigation_timeout: Duration::from_secs(30),
             phase_timeout: Duration::from_secs(5),
             stability_sample_interval: Duration::from_millis(80),
@@ -64,6 +69,7 @@ mod tests {
     fn defaults_match_the_tool_spec() {
         let config = SessionConfig::default();
         assert_eq!(config.max_pages, 8);
+        assert_eq!(config.max_sessions, 8);
         assert_eq!(config.phase_timeout, Duration::from_secs(5));
         assert_eq!(config.settle, Duration::from_millis(250));
         assert_eq!(config.wait_for_budget, Duration::from_secs(10));
