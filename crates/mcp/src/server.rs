@@ -21,7 +21,6 @@ use rmcp::model::{
 };
 use rmcp::{ErrorData as McpError, ServerHandler, tool, tool_handler, tool_router};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use rutter_core::action::{Action, Origin, ScrollDirection};
 use rutter_core::cookie::{Cookie, SameSite};
@@ -60,6 +59,29 @@ impl From<Direction> for ScrollDirection {
     }
 }
 
+/// Cross-site sending policy accepted by the set_cookies tool
+/// (`docs/TOOL_SPEC.md` §4: `strict|lax|none`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SameSiteInput {
+    /// Sent only in first-party contexts.
+    Strict,
+    /// Sent with top-level navigations.
+    Lax,
+    /// Sent cross-site (requires `secure`).
+    None,
+}
+
+impl From<SameSiteInput> for SameSite {
+    fn from(same_site: SameSiteInput) -> Self {
+        match same_site {
+            SameSiteInput::Strict => Self::Strict,
+            SameSiteInput::Lax => Self::Lax,
+            SameSiteInput::None => Self::None,
+        }
+    }
+}
+
 /// One cookie as agents set it (`docs/TOOL_SPEC.md` §4).
 #[derive(Debug, Clone, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
 /// Tool parameters.
@@ -77,24 +99,13 @@ pub struct CookieInput {
     /// Http-only flag; defaults to false.
     pub http_only: Option<bool>,
     /// Cross-site policy: `strict`, `lax`, or `none`.
-    pub same_site: Option<String>,
+    pub same_site: Option<SameSiteInput>,
 }
 
 impl TryFrom<&CookieInput> for Cookie {
     type Error = McpError;
 
     fn try_from(input: &CookieInput) -> Result<Self, Self::Error> {
-        let same_site = match input.same_site.as_deref() {
-            None => None,
-            Some("strict") => Some(SameSite::Strict),
-            Some("lax") => Some(SameSite::Lax),
-            Some("none") => Some(SameSite::None),
-            Some(other) => {
-                return Err(invalid_params(format!(
-                    "unknown same_site '{other}'; use strict, lax, or none"
-                )));
-            }
-        };
         Ok(Self {
             name: input.name.clone(),
             value: input.value.clone(),
@@ -102,7 +113,7 @@ impl TryFrom<&CookieInput> for Cookie {
             path: input.path.clone(),
             secure: input.secure.unwrap_or(false),
             http_only: input.http_only.unwrap_or(false),
-            same_site,
+            same_site: input.same_site.map(SameSite::from),
             expires: None,
         })
     }
@@ -373,6 +384,16 @@ impl RutterMcp {
         Parameters(PageParams { page_id }): Parameters<PageParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
+        // TOOL_SPEC §4: an unknown page id is invalid_params, not an
+        // action failure.
+        if !session
+            .tabs()
+            .await
+            .iter()
+            .any(|tab| tab.page.as_str() == page_id)
+        {
+            return Err(invalid_params(format!("no open page with id '{page_id}'")));
+        }
         match session.select_tab(PageId::new(page_id)).await {
             Ok(snapshot) => Ok(snapshot_result(&snapshot)),
             Err(error) => Ok(error_result(&error)),
@@ -548,10 +569,12 @@ fn invalid_params(message: String) -> McpError {
 }
 
 fn protocol_error(error: rutter_engine::error::EngineError) -> McpError {
+    // TOOL_SPEC §2: protocol-level failures carry the same
+    // message-plus-hint text as isError results.
     McpError::new(
         ErrorCode(SERVER_ERROR_CODE),
-        error.to_string(),
-        Some(Value::String(error.hint().to_owned())),
+        format!("{error}\nhint: {}", error.hint()),
+        None,
     )
 }
 
@@ -568,7 +591,7 @@ mod tests {
             path: None,
             secure: None,
             http_only: None,
-            same_site: Some("lax".to_owned()),
+            same_site: Some(SameSiteInput::Lax),
         };
         let cookie = Cookie::try_from(&input).expect("cookie");
         assert_eq!(cookie.name, "session");
@@ -578,18 +601,19 @@ mod tests {
     }
 
     #[test]
-    fn unknown_same_site_is_rejected() {
-        let input = CookieInput {
-            name: "session".to_owned(),
-            value: "42".to_owned(),
-            domain: "example.com".to_owned(),
-            path: None,
-            secure: None,
-            http_only: None,
-            same_site: Some("sloppy".to_owned()),
-        };
-        let error = Cookie::try_from(&input).expect_err("unknown policy");
-        assert!(error.to_string().contains("same_site"));
+    fn unknown_same_site_is_rejected_by_deserialization() {
+        // The schema enumerates strict|lax|none (TOOL_SPEC §4), so an
+        // unknown policy is invalid_params at the deserialization layer.
+        let error = serde_json::from_str::<CookieInput>(
+            r#"{"name":"s","value":"42","domain":"example.com","same_site":"sloppy"}"#,
+        )
+        .expect_err("unknown policy");
+        let message = error.to_string();
+        assert!(message.contains("sloppy"), "names the bad value: {message}");
+        assert!(
+            message.contains("unknown variant"),
+            "names the enum rejection: {message}"
+        );
     }
 
     #[test]
