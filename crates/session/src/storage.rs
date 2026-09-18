@@ -98,7 +98,9 @@ impl StorageState {
     /// write is atomic: the JSON lands in a sibling temporary file that
     /// replaces the real one in one rename, so a crash or a full disk
     /// can never leave a half-written file (which would read back as an
-    /// empty state and silently drop the session's login).
+    /// empty state and silently drop the session's login). The file
+    /// holds cookies and localStorage — secrets — so it is created
+    /// owner-only on Unix instead of inheriting the umask default.
     pub fn write(&self, path: &Path) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -109,7 +111,19 @@ impl StorageState {
             .and_then(|name| name.to_str())
             .unwrap_or("storage.json");
         let staging = path.with_file_name(format!(".{file_name}.tmp-{}", std::process::id()));
-        if let Err(error) = std::fs::write(&staging, json) {
+        let mut options = std::fs::File::options();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            // Mode applies at creation: the secrets never exist on disk
+            // with the umask default (group/world readable).
+            options.mode(0o600);
+        }
+        let write_result = options
+            .open(&staging)
+            .and_then(|mut file| std::io::Write::write_all(&mut file, json.as_bytes()));
+        if let Err(error) = write_result {
             let _ = std::fs::remove_file(&staging);
             return Err(error);
         }
@@ -220,6 +234,38 @@ mod tests {
             left_behind,
             vec![std::ffi::OsString::from("state.json")],
             "no staging files may survive"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn persistence_files_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("secrets.json");
+        let state = StorageState {
+            cookies: vec![Cookie {
+                name: "session".to_owned(),
+                value: "s3cret".to_owned(),
+                domain: "example.com".to_owned(),
+                path: None,
+                secure: true,
+                http_only: true,
+                same_site: None,
+                expires: None,
+            }],
+            origins: Vec::new(),
+        };
+        state.write(&path).expect("write");
+        let mode = std::fs::metadata(&path)
+            .expect("metadata")
+            .permissions()
+            .mode();
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "cookie persistence must not be group or world readable"
         );
     }
 }
