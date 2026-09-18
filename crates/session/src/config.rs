@@ -2,7 +2,9 @@
 //!
 //! Boundary: numeric policy for one process. The values are defaults
 //! pinned by `docs/TOOL_SPEC.md` §3; the `wait_for` budget default is
-//! pinned by the MCP tool layer (TOOL_SPEC §4), not here.
+//! pinned by the MCP tool layer (TOOL_SPEC §4), not here. The approval
+//! window lives on the policy's [`rutter_policy::RuleSet`], which the
+//! session reads directly.
 
 use std::time::Duration;
 
@@ -27,9 +29,6 @@ pub struct SessionConfig {
     pub settle: Duration,
     /// Poll interval for auto-wait phases and `wait_for`.
     pub poll_interval: Duration,
-    /// Window a human has to answer an approval request
-    /// (blueprint §7.6: default 120 s).
-    pub approval_timeout: Duration,
 }
 
 impl SessionConfig {
@@ -53,7 +52,6 @@ impl Default for SessionConfig {
             stability_sample_interval: Duration::from_millis(80),
             settle: Duration::from_millis(250),
             poll_interval: Duration::from_millis(100),
-            approval_timeout: Duration::from_secs(120),
         }
     }
 }

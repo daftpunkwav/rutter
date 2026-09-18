@@ -53,8 +53,12 @@ struct Supervised {
 }
 
 impl Supervised {
-    async fn take_engine(&self) -> Option<Arc<dyn Engine>> {
-        self.engine.write().await.take()
+    /// Removes and drops the current engine, leaving the slot empty for
+    /// a relaunch. Both call sites only need the clear: the shutdown
+    /// path shuts the engine down through its own handle first, and the
+    /// heartbeat clears it after confirming the instance is dead.
+    async fn clear_engine(&self) {
+        *self.engine.write().await = None;
     }
 }
 
@@ -148,7 +152,7 @@ impl Supervisor {
         if let Some(handle) = self.heartbeat.lock().await.take() {
             handle.abort();
         }
-        if let Some(engine) = self.supervised.take_engine().await
+        if let Some(engine) = self.supervised.engine.write().await.take()
             && let Err(error) = engine.shutdown().await
         {
             eprintln!("rutter: engine shutdown failed: {error}");
@@ -240,7 +244,7 @@ async fn heartbeat_loop(
         {
             continue;
         }
-        supervised.take_engine().await;
+        supervised.clear_engine().await;
 
         loop {
             let decision = {
