@@ -106,7 +106,9 @@ by `amount` pixels; `amount` ≤ 0 is `invalid_params`.
 ### wait_for
 `{ text: string, timeout_ms?: number }` → snapshot. Polls the page's
 text content until `text` appears (default budget 10 s); exhaustion →
-`ActionError::TimedOut`.
+`ActionError::TimedOut`. Requested budgets above 600 000 ms are
+clamped to that server-side maximum; the timeout error reports the
+effective budget.
 
 ### tabs_list
 `{}` → text block, one line per page: `<page-id> <url>`; the active
