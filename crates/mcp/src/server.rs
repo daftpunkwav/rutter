@@ -391,7 +391,7 @@ impl RutterMcp {
         }
     }
 
-    #[tool(description = "Close this session's pages; the engine shuts down when idle")]
+    #[tool(description = "Close this session's pages and context")]
     async fn close_session(&self) -> Result<CallToolResult, McpError> {
         match self.manager.close_session(&self.session_id).await {
             Ok(()) => Ok(CallToolResult::success(vec![ContentBlock::text(format!(

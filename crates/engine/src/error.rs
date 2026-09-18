@@ -2,7 +2,7 @@
 //!
 //! Boundary: these variants describe failures of the engine process and
 //! its protocol; the session layer maps them onto
-//! [`rutter_core::ActionError`] for agents.
+//! [`rutter_core::error::ActionError`] for agents.
 
 use std::time::Duration;
 
@@ -99,6 +99,9 @@ impl EngineError {
                 "close a page or context before opening more; the caps protect \
                  the shared engine process"
             }
+            // The remaining variants name process-level conditions an
+            // operator investigates from the engine's own output, so
+            // they share this generic pointer.
             _ => {
                 "inspect the error above; most engine failures are transient and \
                  a retry is safe"

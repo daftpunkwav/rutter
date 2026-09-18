@@ -53,10 +53,10 @@ struct Supervised {
 }
 
 impl Supervised {
-    /// Removes and drops the current engine, leaving the slot empty for
-    /// a relaunch. Both call sites only need the clear: the shutdown
-    /// path shuts the engine down through its own handle first, and the
-    /// heartbeat clears it after confirming the instance is dead.
+    /// Removes the current engine, leaving the slot empty for a
+    /// relaunch. The heartbeat call site has already confirmed the
+    /// instance is dead; dropping the last handle lets the child be
+    /// reaped before the relaunch loop starts.
     async fn clear_engine(&self) {
         *self.engine.write().await = None;
     }

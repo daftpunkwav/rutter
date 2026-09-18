@@ -23,7 +23,7 @@ use rutter_policy::{ApprovalBroker, RuleSet};
 use crate::config::SessionConfig;
 use crate::session::Session;
 
-/// The running supervisor plus every open sessions.
+/// The running supervisor plus every open session.
 ///
 /// The engine is never stored here: the supervisor replaces dead
 /// engines under the same handle, so every consumer asks the

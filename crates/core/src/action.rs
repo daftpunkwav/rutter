@@ -1,9 +1,9 @@
 //! Typed operations an agent can request, plus the origin of an action.
 //!
 //! Boundary: the payload shapes here are the vocabulary shared by every
-//! layer; the authoritative tool schema is `docs/TOOL_SPEC.md` once
-//! written, and execution semantics (auto-wait, settlement, snapshots
-//! after acting) live in `rutter-session`.
+//! layer; the authoritative tool schema is `docs/TOOL_SPEC.md`, and
+//! execution semantics (auto-wait, settlement, snapshots after acting)
+//! live in `rutter-session`.
 
 use serde::{Deserialize, Serialize};
 

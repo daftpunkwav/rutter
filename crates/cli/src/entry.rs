@@ -12,8 +12,9 @@ use crate::error::CliError;
 /// What the binary was asked to start.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EntryMode {
-    /// Headed engine window operated by a human, dashboard enabled; the
-    /// no-argument default.
+    /// Headed engine window operated by a human; the no-argument
+    /// default. The dashboard is a `serve --dashboard` option, not part
+    /// of this mode.
     Browse,
     /// MCP server; engine headless by default.
     Serve {

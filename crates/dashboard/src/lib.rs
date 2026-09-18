@@ -35,7 +35,8 @@ use rutter_session::manager::SessionManager;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-/// Static frontend sources, embedded at compile time.
+/// Static frontend sources, embedded at compile time (no build step,
+/// blueprint §7.7).
 mod assets {
     /// The dashboard page shell.
     pub const INDEX_HTML: &str = include_str!("../../../frontend/src/index.html");
@@ -125,7 +126,8 @@ impl DashboardServer {
 
 /// Host header validation: only loopback names pass (blueprint §7.7,
 /// DNS rebinding). The host name is compared after stripping any port;
-/// a prefix match would let `127.0.0.1.evil.com` through.
+/// a prefix match would let `127.0.0.1.evil.com` through, and the
+/// check runs on every endpoint, including the WebSocket upgrade.
 fn host_allowed(headers: &HeaderMap) -> bool {
     let Some(host) = headers
         .get(axum::http::header::HOST)

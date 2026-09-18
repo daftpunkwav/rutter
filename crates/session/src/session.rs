@@ -217,8 +217,9 @@ impl Session {
 
     /// Executes one action with the given origin and returns the fresh
     /// snapshot; requested/completed/failed land on the event backbone.
-    /// After a completed action the page URL and the storage state are
-    /// refreshed (blueprint §7.4: persist on change).
+    /// After every attempt, successful or not, the tracked page URL and
+    /// the storage state are refreshed (blueprint §7.4: persist on
+    /// change).
     pub async fn execute(&self, action: Action, origin: Origin) -> Result<Snapshot, SessionError> {
         let page = self.active_page().await.map_err(engine_error)?;
         let page_id = self.active_page_id();
@@ -285,7 +286,8 @@ impl Session {
         result
     }
 
-    /// Renders the active page as a snapshot; no events, no auto-wait.
+    /// Renders the active page as a snapshot; no events, no auto-wait,
+    /// no URL refresh.
     pub async fn snapshot(&self) -> Result<Snapshot, SessionError> {
         let page = self.active_page().await.map_err(engine_error)?;
         PageOps {
@@ -335,7 +337,9 @@ impl Session {
             .collect()
     }
 
-    /// Makes another page active and returns its snapshot.
+    /// Makes another page active and returns its snapshot. No event is
+    /// published; the page switch is visible to consumers only through
+    /// the next action's events.
     pub async fn select_page(&self, page_id: PageId) -> Result<Snapshot, SessionError> {
         let handle = {
             let mut pages = self.lock_pages();
@@ -411,7 +415,9 @@ impl Session {
     }
 
     /// Captures the session's storage state (cookies plus localStorage
-    /// of every open page).
+    /// of every open page). A read-only probe: nothing is persisted and
+    /// the in-memory `last_storage` copy is not touched, so a capture
+    /// never influences what the next persist-on-change run writes.
     pub async fn capture_storage(&self) -> StorageState {
         let context = self.context.read().await.clone();
         StorageState::capture(context.as_ref(), &self.page_pairs()).await
@@ -432,7 +438,9 @@ impl Session {
     }
 
     /// Loads a previously saved storage state and applies it to the
-    /// session (explicit load; blueprint §7.4).
+    /// session (explicit load; blueprint §7.4). Restores over the
+    /// currently open pages and records the loaded state as the last
+    /// known one, so a later persistence run does not rewrite it.
     pub async fn load_storage(&self) -> Result<(), SessionError> {
         let state = match &self.state_path {
             Some(path) => StorageState::read(path),

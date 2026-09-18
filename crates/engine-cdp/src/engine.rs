@@ -44,6 +44,9 @@ impl CdpEngine {
             backend,
             version,
             capabilities: EngineCapabilities {
+                // `headed` reports the mode this instance was launched
+                // with rather than a static backend trait; headless is
+                // always available to the CDP backend.
                 headless: true,
                 headed: mode == LaunchMode::Headed,
                 screencast: true,

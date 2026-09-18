@@ -263,7 +263,8 @@ impl Executor<'_> {
         }
     }
 
-    /// Settles for the configured pause, then takes the fresh snapshot.
+    /// Settles for the configured pause (TOOL_SPEC §3: lets same-tick
+    /// navigations start), then takes the fresh snapshot.
     async fn settle_snapshot(&self) -> Result<Snapshot, SessionError> {
         if !self.config.settle.is_zero() {
             tokio::time::sleep(self.config.settle).await;

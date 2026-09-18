@@ -1,9 +1,9 @@
 //! `rutter open <url>`: one-shot diagnostic.
 //!
 //! Boundary: navigate once, print one snapshot to stdout, exit. No
-//! sessions, no recovery, no policy — those arrive with their own
-//! milestones. stdout carries only the snapshot; progress and errors go
-//! to stderr.
+//! sessions, no recovery, no policy — those belong to the serve and
+//! browse modes. stdout carries only the snapshot; progress and errors
+//! go to stderr.
 
 use rutter_engine::config::{ContextConfig, LaunchMode};
 use rutter_engine::engine::Engine;

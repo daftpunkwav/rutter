@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 pub struct Pattern(String);
 
 impl Pattern {
-    /// Wraps a pattern string without validation; use [`parse`] to
-    /// reject empty patterns.
+    /// Wraps a pattern string without validation; use [`Pattern::parse`]
+    /// to reject empty patterns.
     pub fn new(pattern: impl Into<String>) -> Self {
         Self(pattern.into())
     }

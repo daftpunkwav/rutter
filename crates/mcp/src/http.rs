@@ -1,11 +1,11 @@
 //! Streamable HTTP transport for the MCP server (blueprint §3:
 //! "stdio first, streamable HTTP later" — this is the later).
 //!
-//! Boundary: transport mapping only. rmcp's `StreamableHttpService` is
-//! a tower service with built-in `Host` header validation (DNS
-//! rebinding, blueprint §7.7-grade checks); each MCP connection mints
-//! its own rutter session through the shared manager. Binding stays on
-//! the loopback address the caller passes.
+//! Boundary: transport mapping only. rmcp's `StreamableHttpService`
+//! validates inbound `Host` headers against a loopback allowlist by
+//! default (DNS rebinding, blueprint §7.7-grade checks); each MCP
+//! connection mints its own rutter session through the shared manager.
+//! Binding stays on the address the caller passes.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -39,9 +39,9 @@ pub async fn serve_http(
 
     let app = axum::Router::new().route_service("/mcp", service);
     if !addr.ip().is_loopback() {
-        // rmcp's built-in Host validation fail-closes non-loopback
-        // clients, and every reachable loopback client can drive the
-        // browser without further authentication — say so up front.
+        // rmcp's default Host allowlist fail-closes non-loopback Host
+        // headers, and every loopback client that passes it can drive
+        // the browser without further authentication — say so up front.
         eprintln!(
             "rutter: warning: MCP HTTP transport binds {addr}, a non-loopback address; \
              anyone who can reach it and presents a loopback Host can drive the browser"
