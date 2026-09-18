@@ -390,6 +390,12 @@ async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                     ))
                                     .await;
                             }
+                            Some("subscribe") => {
+                                // Blueprint §7.7 lists subscribe as a
+                                // client message; replay and the live
+                                // stream start automatically on connect,
+                                // so there is nothing further to do.
+                            }
                             _ => {
                                 if let Some(reply) = handle_client_message(&state, &text) {
                                     let _ =
