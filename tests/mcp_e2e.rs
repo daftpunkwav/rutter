@@ -10,6 +10,8 @@
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod common;
+
 use rmcp::ServiceExt;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 use rmcp::transport::TokioChildProcess;
@@ -18,8 +20,7 @@ use tokio::process::Command;
 
 /// Boots `rutter serve` as a child and connects an rmcp client.
 async fn connect() -> rmcp::service::RunningService<rmcp::RoleClient, ()> {
-    let mut command =
-        Command::new(std::env::var("CARGO_BIN_EXE_rutter").expect("built by cargo test"));
+    let mut command = Command::new(common::rutter_bin());
     command.arg("serve");
     let transport = TokioChildProcess::new(command).expect("spawn rutter serve");
     ().serve(transport).await.expect("client initialization")

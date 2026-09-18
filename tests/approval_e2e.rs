@@ -10,6 +10,8 @@
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod common;
+
 use rmcp::ServiceExt;
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use rmcp::transport::TokioChildProcess;
@@ -40,8 +42,7 @@ async fn connect(
     policy: &std::path::Path,
     dashboard_port: u16,
 ) -> rmcp::service::RunningService<rmcp::RoleClient, ()> {
-    let mut command =
-        Command::new(std::env::var("CARGO_BIN_EXE_rutter").expect("built by cargo test"));
+    let mut command = Command::new(common::rutter_bin());
     command
         .arg("serve")
         .arg("--policy")

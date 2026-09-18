@@ -1709,8 +1709,6 @@ dependencies = [
  "rutter-observe",
  "rutter-policy",
  "rutter-session",
- "serde_json",
- "tempfile",
  "thiserror",
  "tokio",
 ]
@@ -1720,6 +1718,7 @@ name = "rutter-core"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "thiserror",
 ]
 
@@ -1776,6 +1775,16 @@ dependencies = [
  "serde",
  "serde_json",
  "time",
+ "tokio",
+]
+
+[[package]]
+name = "rutter-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "rmcp",
+ "serde_json",
+ "tempfile",
  "tokio",
 ]
 

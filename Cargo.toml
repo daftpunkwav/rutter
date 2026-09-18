@@ -14,6 +14,7 @@ members = [
     "crates/observe",
     "crates/policy",
     "crates/session",
+    "tests",
 ]
 
 [workspace.package]

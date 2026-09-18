@@ -1,0 +1,42 @@
+# rutter-integration-tests: cross-crate acceptance tests.
+#
+# These tests span crate boundaries on purpose — they drive the built
+# `rutter` binary as an MCP client, so the whole protocol stack
+# (client -> transport -> mcp -> session -> engine-cdp) runs together.
+# Per-crate unit and functional tests live in each crate's own tests/
+# directory instead.
+
+[package]
+name = "rutter-integration-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Cross-crate integration tests for the rutter binary"
+
+# The test targets are declared explicitly because the test files sit
+# at the package root (this directory is the root tests/ directory),
+# not in a nested tests/ folder cargo could autodiscover.
+autotests = false
+
+[[test]]
+name = "mcp_e2e"
+path = "mcp_e2e.rs"
+
+[[test]]
+name = "approval_e2e"
+path = "approval_e2e.rs"
+
+[[test]]
+name = "http_e2e"
+path = "http_e2e.rs"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+rmcp = { workspace = true, features = ["client", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["process"] }
