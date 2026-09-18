@@ -316,6 +316,9 @@ impl PageOps<'_> {
 
     /// Polls the page text until `needle` appears within `budget`.
     pub async fn wait_for(&self, needle: &str, budget: Duration) -> Result<Snapshot, SessionError> {
+        // Clamp here so the timeout error reports the effective budget,
+        // not a raw request the poll layer would have clamped anyway.
+        let budget = budget.min(crate::wait::MAX_POLL_BUDGET);
         let text_json = serde_json::to_string(needle).map_err(|error| {
             SessionError::Action(ActionError::Internal {
                 detail: format!("needle is not representable as JSON: {error}"),
