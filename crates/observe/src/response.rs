@@ -50,11 +50,6 @@ pub fn snapshot_from_response(url: &str, response: &Value) -> Snapshot {
         .unwrap_or(false);
 
     let meta = PageMeta {
-        viewport_width: object
-            .and_then(|object| object.get("viewport"))
-            .and_then(|viewport| viewport.get("width"))
-            .and_then(Value::as_f64)
-            .map(|width| width.max(0.0)),
         viewport_height: object
             .and_then(|object| object.get("viewport"))
             .and_then(|viewport| viewport.get("height"))

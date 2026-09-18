@@ -1,8 +1,8 @@
 //! Session and auto-wait configuration.
 //!
 //! Boundary: numeric policy for one process. The values are defaults
-//! pinned by `docs/TOOL_SPEC.md` §3; a TOML config file arrives with
-//! the policy rules in M2.
+//! pinned by `docs/TOOL_SPEC.md` §3; the `wait_for` budget default is
+//! pinned by the MCP tool layer (TOOL_SPEC §4), not here.
 
 use std::time::Duration;
 
@@ -25,8 +25,6 @@ pub struct SessionConfig {
     pub stability_sample_interval: Duration,
     /// Wait after an action before taking the fresh snapshot.
     pub settle: Duration,
-    /// Default budget for `wait_for` when the caller sends none.
-    pub wait_for_budget: Duration,
     /// Poll interval for auto-wait phases and `wait_for`.
     pub poll_interval: Duration,
     /// Window a human has to answer an approval request
@@ -54,7 +52,6 @@ impl Default for SessionConfig {
             phase_timeout: Duration::from_secs(5),
             stability_sample_interval: Duration::from_millis(80),
             settle: Duration::from_millis(250),
-            wait_for_budget: Duration::from_secs(10),
             poll_interval: Duration::from_millis(100),
             approval_timeout: Duration::from_secs(120),
         }
@@ -72,7 +69,6 @@ mod tests {
         assert_eq!(config.max_sessions, 8);
         assert_eq!(config.phase_timeout, Duration::from_secs(5));
         assert_eq!(config.settle, Duration::from_millis(250));
-        assert_eq!(config.wait_for_budget, Duration::from_secs(10));
         assert_eq!(config.context_config().max_pages, 8);
     }
 }

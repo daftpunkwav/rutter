@@ -41,7 +41,9 @@ impl CliError {
     pub fn hint(&self) -> String {
         match self {
             Self::Engine { source } => source.hint().to_owned(),
-            Self::Unavailable { .. } => "track milestone M1 for the MCP server surface".to_owned(),
+            Self::Unavailable { mode, .. } => {
+                format!("'{mode}' was interrupted while handling a signal; rerun the command")
+            }
             Self::Server { .. } => {
                 "check that stdin/stdout are connected and not owned by another process".to_owned()
             }
@@ -60,8 +62,8 @@ mod tests {
                 source: EngineError::Terminated,
             },
             CliError::Unavailable {
-                mode: "serve".to_owned(),
-                reason: "partially shipped: stdio serves in M1".to_owned(),
+                mode: "browse".to_owned(),
+                reason: "signal handling failed".to_owned(),
             },
         ];
         for error in &errors {

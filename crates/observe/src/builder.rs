@@ -51,13 +51,11 @@ const MAX_ROLE_CHARS: usize = 64;
 const MAX_REF_CHARS: usize = 64;
 const MAX_TEXT_CHARS: usize = 200;
 
-/// Viewport size of the page a tree came from, in CSS pixels. Unknown
+/// Viewport height of the page a tree came from, in CSS pixels. Unknown
 /// dimensions disable viewport-first culling; the remaining budgets
 /// still apply.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PageMeta {
-    /// Viewport width, if the serializer reported one.
-    pub viewport_width: Option<f64>,
     /// Viewport height, if the serializer reported one.
     pub viewport_height: Option<f64>,
 }
@@ -432,7 +430,6 @@ mod tests {
 
     fn meta() -> PageMeta {
         PageMeta {
-            viewport_width: Some(1280.0),
             viewport_height: Some(720.0),
         }
     }
@@ -753,7 +750,6 @@ mod tests {
             #[test]
             fn rendered_size_never_exceeds_budget(trees in prop::collection::vec(arb_tree(), 0..12)) {
                 let meta = PageMeta {
-                    viewport_width: Some(1280.0),
                     viewport_height: Some(720.0),
                 };
                 let tree = json!({ "role": "root", "rect": { "y": 0, "height": 5000 }, "children": trees });
