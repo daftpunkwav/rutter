@@ -6,8 +6,10 @@
 
 ## 1. Transport and sessions
 
-- Transport: stdio first (blueprint §3); streamable HTTP arrives with
-  M3. The binary entry is `rutter serve [--headed]`.
+- Transport: stdio (blueprint §3) or streamable HTTP via
+  `rutter serve --http ADDR`. The binary entry is
+  `rutter serve [--headed]`; the dashboard attaches through
+  `serve --dashboard PORT` and the policy file through `serve --policy FILE`.
 - One MCP client connection is one Session. The SessionId is minted by
   the server at connection start and reported in the
   `SessionStarted` event; it appears in error payloads that reference a
@@ -130,8 +132,11 @@ Context (context isolation, blueprint §6). `same_site` is
 
 ### close_session
 `{}` → text confirmation. Closes the session's pages and context and
-drops engine references; the engine shuts down when the last session
-closes (M0 supervisor semantics).
+drops engine references. The call is terminal for the connection:
+later tool calls on the same connection fail with `invalid_params`
+naming the closed session. The engine keeps serving other sessions and
+shuts down when the server exits (client disconnect or Ctrl-C), not
+when a session closes.
 
 ## 5. Event backbone (not a tool)
 

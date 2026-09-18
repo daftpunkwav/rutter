@@ -145,7 +145,7 @@ Key seams and why they exist:
 - **observe is pure data transformation** (`serde_json::Value` in,
   `Snapshot` out) plus a JS asset it owns. It is unit-testable without any
   engine and has no async code.
-- **policy is pure computation** (`RuleSet + Action + PageInfo → Verdict`)
+- **policy is pure computation** (`RuleSet + action class × URL → Verdict`)
   plus the approval broker state machine. No I/O, fully testable.
 - **session composes the above**; it is the only place where engine,
   observation, policy, and events meet. High cohesion by design: one
@@ -272,7 +272,10 @@ execution. Backpressure policy: screencast frames are droppable
 ```rust
 // rutter-policy — pure verdict evaluation.
 pub enum Verdict { Allow, Deny, RequireApproval }
-pub fn evaluate(rules: &RuleSet, action: &Action, page: &PageInfo) -> Verdict;
+impl RuleSet {
+    pub fn evaluate(&self, class: ActionClass, url: &str) -> Verdict;
+    pub fn evaluate_action(&self, action: &Action, url: &str) -> Verdict;
+}
 ```
 
 - Rules come from a TOML config: action class × URL pattern → verdict.
@@ -297,7 +300,10 @@ pub fn evaluate(rules: &RuleSet, action: &Action, page: &PageInfo) -> Verdict;
   when the last viewer leaves.
 - WS protocol: text frames carry JSON events (same envelope as the bus),
   binary frames carry JPEG images. Client messages: subscribe, decision,
-  screencast on/off, and — if OD-2 is accepted — input events.
+  screencast on/off, and — if OD-2 is accepted — input events. Approval
+  decisions also travel as `POST /api/decisions` with the same token
+  gate (the dashboard's HTTP channel, kept for simple automation
+  clients).
 - Manual control (OD-2, §11; not committed): the live view becomes an
   input surface. Viewer coordinates are mapped to page coordinates using
   screencast frame metadata (scroll offset, page scale, device
@@ -308,7 +314,8 @@ pub fn evaluate(rules: &RuleSet, action: &Action, page: &PageInfo) -> Verdict;
 - Security: binds 127.0.0.1 only; per-launch random token printed to the
   terminal (exchanged for a cookie on first connect); `Host` header
   validation against DNS-rebinding.
-- Frontend: vanilla JS, no build step, embedded via `rust-embed`. All UI
+- Frontend: vanilla JS, no build step, embedded into the binary at
+  compile time (`include_str!`). All UI
   strings come from `frontend/i18n/en.json` catalog keys.
 
 ### 7.8 MCP tool surface
@@ -327,13 +334,15 @@ contract).
 
 | Invocation     | Behavior                                                     |
 |----------------|--------------------------------------------------------------|
-| `rutter`       | Browse mode: headed engine window, dashboard enabled (§7.7)  |
-| `rutter serve` | MCP server; engine headless by default, `--headed` overrides |
+| `rutter`       | Browse mode: headed engine window for direct human operation |
+| `rutter serve` | MCP server; engine headless by default, `--headed` overrides; `--dashboard PORT` and `--policy FILE` attach the supervision dashboard (§7.7) and rule set |
 | `rutter open`  | One-shot diagnostic: navigate, print snapshot, exit          |
 
 No-argument launch maps to browse mode so that launching the binary
-yields a usable, human-operated session without any MCP client. Engine
-mode and dashboard are orthogonal flags; entry modes only set defaults.
+yields a usable, human-operated session without any MCP client; the
+dashboard is not part of browse mode — it attaches to `serve` only.
+Engine mode and dashboard are orthogonal flags; entry modes only set
+defaults.
 
 ## 8. Engineering Standards
 
