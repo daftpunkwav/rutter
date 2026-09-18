@@ -78,6 +78,16 @@ pub fn parse_stable_artifact(
         })?
         .to_owned();
 
+    // The manifest itself is fetched over TLS; an artifact URL that is
+    // not https would downgrade the engine binary transfer (code that
+    // rutter executes) to plaintext, so anything else is malformed
+    // rather than followed.
+    if !url.starts_with("https://") {
+        return Err(malformed(&format!(
+            "manifest artifact URL is not https: '{url}'"
+        )));
+    }
+
     Ok(EngineArtifact { version, url })
 }
 
@@ -129,6 +139,20 @@ mod tests {
         let error = parse_stable_artifact(&fixture(), "chrome-headless-shell", "linux32")
             .expect_err("unknown platform must fail");
         assert!(matches!(error, EngineError::DownloadFailed { .. }));
+    }
+
+    #[test]
+    fn plaintext_artifact_urls_are_rejected() {
+        let mut manifest = fixture();
+        // The win64 entry is the one the parse below selects.
+        manifest["channels"]["Stable"]["downloads"]["chrome-headless-shell"][2]["url"] =
+            json!("http://storage.example.com/shell-win64.zip");
+        let error = parse_stable_artifact(&manifest, "chrome-headless-shell", "win64")
+            .expect_err("http artifact must fail");
+        assert!(
+            error.to_string().contains("not https"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
