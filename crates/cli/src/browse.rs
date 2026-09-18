@@ -23,7 +23,7 @@ pub async fn run(settings: &Settings) -> Result<(), CliError> {
 
     tokio::signal::ctrl_c()
         .await
-        .map_err(|error| CliError::Unavailable {
+        .map_err(|error| CliError::SignalHandling {
             mode: "browse".to_owned(),
             reason: format!("signal handling failed: {error}"),
         })?;

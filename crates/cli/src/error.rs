@@ -2,7 +2,8 @@
 //!
 //! Boundary: presentation-level error folding. Engine errors keep their
 //! identities and hints (defined with the error itself in
-//! `rutter-engine`); the CLI adds only the mode-unavailable case.
+//! `rutter-engine`); the CLI adds only the signal-handling and
+//! transport cases.
 
 use thiserror::Error;
 
@@ -19,18 +20,19 @@ pub enum CliError {
         source: EngineError,
     },
 
-    /// The requested mode is not available in this build yet.
-    #[error("{mode} is not available yet: {reason}")]
-    Unavailable {
-        /// The entry mode that was requested.
+    /// Watching for the interrupt signal failed, so the mode cannot
+    /// guarantee a clean shutdown.
+    #[error("{mode} could not watch for the interrupt signal: {reason}")]
+    SignalHandling {
+        /// The entry mode that was interrupted.
         mode: String,
-        /// What is missing and when it is expected.
+        /// Why watching for the signal failed.
         reason: String,
     },
 
-    /// The MCP server transport failed.
-    #[error("mcp server failed: {message}")]
-    Server {
+    /// The MCP transport (stdio or streamable HTTP) failed.
+    #[error("mcp transport failed: {message}")]
+    Transport {
         /// What went wrong with the transport or service.
         message: String,
     },
@@ -41,10 +43,10 @@ impl CliError {
     pub fn hint(&self) -> String {
         match self {
             Self::Engine { source } => source.hint().to_owned(),
-            Self::Unavailable { mode, .. } => {
+            Self::SignalHandling { mode, .. } => {
                 format!("'{mode}' was interrupted while handling a signal; rerun the command")
             }
-            Self::Server { .. } => {
+            Self::Transport { .. } => {
                 "check that stdin/stdout are connected and not owned by another process".to_owned()
             }
         }
@@ -61,7 +63,7 @@ mod tests {
             CliError::Engine {
                 source: EngineError::Terminated,
             },
-            CliError::Unavailable {
+            CliError::SignalHandling {
                 mode: "browse".to_owned(),
                 reason: "signal handling failed".to_owned(),
             },

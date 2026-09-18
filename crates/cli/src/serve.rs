@@ -18,7 +18,6 @@ use rutter_session::manager::SessionManager;
 use crate::config::Settings;
 use crate::error::CliError;
 use crate::launcher;
-
 /// Serves MCP until the client disconnects or Ctrl-C arrives.
 /// Transports are mutually exclusive: `--http ADDR` serves streamable
 /// HTTP, anything else speaks stdio. The dashboard (optional port) and
@@ -79,7 +78,7 @@ async fn serve_stdio(manager: Arc<SessionManager>) -> Result<(), CliError> {
     let running = server
         .serve(rmcp::transport::stdio())
         .await
-        .map_err(|error| CliError::Server {
+        .map_err(|error| CliError::Transport {
             message: error.to_string(),
         })?;
 
@@ -87,12 +86,12 @@ async fn serve_stdio(manager: Arc<SessionManager>) -> Result<(), CliError> {
     let wait = running.waiting();
     tokio::select! {
         result = wait => {
-            result.map_err(|error| CliError::Server {
+            result.map_err(|error| CliError::Transport {
                 message: error.to_string(),
             })?;
         }
         result = interrupt => {
-            result.map_err(|error| CliError::Unavailable {
+            result.map_err(|error| CliError::SignalHandling {
                 mode: "serve".to_owned(),
                 reason: format!("signal handling failed: {error}"),
             })?;
@@ -112,9 +111,9 @@ async fn serve_http(
     let http = rutter_mcp::http::serve_http(manager, addr);
     let interrupt = tokio::signal::ctrl_c();
     tokio::select! {
-        result = http => result.map_err(|message| CliError::Server { message }),
+        result = http => result.map_err(|message| CliError::Transport { message }),
         result = interrupt => {
-            result.map_err(|error| CliError::Unavailable {
+            result.map_err(|error| CliError::SignalHandling {
                 mode: "serve".to_owned(),
                 reason: format!("signal handling failed: {error}"),
             })?;
