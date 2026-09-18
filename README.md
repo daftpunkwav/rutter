@@ -149,8 +149,6 @@ and prints a pass/fail summary.
 
 ## Policies
 
-- English is the project's only working language; CI enforces this on
-  all tracked text files.
 - Commits follow Conventional Commits, English, imperative mood.
 - License: Apache-2.0 (the documented default of open decision OD-3 in
   the blueprint; see `LICENSE`).
