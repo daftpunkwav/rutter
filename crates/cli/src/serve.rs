@@ -19,10 +19,12 @@ use crate::config::Settings;
 use crate::error::CliError;
 use crate::launcher;
 
-/// Serves MCP until the client disconnects. Transports are mutually
-/// exclusive: `--http ADDR` serves streamable HTTP, anything else
-/// speaks stdio. The dashboard (optional port) and the policy file
-/// (optional TOML) attach here.
+/// Serves MCP until the client disconnects or Ctrl-C arrives.
+/// Transports are mutually exclusive: `--http ADDR` serves streamable
+/// HTTP, anything else speaks stdio. The dashboard (optional port) and
+/// the policy file (optional TOML) attach here. Every exit path shuts
+/// the manager down so the supervised browser never outlives the
+/// server.
 pub async fn run(
     settings: &Settings,
     headed: bool,
@@ -56,22 +58,67 @@ pub async fn run(
         });
     }
 
-    if let Some(addr) = http_addr {
-        rutter_mcp::http::serve_http(manager, addr)
-            .await
-            .map_err(|message| CliError::Server { message })
+    let result = if let Some(addr) = http_addr {
+        serve_http(manager.clone(), addr).await
     } else {
-        let session_id = SessionId::new(format!("stdio-{}", std::process::id()));
-        let server = RutterMcp::new(manager, session_id);
-        let running = server
-            .serve(rmcp::transport::stdio())
-            .await
-            .map_err(|error| CliError::Server {
-                message: error.to_string(),
-            })?;
-        running.waiting().await.map_err(|error| CliError::Server {
+        serve_stdio(manager.clone()).await
+    };
+
+    // Whether the client disconnected, Ctrl-C fired, or serving failed:
+    // the engine dies with the process's last server run.
+    manager.shutdown().await;
+    result
+}
+
+/// Serves MCP over stdio until the client disconnects or Ctrl-C fires,
+/// whichever comes first. Closing stdout (the client exiting) and the
+/// interrupt both tear the service down and resolve this future.
+async fn serve_stdio(manager: Arc<SessionManager>) -> Result<(), CliError> {
+    let session_id = SessionId::new(format!("stdio-{}", std::process::id()));
+    let server = RutterMcp::new(manager, session_id);
+    let running = server
+        .serve(rmcp::transport::stdio())
+        .await
+        .map_err(|error| CliError::Server {
             message: error.to_string(),
         })?;
-        Ok(())
+
+    let interrupt = tokio::signal::ctrl_c();
+    let wait = running.waiting();
+    tokio::select! {
+        result = wait => {
+            result.map_err(|error| CliError::Server {
+                message: error.to_string(),
+            })?;
+        }
+        result = interrupt => {
+            result.map_err(|error| CliError::Unavailable {
+                mode: "serve".to_owned(),
+                reason: format!("signal handling failed: {error}"),
+            })?;
+        }
+    }
+    Ok(())
+}
+
+/// Serves MCP over streamable HTTP until Ctrl-C fires. The interrupt
+/// must be observed here because `serve_http` otherwise only returns
+/// when the listener fails; without it, no Ctrl-C path could shut the
+/// engine down.
+async fn serve_http(
+    manager: Arc<SessionManager>,
+    addr: std::net::SocketAddr,
+) -> Result<(), CliError> {
+    let http = rutter_mcp::http::serve_http(manager, addr);
+    let interrupt = tokio::signal::ctrl_c();
+    tokio::select! {
+        result = http => result.map_err(|message| CliError::Server { message }),
+        result = interrupt => {
+            result.map_err(|error| CliError::Unavailable {
+                mode: "serve".to_owned(),
+                reason: format!("signal handling failed: {error}"),
+            })?;
+            Ok(())
+        }
     }
 }
