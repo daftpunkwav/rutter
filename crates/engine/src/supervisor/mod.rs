@@ -148,10 +148,10 @@ impl Supervisor {
         if let Some(handle) = self.heartbeat.lock().await.take() {
             handle.abort();
         }
-        if let Some(engine) = self.supervised.take_engine().await {
-            if let Err(error) = engine.shutdown().await {
-                eprintln!("rutter: engine shutdown failed: {error}");
-            }
+        if let Some(engine) = self.supervised.take_engine().await
+            && let Err(error) = engine.shutdown().await
+        {
+            eprintln!("rutter: engine shutdown failed: {error}");
         }
     }
 
@@ -232,13 +232,13 @@ async fn heartbeat_loop(
 
         let _guard = supervised.restarting.lock().await;
         // A concurrent restart may have replaced the engine already.
-        if let Some(engine) = supervised.engine.read().await.clone() {
-            if matches!(
+        if let Some(engine) = supervised.engine.read().await.clone()
+            && matches!(
                 engine.health().await,
                 Ok(HealthReport { healthy: true, .. })
-            ) {
-                continue;
-            }
+            )
+        {
+            continue;
         }
         supervised.take_engine().await;
 

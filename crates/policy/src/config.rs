@@ -55,14 +55,14 @@ pub fn parse_policy(toml_text: &str) -> Result<RuleSet, ConfigError> {
     for rule in &config.rules {
         let verdict = Verdict::parse(&rule.verdict)
             .ok_or_else(|| unknown_verdict("a rule", &rule.verdict))?;
-        if let Some(name) = &rule.action_class {
-            if ActionClass::parse(name).is_none() {
-                return Err(ConfigError {
-                    detail: format!(
-                        "unknown action_class '{name}'; use navigation, pointer, keyboard, selection, scroll, or cookies"
-                    ),
-                });
-            }
+        if let Some(name) = &rule.action_class
+            && ActionClass::parse(name).is_none()
+        {
+            return Err(ConfigError {
+                detail: format!(
+                    "unknown action_class '{name}'; use navigation, pointer, keyboard, selection, scroll, or cookies"
+                ),
+            });
         }
         if rule.action_class.is_none() && rule.url_pattern.is_none() {
             return Err(ConfigError {
@@ -73,7 +73,9 @@ pub fn parse_policy(toml_text: &str) -> Result<RuleSet, ConfigError> {
         // widens the rule to every URL, so the mistake is rejected.
         let url_pattern = match rule.url_pattern.as_deref() {
             Some(text) => Some(Pattern::parse(text).ok_or_else(|| ConfigError {
-                detail: format!("blank url_pattern '{text:?}' in a rule; patterns must not be empty"),
+                detail: format!(
+                    "blank url_pattern '{text:?}' in a rule; patterns must not be empty"
+                ),
             })?),
             None => None,
         };
@@ -84,14 +86,14 @@ pub fn parse_policy(toml_text: &str) -> Result<RuleSet, ConfigError> {
         });
     }
 
-    if let Some(ms) = config.approval_timeout_ms {
-        if ms > MAX_APPROVAL_TIMEOUT_MS {
-            return Err(ConfigError {
-                detail: format!(
-                    "approval_timeout_ms {ms} exceeds the maximum of {MAX_APPROVAL_TIMEOUT_MS}"
-                ),
-            });
-        }
+    if let Some(ms) = config.approval_timeout_ms
+        && ms > MAX_APPROVAL_TIMEOUT_MS
+    {
+        return Err(ConfigError {
+            detail: format!(
+                "approval_timeout_ms {ms} exceeds the maximum of {MAX_APPROVAL_TIMEOUT_MS}"
+            ),
+        });
     }
 
     let ruleset = RuleSet::new(rules, default_verdict);
@@ -189,9 +191,7 @@ verdict = "deny"
         // A blank pattern must fail parsing instead of silently matching
         // every URL.
         for pattern in ["", "   "] {
-            let text = format!(
-                "[[rules]]\nurl_pattern = {pattern:?}\nverdict = \"deny\"\n"
-            );
+            let text = format!("[[rules]]\nurl_pattern = {pattern:?}\nverdict = \"deny\"\n");
             let error = parse_policy(&text).expect_err("blank pattern");
             assert!(error.to_string().contains("url_pattern"));
         }

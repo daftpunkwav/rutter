@@ -507,10 +507,10 @@ impl Session {
         let state =
             StorageState::capture(context.as_ref(), &[(url.to_owned(), Arc::clone(page))]).await;
         *self.lock_last_storage() = state.clone();
-        if let Some(path) = &self.state_path {
-            if let Err(error) = state.write(path) {
-                eprintln!("rutter: cannot write storage state: {error}");
-            }
+        if let Some(path) = &self.state_path
+            && let Err(error) = state.write(path)
+        {
+            eprintln!("rutter: cannot write storage state: {error}");
         }
     }
 

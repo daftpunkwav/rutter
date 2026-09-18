@@ -130,10 +130,10 @@ pub async fn ensure(
     // Unreachable in a single process (the cache was already a miss),
     // but a concurrent rutter may have installed this exact version
     // while we fetched the manifest; reuse it instead of re-downloading.
-    if let Some(installed) = store.installed(product.name())? {
-        if installed.version == artifact.version {
-            return Ok(installed);
-        }
+    if let Some(installed) = store.installed(product.name())?
+        && installed.version == artifact.version
+    {
+        return Ok(installed);
     }
 
     eprintln!(

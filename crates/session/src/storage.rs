@@ -222,7 +222,9 @@ mod tests {
         first.write(&path).expect("first write");
 
         let second = StorageState::default();
-        second.write(&path).expect("second write over an existing file");
+        second
+            .write(&path)
+            .expect("second write over an existing file");
 
         assert_eq!(StorageState::read(&path), second, "the rename replaced it");
         let left_behind: Vec<_> = std::fs::read_dir(dir.path())

@@ -78,10 +78,10 @@ impl DashboardServer {
     /// randomly keyed hasher seeded from OS entropy, so its value is
     /// unpredictable from launch circumstances alone.
     pub fn token(&self) -> String {
-        if let Ok(token) = std::env::var("RUTTER_DASHBOARD_TOKEN") {
-            if !token.is_empty() {
-                return token;
-            }
+        if let Ok(token) = std::env::var("RUTTER_DASHBOARD_TOKEN")
+            && !token.is_empty()
+        {
+            return token;
         }
         use std::collections::hash_map::RandomState;
         use std::hash::{BuildHasher, Hash, Hasher};
@@ -171,9 +171,9 @@ fn cookie_token(headers: &HeaderMap) -> Option<String> {
 /// are hex, so an automation override with characters outside the
 /// cookie-safe set keeps using the query parameter only.
 fn cookie_safe(token: &str) -> bool {
-    token.chars().all(|c| {
-        c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '~')
-    })
+    token
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '~'))
 }
 
 /// The `Set-Cookie` header exchanging the query token for a session
@@ -377,14 +377,13 @@ async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                         .and_then(|v| v.get("session"))
                                         .and_then(Value::as_str)
                                         .map(|s| SessionId::new(s.to_owned()));
-                                    if let Some(session_id) = session_id {
-                                        if let Some(session) =
+                                    if let Some(session_id) = session_id
+                                        && let Some(session) =
                                             state.manager.get_session(&session_id).await
                                         {
                                             current =
                                                 session.screencast().await.ok();
                                         }
-                                    }
                                 }
                                 let _ = socket
                                     .send(Message::text(
@@ -557,7 +556,8 @@ mod tests {
         async fn launch(
             &self,
             _mode: rutter_engine::config::LaunchMode,
-        ) -> Result<Arc<dyn rutter_engine::engine::Engine>, rutter_engine::error::EngineError> {
+        ) -> Result<Arc<dyn rutter_engine::engine::Engine>, rutter_engine::error::EngineError>
+        {
             Err(rutter_engine::error::EngineError::Unsupported {
                 operation: "launch".to_owned(),
                 reason: "dashboard tests never launch engines".to_owned(),
