@@ -22,6 +22,8 @@ pub mod actions;
 pub mod config;
 pub mod error;
 pub mod manager;
+#[cfg(test)]
+pub(crate) mod mock;
 pub mod resolve;
 pub mod session;
 pub mod storage;

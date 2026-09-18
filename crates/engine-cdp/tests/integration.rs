@@ -5,6 +5,10 @@
 //! the headless shell on first run (network + ~150 MB) and are therefore
 //! `#[ignore]`d by default; the CI integration job runs them explicitly.
 
+// Restriction lints are denied workspace-wide; tests may use plain
+// assertions and unwrapping on fixtures.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -104,6 +108,54 @@ async fn page_cap_is_enforced() -> Result<(), Box<dyn std::error::Error>> {
         ),
         "second open must hit the cap"
     );
+    engine.shutdown().await?;
+    Ok(())
+}
+
+/// Closing an already-closed context succeeds: the browser answers a
+/// repeated dispose with "not found", and the handle folds that into
+/// success so a session teardown can never wedge on a dead context
+/// (blueprint §7.4 recovery races).
+#[tokio::test]
+#[ignore = "requires a downloaded engine binary"]
+async fn context_close_is_idempotent() -> Result<(), Box<dyn std::error::Error>> {
+    let executable = resolve_executable().await?;
+    let launcher = CdpLauncher::new(executable, EngineBackend::ChromiumHeadlessShell);
+    let engine = launcher.launch(LaunchMode::Headless).await?;
+
+    let context = engine.create_context(ContextConfig::default()).await?;
+    context.close().await.expect("first close");
+    context
+        .close()
+        .await
+        .expect("second close must also succeed");
+
+    engine.shutdown().await?;
+    Ok(())
+}
+
+/// A page the browser dropped on its own answers CloseTarget with an
+/// error; closing it through the context must still succeed and drop
+/// the registration, or the page cap would count ghost pages. The
+/// vanish is simulated by closing the page twice: the first close
+/// removes target and registration, the second proves a vanished page
+/// never errors and never wedges the cap.
+#[tokio::test]
+#[ignore = "requires a downloaded engine binary"]
+async fn close_page_accepts_an_already_vanished_target() -> Result<(), Box<dyn std::error::Error>> {
+    let executable = resolve_executable().await?;
+    let launcher = CdpLauncher::new(executable, EngineBackend::ChromiumHeadlessShell);
+    let engine = launcher.launch(LaunchMode::Headless).await?;
+
+    let context = engine.create_context(ContextConfig::default()).await?;
+    let (page_id, _page) = context.open_page().await?;
+    context.close_page(page_id.clone()).await?;
+    context
+        .close_page(page_id.clone())
+        .await
+        .expect("closing a vanished page twice stays a success");
+    assert!(!context.pages().contains(&page_id));
+
     engine.shutdown().await?;
     Ok(())
 }

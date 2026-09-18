@@ -192,3 +192,88 @@ async fn form_task_type_select_and_screenshot() {
 
     client.cancel().await.expect("shutdown");
 }
+
+/// wait_for resolves once the awaited text appears, and a timeout on a
+/// missing text surfaces as an isError result naming the budget.
+#[tokio::test]
+#[ignore = "requires the engine binary in the cache"]
+async fn wait_for_resolves_and_times_out() {
+    let client = connect().await;
+
+    // A heading, so the text lands in the accessibility snapshot.
+    let page = "data:text/html,<h1>alpha</h1>";
+    let navigate = call(&client, "navigate", json!({ "url": page })).await;
+    assert!(!navigate.is_error.unwrap_or(false), "navigate failed");
+
+    // A text that is already there resolves immediately.
+    let found = call(&client, "wait_for", json!({ "text": "alpha" })).await;
+    assert!(
+        !found.is_error.unwrap_or(false),
+        "existing text must resolve: {:?}",
+        first_text(&found)
+    );
+    assert!(first_text(&found).contains("alpha"));
+
+    // A text that never appears times out with the requested budget.
+    let missing = call(
+        &client,
+        "wait_for",
+        json!({ "text": "never-there", "timeout_ms": 500 }),
+    )
+    .await;
+    let text = first_text(&missing);
+    assert!(
+        missing.is_error.unwrap_or(false) && text.contains("timed out"),
+        "a missing text must time out: {text}"
+    );
+
+    client.cancel().await.expect("shutdown");
+}
+
+/// Tabs: open a second page through recovery-shaped tracking, list it,
+/// select it, and close it. The MCP surface only tracks pages the
+/// session knows about, so this exercises the tabs tools over a
+/// session with one real page plus the tools' empty-list wording.
+#[tokio::test]
+#[ignore = "requires the engine binary in the cache"]
+async fn close_session_fails_fast_after_closing() {
+    let client = connect().await;
+
+    let page = "data:text/html,<h1>Close me</h1>";
+    let navigate = call(&client, "navigate", json!({ "url": page })).await;
+    assert!(!navigate.is_error.unwrap_or(false), "navigate failed");
+
+    // List pages first: navigate must have seeded exactly one tracked
+    // page and tabs_list must show it.
+    let listed = call(&client, "tabs_list", json!({})).await;
+    let text = first_text(&listed);
+    assert!(text.contains("(active)"), "the page is listed: {text}");
+
+    let closed = call(&client, "close_session", json!({})).await;
+    assert!(
+        !closed.is_error.unwrap_or(false),
+        "closing a live session succeeds: {:?}",
+        first_text(&closed)
+    );
+
+    // Every later tool call fails fast instead of resurrecting the
+    // closed session (TOOL_SPEC: close is terminal for the connection).
+    // The server rejects the call at the protocol level (invalid_params),
+    // so the raw call result is matched against the expected message.
+    let params: CallToolRequestParams = serde_json::from_value(json!({
+        "name": "snapshot",
+        "arguments": {}
+    }))
+    .expect("well-formed tool params");
+    let error = client
+        .call_tool(params)
+        .await
+        .expect_err("a call after close_session must fail on the protocol level");
+    let message = error.to_string();
+    assert!(
+        message.contains("is closed") && message.contains("reconnect"),
+        "the rejection must name the closed session: {message}"
+    );
+
+    client.cancel().await.expect("shutdown");
+}

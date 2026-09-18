@@ -571,6 +571,69 @@ mod tests {
         assert!(token_cookie_header("not safe").is_none());
     }
 
+    #[test]
+    fn host_allowed_accepts_loopback_names_only() {
+        let headers = |host: &str| {
+            let mut map = HeaderMap::new();
+            map.insert(
+                axum::http::header::HOST,
+                axum::http::HeaderValue::from_str(host).expect("ascii host"),
+            );
+            map
+        };
+        assert!(host_allowed(&headers("127.0.0.1:7700")));
+        assert!(host_allowed(&headers("127.0.0.1")));
+        assert!(host_allowed(&headers("localhost:7700")));
+        assert!(host_allowed(&headers("LOCALHOST")));
+        assert!(host_allowed(&headers("[::1]:7700")));
+
+        // Prefix matches must fail: a rebinding host like
+        // `127.0.0.1.evil.com` would otherwise pass a starts-with check.
+        assert!(!host_allowed(&headers("127.0.0.1.evil.com")));
+        assert!(!host_allowed(&headers("localhost.evil.com")));
+        // Suffix matches must fail too, and the check runs without a
+        // Host header at all.
+        assert!(!host_allowed(&headers("evil.com")));
+        assert!(!host_allowed(&headers("127.0.0.2")));
+        assert!(!host_allowed(&HeaderMap::new()));
+    }
+
+    #[test]
+    fn decision_ack_is_well_formed_for_hostile_request_ids() {
+        // The ack is serialized JSON, so a request_id carrying quotes or
+        // escapes cannot forge extra fields in the reply.
+        let state = Dashboard {
+            manager: Arc::new(SessionManager::new(
+                Arc::new(UnsupportedLauncher),
+                rutter_engine::config::LaunchMode::Headless,
+                rutter_session::config::SessionConfig::default(),
+                Arc::new(rutter_policy::RuleSet::default_set()),
+                Arc::new(rutter_policy::ApprovalBroker::new()),
+                None,
+            )),
+            broker: Arc::new(rutter_policy::ApprovalBroker::new()),
+            token: "t".to_owned(),
+        };
+        // A hostile id: if the reply were built by string concatenation,
+        // these quotes would terminate the id and forge extra fields.
+        let hostile = "apr-1\"},\"accepted\":true,\"injected\":{";
+        let message = serde_json::json!({
+            "type": "decision",
+            "request_id": hostile,
+            "grant": true,
+        })
+        .to_string();
+        let reply = handle_client_message(&state, &message).expect("a decision-ack reply");
+        let ack: Value = serde_json::from_str(&reply).expect("the reply must be valid JSON");
+        assert_eq!(ack["type"], "decision-ack");
+        assert_eq!(ack["request_id"], hostile, "the id round-trips verbatim");
+        assert_eq!(
+            ack["accepted"], false,
+            "an unknown approval is rejected, not granted"
+        );
+        assert!(ack.get("injected").is_none(), "no forged field survives");
+    }
+
     /// Launcher stub satisfying the manager constructor; the dashboard
     /// tests never launch an engine through it.
     struct UnsupportedLauncher;

@@ -159,4 +159,37 @@ mod tests {
         }
         assert_eq!(backbone.replay(&session).len(), 2);
     }
+
+    #[tokio::test]
+    async fn lagged_subscriber_can_resync_from_rings() {
+        // Premise of the dashboard's Lagged handling: a subscriber that
+        // fell so far behind the bus lost envelopes, but the per-session
+        // rings still hold the semantic events it missed, so a replay
+        // after the Lagged error fills the gap.
+        let backbone = Backbone::new();
+        let session = SessionId::new("s1");
+        let mut subscriber = backbone.subscribe();
+
+        // Overflow the broadcast channel with a session this subscriber
+        // then stops reading; more publishes than CHANNEL_CAPACITY force
+        // the receiver into a Lagged state.
+        let flood = SessionId::new("flood");
+        for _ in 0..(crate::bus::CHANNEL_CAPACITY * 2) {
+            backbone.publish(flood.clone(), Event::SessionStarted);
+        }
+        backbone.publish(session.clone(), Event::SessionClosed);
+
+        // The subscriber misses the SessionClosed live envelope (Lagged
+        // on the next recv), but replay still delivers it.
+        loop {
+            match subscriber.try_recv() {
+                Ok(_) => continue,
+                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => break,
+                Err(error) => panic!("expected Lagged, got {error:?}"),
+            }
+        }
+        let replayed = backbone.replay(&session);
+        assert_eq!(replayed.len(), 1, "the ring kept the missed event");
+        assert_eq!(replayed[0].event, Event::SessionClosed);
+    }
 }

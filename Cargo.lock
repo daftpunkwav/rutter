@@ -1783,11 +1783,13 @@ dependencies = [
 name = "rutter-mcp"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "rmcp",
  "rutter-core",
  "rutter-engine",
+ "rutter-policy",
  "rutter-session",
  "schemars",
  "serde",
@@ -1820,6 +1822,7 @@ dependencies = [
 name = "rutter-session"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "rutter-core",
  "rutter-engine",
  "rutter-events",

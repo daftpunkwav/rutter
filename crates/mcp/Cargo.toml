@@ -25,3 +25,8 @@ serde = { workspace = true }
 schemars = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+
+# Tests may use a scripted engine launcher for the session lifecycle.
+[dev-dependencies]
+async-trait = { workspace = true }
+rutter-policy = { workspace = true }
