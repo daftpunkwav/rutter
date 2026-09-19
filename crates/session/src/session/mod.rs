@@ -114,7 +114,7 @@ impl Session {
     /// answers or the window closes (blueprint §7.6). The URL is
     /// canonicalized before matching, and `None` — an unreadable page
     /// or a navigation target that is not a URL — fails closed: the
-    /// verdict comes from [`rutter_policy::RuleSet::evaluate_unreadable`]
+    /// verdict comes from [`rutter_policy::RuleSet::evaluate_without_url`]
     /// rather than from a placeholder match.
     async fn enforce_policy(
         &self,
@@ -125,7 +125,7 @@ impl Session {
     ) -> Result<(), SessionError> {
         let verdict = match url.and_then(rutter_policy::canonical_url) {
             Some(url) => self.policy.evaluate(class, &url),
-            None => self.policy.evaluate_unreadable(class),
+            None => self.policy.evaluate_without_url(class),
         };
         match verdict {
             Verdict::Allow => return Ok(()),
@@ -675,6 +675,13 @@ pub(crate) fn as_action_error(session: &SessionId, error: &SessionError) -> Acti
                 detail: other.to_string(),
             },
         },
+        // Manager-level failures never flow through action execution,
+        // but the event payload needs a total mapping.
+        SessionError::Capacity { detail } | SessionError::Internal { detail } => {
+            ActionError::Internal {
+                detail: detail.clone(),
+            }
+        }
     }
 }
 

@@ -118,12 +118,13 @@ impl RuleSet {
         self.evaluate(class_of(action), url)
     }
 
-    /// Evaluates one action class when the page URL is unreadable or a
-    /// navigation target is not a URL at all: URL-scoped rules cannot
-    /// match, class-only rules still do, and a bare `Allow` upgrades to
+    /// Evaluates one action class when no usable URL is known: the page
+    /// URL is unreadable, a navigation target is not a URL at all, or
+    /// the target embeds credentials. URL-scoped rules cannot match,
+    /// class-only rules still do, and a bare `Allow` upgrades to
     /// `RequireApproval`, so missing URL information never passes an
     /// action unsupervised (blueprint §7.6).
-    pub fn evaluate_unreadable(&self, class: ActionClass) -> Verdict {
+    pub fn evaluate_without_url(&self, class: ActionClass) -> Verdict {
         match self.evaluate(class, "") {
             Verdict::Allow => Verdict::RequireApproval,
             verdict => verdict,
@@ -201,10 +202,10 @@ mod tests {
     }
 
     #[test]
-    fn an_unreadable_url_upgrades_allow_to_approval() {
+    fn a_missing_url_upgrades_allow_to_approval() {
         let rules = RuleSet::new(vec![], Verdict::Allow);
         assert_eq!(
-            rules.evaluate_unreadable(ActionClass::Pointer),
+            rules.evaluate_without_url(ActionClass::Pointer),
             Verdict::RequireApproval
         );
     }
@@ -220,12 +221,12 @@ mod tests {
             Verdict::Allow,
         );
         assert_eq!(
-            rules.evaluate_unreadable(ActionClass::Cookies),
+            rules.evaluate_without_url(ActionClass::Cookies),
             Verdict::Deny,
             "a class-only deny does not need URL information"
         );
         assert_eq!(
-            rules.evaluate_unreadable(ActionClass::Navigation),
+            rules.evaluate_without_url(ActionClass::Navigation),
             Verdict::RequireApproval
         );
     }
@@ -241,14 +242,14 @@ mod tests {
             Verdict::Allow,
         );
         assert_eq!(
-            rules.evaluate_unreadable(ActionClass::Pointer),
+            rules.evaluate_without_url(ActionClass::Pointer),
             Verdict::Deny,
             "a 'match everything' pattern matches the empty judgment URL"
         );
     }
 
     #[test]
-    fn host_scoped_rules_do_not_match_an_unreadable_url() {
+    fn host_scoped_rules_do_not_match_a_missing_url() {
         let rules = RuleSet::new(
             vec![PolicyRule {
                 action_class: None,
@@ -258,7 +259,7 @@ mod tests {
             Verdict::Allow,
         );
         assert_eq!(
-            rules.evaluate_unreadable(ActionClass::Navigation),
+            rules.evaluate_without_url(ActionClass::Navigation),
             Verdict::RequireApproval,
             "the old about:blank degradation let a deny rule 'match' a placeholder; without a URL the verdict must be the fail-closed upgrade instead"
         );
