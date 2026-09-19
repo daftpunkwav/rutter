@@ -119,10 +119,7 @@ async fn session_fails_fast_after_close_session() {
     mcp.session()
         .await
         .expect("the first call opens the session");
-    manager
-        .close_session(&SessionId::new("s1"))
-        .await
-        .expect("close");
+    manager.close_session(&SessionId::new("s1")).await;
 
     let error = match mcp.session().await {
         Ok(_) => panic!("a closed session must fail fast"),
@@ -183,4 +180,105 @@ fn first_text_block(result: &CallToolResult) -> String {
         .iter()
         .find_map(|block| block.as_text().map(|text| text.text.clone()))
         .expect("a text content block")
+}
+
+#[tokio::test]
+async fn tabs_close_unknown_page_is_invalid_params() {
+    // TOOL_SPEC §4: a page id names an open page, so an unknown id is
+    // invalid_params as in tabs_select — not an action failure whose
+    // hint would tell the agent to re-snapshot and pick an element.
+    let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
+    let error = match mcp
+        .tabs_close(Parameters(PageParams {
+            page_id: "p99".to_owned(),
+        }))
+        .await
+    {
+        Ok(_) => panic!("an unknown page must not close"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
+    assert!(error.message.contains("p99"), "names the id: {error}");
+}
+
+#[tokio::test]
+async fn scroll_zero_is_invalid_params() {
+    // TOOL_SPEC §4: `amount` ≤ 0 is invalid_params. The u32 schema
+    // already rejects negatives, so zero is the one value that reaches
+    // this check — a silent no-op would report success and spend a
+    // snapshot on nothing.
+    let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
+    let error = match mcp
+        .scroll(Parameters(ScrollParams {
+            direction: Direction::Down,
+            amount: 0,
+            reference: None,
+        }))
+        .await
+    {
+        Ok(_) => panic!("a zero scroll must be refused"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
+    assert!(
+        error.message.contains("greater than zero"),
+        "names the rule: {error}"
+    );
+}
+
+#[tokio::test]
+async fn protocol_failures_surface_as_server_errors_carrying_hints() {
+    // TOOL_SPEC §2: protocol-level failures are JSON-RPC errors with
+    // code -32000, carrying the same message-plus-hint text an isError
+    // result would. The wiring is exercised for real through
+    // `session()`: a zero-session cap fails the first session request
+    // after the stub engine starts, with no engine I/O.
+    let manager = Arc::new(SessionManager::new(
+        Arc::new(StubLauncher),
+        LaunchMode::Headless,
+        SessionConfig {
+            max_sessions: 0,
+            ..SessionConfig::default()
+        },
+        Arc::new(RuleSet::default_set()),
+        Arc::new(ApprovalBroker::new()),
+        None,
+    ));
+    let mcp = RutterMcp::new(manager, SessionId::new("s1"));
+
+    let error = match mcp.session().await {
+        Ok(_) => panic!("no session can open"),
+        Err(error) => error,
+    };
+    // The literal, not the constant: the spec pins -32000, and a drift
+    // in SERVER_ERROR_CODE must fail this assertion, not move with it.
+    assert_eq!(error.code.0, -32000, "-32000 is the spec code");
+    assert!(
+        error.message.contains("capacity exceeded"),
+        "the message carries the failure: {error}"
+    );
+    assert!(
+        error.message.contains("\nhint: "),
+        "the hint rides on its own line: {error}"
+    );
+}
+
+#[test]
+fn action_failures_carry_the_message_plus_hint_contract() {
+    // TOOL_SPEC §2: an action failure is an isError result whose text
+    // holds the error message and, on its own second line, the
+    // actionable hint (`hint: …`). Agents read the hint as data, so a
+    // merged or dropped hint line breaks them silently.
+    let error = SessionError::Action(rutter_core::error::ActionError::Internal {
+        detail: "capture failed".to_owned(),
+    });
+    let text = first_text_block(&error_result(&error));
+    let (message, hint) = text
+        .split_once("\nhint: ")
+        .expect("the hint rides on its own line");
+    assert!(
+        message.contains("capture failed"),
+        "the message names the failure: {message}"
+    );
+    assert!(!hint.trim().is_empty(), "the hint is not empty: {hint}");
 }

@@ -8,9 +8,9 @@
 
 use axum::extract::ws::{Message, WebSocket};
 use rutter_core::ids::SessionId;
-use rutter_engine::page::ScreencastStream;
 use rutter_events::Envelope;
 use rutter_policy::{ApprovalId, Decision};
+use rutter_session::ScreencastStream;
 use serde_json::Value;
 use tokio::sync::mpsc;
 

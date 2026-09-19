@@ -21,6 +21,7 @@ use rutter_events::{Backbone, Event};
 use rutter_policy::{ApprovalBroker, RuleSet};
 
 use crate::config::SessionConfig;
+use crate::error::SessionError;
 use crate::session::Session;
 
 /// The running supervisor plus every open session.
@@ -119,7 +120,7 @@ impl SessionManager {
 
     /// Returns the session for `id`, starting the engine and creating
     /// the session's context on first request.
-    pub async fn session(&self, id: SessionId) -> Result<Arc<Session>, EngineError> {
+    pub async fn session(&self, id: SessionId) -> Result<Arc<Session>, SessionError> {
         let mut guard = self.inner.running.lock().await;
         if guard.is_none() {
             // start_running spawns the single recovery task for this
@@ -134,7 +135,7 @@ impl SessionManager {
                 Ok(engine) => engine,
                 Err(error) => {
                     running.supervisor.shutdown().await;
-                    return Err(error);
+                    return Err(error.into());
                 }
             };
             let descriptor = engine.descriptor();
@@ -152,7 +153,7 @@ impl SessionManager {
 
         let Some(running) = guard.as_mut() else {
             // Unreachable: the branch above filled the slot when empty.
-            return Err(EngineError::Internal {
+            return Err(SessionError::Internal {
                 detail: "session manager did not start".to_owned(),
             });
         };
@@ -160,7 +161,7 @@ impl SessionManager {
             return Ok(Arc::clone(session));
         }
         if running.sessions.len() >= self.inner.config.max_sessions {
-            return Err(EngineError::Capacity {
+            return Err(SessionError::Capacity {
                 detail: format!(
                     "this server holds {} session(s) already; close one before \
                      opening another",
@@ -194,9 +195,11 @@ impl SessionManager {
         Ok(session)
     }
 
-    /// Closes one session: its pages close and its history stays in the
-    /// ring until the manager drops. Unknown ids succeed as no-ops.
-    pub async fn close_session(&self, id: &SessionId) -> Result<(), EngineError> {
+    /// Closes one session: its pages close and its event history is
+    /// dropped with it (see the `forget` call below). Unknown ids
+    /// succeed as no-ops. Infallible: the removed session's own close
+    /// tolerates context failures, so there is no error to report.
+    pub async fn close_session(&self, id: &SessionId) {
         let session = {
             let mut guard = self.inner.running.lock().await;
             match guard
@@ -204,13 +207,18 @@ impl SessionManager {
                 .and_then(|running| running.sessions.remove(id))
             {
                 Some(session) => session,
-                None => return Ok(()),
+                None => return,
             }
         };
 
         session.close().await;
         session.backbone().publish(id.clone(), Event::SessionClosed);
-        Ok(())
+        // The close is the session's last event: replay consumers only
+        // read open sessions (the dashboard lists open ones), so the
+        // ring is dropped instead of lingering in the backbone's map —
+        // a serve process that churns through session ids would
+        // otherwise grow that map without bound.
+        session.backbone().forget(id);
     }
 
     /// Shuts the engine down; open sessions die with it, but their

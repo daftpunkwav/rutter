@@ -12,9 +12,25 @@ pub enum SessionError {
     #[error("{0}")]
     Action(#[from] ActionError),
 
-    /// An engine-layer failure (navigation, capacity, engine death).
+    /// An engine-layer failure (navigation, engine death, page caps).
     #[error("{0}")]
     Engine(#[from] EngineError),
+
+    /// The server already holds its maximum number of sessions. Unlike
+    /// the engine's page and context caps, this cap is the manager's
+    /// own: it bounds concurrent MCP clients, not engine targets.
+    #[error("capacity exceeded: {detail}")]
+    Capacity {
+        /// Which cap was hit and what the caller can do about it.
+        detail: String,
+    },
+
+    /// A bug was contained at the session boundary; never a silent pass.
+    #[error("internal session error: {detail}")]
+    Internal {
+        /// What went wrong, for reporting the bug.
+        detail: String,
+    },
 }
 
 impl SessionError {
@@ -23,6 +39,12 @@ impl SessionError {
         match self {
             Self::Action(action) => action.hint(),
             Self::Engine(engine) => engine.hint().to_owned(),
+            Self::Capacity { .. } => "close one of this server's sessions before opening \
+                 another; the cap bounds concurrent clients, not pages"
+                .to_owned(),
+            Self::Internal { detail } => {
+                format!("an internal bug was contained; report it, citing: {detail}")
+            }
         }
     }
 }
@@ -38,6 +60,12 @@ mod tests {
                 detail: "probe".to_owned(),
             }),
             SessionError::Engine(EngineError::Terminated),
+            SessionError::Capacity {
+                detail: "probe".to_owned(),
+            },
+            SessionError::Internal {
+                detail: "probe".to_owned(),
+            },
         ];
         for error in &errors {
             assert!(!error.hint().is_empty(), "missing hint for {error}");

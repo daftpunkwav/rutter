@@ -11,7 +11,7 @@
 //! and never touches the engine itself. One MCP connection is one
 //! session, and the engine starts lazily on the first tool call.
 //!
-//! Module layout: [`params`] holds the tool input types; this file
+//! Module layout: `params` holds the tool input types; this file
 //! holds the server, the tool implementations, and the result mapping.
 
 mod params;
@@ -134,8 +134,8 @@ impl RutterMcp {
             Ok(image) => {
                 let data = base64::engine::general_purpose::STANDARD.encode(&image.data);
                 let mime = match image.format {
-                    rutter_engine::page::ImageFormat::Png => "image/png",
-                    rutter_engine::page::ImageFormat::Jpeg => "image/jpeg",
+                    rutter_session::ImageFormat::Png => "image/png",
+                    rutter_session::ImageFormat::Jpeg => "image/jpeg",
                 };
                 Ok(CallToolResult::success(vec![ContentBlock::image(
                     data, mime,
@@ -289,6 +289,16 @@ impl RutterMcp {
         Parameters(PageParams { page_id }): Parameters<PageParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
+        // TOOL_SPEC §4: a page id names an open page, so an unknown id is
+        // invalid_params as in tabs_select, not an action failure.
+        if !session
+            .pages()
+            .await
+            .iter()
+            .any(|page| page.id.as_str() == page_id)
+        {
+            return Err(invalid_params(format!("no open page with id '{page_id}'")));
+        }
         match session.close_page(PageId::new(page_id)).await {
             Ok(confirmation) => Ok(CallToolResult::success(vec![ContentBlock::text(
                 confirmation,
@@ -318,13 +328,11 @@ impl RutterMcp {
 
     #[tool(description = "Close this session's pages and context")]
     async fn close_session(&self) -> Result<CallToolResult, McpError> {
-        match self.manager.close_session(&self.session_id).await {
-            Ok(()) => Ok(CallToolResult::success(vec![ContentBlock::text(format!(
-                "closed session {}",
-                self.session_id
-            ))])),
-            Err(error) => Ok(error_result(&SessionError::Engine(error))),
-        }
+        self.manager.close_session(&self.session_id).await;
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
+            "closed session {}",
+            self.session_id
+        ))]))
     }
 }
 
@@ -379,7 +387,7 @@ fn invalid_params(message: String) -> McpError {
     McpError::invalid_params(message, None)
 }
 
-fn protocol_error(error: rutter_engine::error::EngineError) -> McpError {
+fn protocol_error(error: SessionError) -> McpError {
     // TOOL_SPEC §2: protocol-level failures carry the same
     // message-plus-hint text as isError results.
     McpError::new(

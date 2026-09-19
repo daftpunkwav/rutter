@@ -24,13 +24,24 @@ pub mod error;
 pub mod manager;
 #[cfg(test)]
 pub(crate) mod mock;
-pub mod resolve;
 pub mod session;
 pub mod storage;
-pub mod wait;
+
+// The element resolver and the polling loop are the executor's
+// mechanics; the orchestration surface above never sees them.
+mod resolve;
+mod wait;
 
 pub use config::SessionConfig;
 pub use error::SessionError;
 pub use manager::SessionManager;
 pub use session::{PageInfo, Session};
 pub use storage::StorageState;
+
+// Engine types this crate's own API exposes (the manager constructor,
+// `Session::screencast`/`screenshot`, `SessionError::Engine`).
+// Consumers depend on `rutter-session` alone; the engine layer stays an
+// implementation detail behind the orchestration surface.
+pub use rutter_engine::{
+    EngineError, EngineLauncher, ImageFormat, LaunchMode, ScreencastStream, Screenshot,
+};

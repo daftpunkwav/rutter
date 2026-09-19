@@ -13,9 +13,9 @@ use std::sync::Arc;
 use common::FlowLauncher;
 use rutter_core::ids::SessionId;
 use rutter_engine::config::LaunchMode;
-use rutter_engine::error::EngineError;
 use rutter_engine::supervisor::EngineLauncher;
 use rutter_policy::{ApprovalBroker, RuleSet};
+use rutter_session::SessionError;
 use rutter_session::config::SessionConfig;
 use rutter_session::manager::SessionManager;
 
@@ -46,7 +46,7 @@ async fn session_count_is_capped_at_max_sessions() {
         .expect("first session");
     let second = manager.session(SessionId::new("s2")).await;
     match second {
-        Err(EngineError::Capacity { detail }) => {
+        Err(SessionError::Capacity { detail }) => {
             assert!(detail.contains('1'), "the cap is named: {detail}");
         }
         Err(error) => panic!("expected a Capacity error, got {error}"),
@@ -57,10 +57,7 @@ async fn session_count_is_capped_at_max_sessions() {
     assert_eq!(manager.session_ids().await, vec![SessionId::new("s1")]);
 
     // Closing one session frees the slot.
-    manager
-        .close_session(&SessionId::new("s1"))
-        .await
-        .expect("close");
+    manager.close_session(&SessionId::new("s1")).await;
     manager
         .session(SessionId::new("s2"))
         .await
@@ -76,21 +73,38 @@ async fn close_session_closes_the_context_and_unknown_ids_succeed() {
     manager.session(id.clone()).await.expect("session");
     let context = launcher.engine(0).context(0);
 
-    assert!(
-        manager
-            .close_session(&SessionId::new("ghost"))
-            .await
-            .is_ok(),
-        "unknown ids are no-ops, not errors"
-    );
-    manager.close_session(&id).await.expect("close");
+    // An unknown id is a no-op, not an error.
+    manager.close_session(&SessionId::new("ghost")).await;
+    manager.close_session(&id).await;
     assert!(
         context.is_closed(),
         "the session teardown must close its browser context"
     );
     assert!(manager.get_session(&id).await.is_none());
     // A closed session is not resurrected by a second close.
-    manager.close_session(&id).await.expect("second close");
+    manager.close_session(&id).await;
+}
+
+#[tokio::test]
+async fn close_session_frees_the_backbone_history() {
+    // The ring of a closed session is never replayed (the dashboard
+    // replays open sessions only); it must leave the backbone's map, or
+    // a serve process churning through session ids grows it forever.
+    let (manager, _launcher) = manager_with(2);
+    let id = SessionId::new("s1");
+    manager.session(id.clone()).await.expect("session");
+
+    let backbone = manager.backbone().await.expect("backbone");
+    assert!(
+        !backbone.replay(&id).is_empty(),
+        "the open session has history"
+    );
+
+    manager.close_session(&id).await;
+    assert!(
+        backbone.replay(&id).is_empty(),
+        "a closed session's ring is dropped"
+    );
 }
 
 #[tokio::test]

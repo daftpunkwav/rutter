@@ -181,10 +181,7 @@ async fn close_session_closes_the_underlying_context() {
         .await
         .expect("navigate");
 
-    manager
-        .close_session(&SessionId::new("s1"))
-        .await
-        .expect("close");
+    manager.close_session(&SessionId::new("s1")).await;
     assert!(context.is_closed(), "close tears the context down");
     let _ = session;
 }
