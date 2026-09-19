@@ -75,6 +75,14 @@ impl Backbone {
             .map(RingBuffer::history)
             .unwrap_or_default()
     }
+
+    /// Drops a session's history. Called when a session closes: replay
+    /// consumers only read open sessions, so the ring would otherwise sit
+    /// unread in the map forever and a serve process that churns through
+    /// session ids would grow the map without bound.
+    pub fn forget(&self, session: &SessionId) {
+        self.lock_rings().remove(session);
+    }
 }
 
 impl Default for Backbone {
@@ -158,6 +166,27 @@ mod tests {
             backbone.publish(session.clone(), Event::SessionStarted);
         }
         assert_eq!(backbone.replay(&session).len(), 2);
+    }
+
+    #[tokio::test]
+    async fn forget_drops_the_history_but_not_live_delivery() {
+        let backbone = Backbone::new();
+        let session = SessionId::new("s1");
+
+        backbone.publish(session.clone(), Event::SessionStarted);
+        assert!(!backbone.replay(&session).is_empty());
+
+        // The subscriber joins before the forget: forgetting history
+        // must not disturb the live bus it is parked on.
+        let mut subscriber = backbone.subscribe();
+        backbone.forget(&session);
+        assert!(backbone.replay(&session).is_empty());
+
+        backbone.publish(session.clone(), Event::SessionClosed);
+        assert_eq!(
+            subscriber.recv().await.expect("envelope").event,
+            Event::SessionClosed
+        );
     }
 
     #[tokio::test]
