@@ -274,12 +274,16 @@ impl Session {
             ),
         };
 
-        // Refresh the tracked URL, then persist the changed state
-        // (blueprint §7.4: persist per session on change).
+        // Refresh the tracked URL of the page the action ran on, then
+        // persist the changed state (blueprint §7.4: persist per session
+        // on change). Filtering by id, not by the current active flag: a
+        // concurrent `select_page` may have switched the active slot
+        // while this action was in flight, and the new page's URL must
+        // not be overwritten with this page's.
         let url = ops.url().await;
         self.lock_pages()
             .iter_mut()
-            .filter(|slot| slot.active)
+            .filter(|slot| slot.id == page_id)
             .for_each(|slot| slot.url = url.clone());
         self.persist_storage(&page, &url).await;
 
@@ -306,12 +310,16 @@ impl Session {
         page.start_screencast().await.map_err(SessionError::Engine)
     }
 
-    /// Captures the active page.
+    /// Captures the active page. TOOL_SPEC §4: capture errors map onto
+    /// `ActionError::Internal` so the agent sees the action taxonomy, not
+    /// a raw engine failure.
     pub async fn screenshot(&self) -> Result<Screenshot, SessionError> {
         let page = self.active_page().await.map_err(engine_error)?;
-        page.capture_screenshot()
-            .await
-            .map_err(SessionError::Engine)
+        page.capture_screenshot().await.map_err(|error| {
+            SessionError::Action(ActionError::Internal {
+                detail: error.to_string(),
+            })
+        })
     }
 
     /// Polls the active page until `needle` appears in its text.
