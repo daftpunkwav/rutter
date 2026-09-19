@@ -18,8 +18,14 @@ fn every_error_carries_a_hint() {
             mode: "browse".to_owned(),
             reason: "signal handling failed".to_owned(),
         },
-        CliError::Transport {
+        CliError::StdioTransport {
             message: "stdio closed".to_owned(),
+        },
+        CliError::HttpTransport {
+            message: "cannot bind 127.0.0.1:9800".to_owned(),
+        },
+        CliError::RemoteHttpBind {
+            addr: "192.168.1.10:9800".parse().expect("a socket address"),
         },
     ];
     for error in &errors {

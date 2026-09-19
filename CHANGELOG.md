@@ -44,6 +44,12 @@ and the project adheres to
 - Every serve exit path (client disconnect, Ctrl-C) shuts the
   supervised engine down; closing a session disposes its browser
   context; concurrent session and page counts are capped.
+- Actions embedded in event payloads serialize with the event
+  vocabulary's `type` tag (snake_case), matching what the dashboard
+  frontend reads.
+- Closing a session drops its event history with it: replay consumers
+  only read open sessions, so a server cycling through session ids no
+  longer grows the backbone's ring map without bound.
 
 ### Changed
 
@@ -51,6 +57,8 @@ and the project adheres to
   features trimmed to their used surface; cargo-deny runs clean.
 - Contracts updated to match behavior: wait_for budget clamp, actual
   close_session semantics, serve flags, blueprint sketches.
+- `tabs_close` rejects an unknown page id with `invalid_params`,
+  matching `tabs_select`.
 - Internal renames for accuracy (session `tabs_*` APIs are now
   `pages`/`select_page`/`close_page`); MCP tool names unchanged.
 - Oversized modules split (dashboard auth/ws, MCP params; module tests

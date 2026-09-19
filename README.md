@@ -45,13 +45,14 @@ Global flags (valid on every mode):
 | `--cache-dir <DIR>` | `RUTTER_CACHE_DIR` | Engine cache root (default: OS cache dir + `rutter`) |
 | `--engine-arg <ARG>` | — | Extra argument passed to the engine process (repeatable) |
 
-Serve flags (on `rutter serve` only):
+Serve flags (accepted on every mode, effective on `rutter serve` only):
 
 | Flag | Meaning |
 |------|---------|
 | `--http <ADDR>` | Serve MCP over streamable HTTP on that address instead of stdio |
 | `--dashboard <PORT>` | Attach the supervision dashboard on 127.0.0.1:`<PORT>` |
 | `--policy <FILE>` | Load the supervision rule set from a TOML file |
+| `--allow-remote` | Confirm a non-loopback `--http` bind (the transport has no authentication) |
 
 ### Engine acquisition
 

@@ -10,6 +10,8 @@
   `rutter serve --http ADDR`. The binary entry is
   `rutter serve [--headed]`; the dashboard attaches through
   `serve --dashboard PORT` and the policy file through `serve --policy FILE`.
+  A non-loopback `--http` bind is refused unless confirmed with
+  `serve --allow-remote` (the transport has no authentication).
 - One MCP client connection is one Session. The SessionId is minted by
   the server at connection start and reported in the
   `SessionStarted` event; it appears in error payloads that reference a
@@ -120,7 +122,8 @@ page is suffixed ` (active)`.
 `{ page_id: string }` → snapshot. Unknown id → `invalid_params`.
 
 ### tabs_close
-`{ page_id: string }` → text confirmation. Closing the active page
+`{ page_id: string }` → text confirmation. Unknown id →
+`invalid_params`. Closing the active page
 makes the first remaining page active; closing the last page is
 allowed — the next `navigate` opens a new one.
 

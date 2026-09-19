@@ -24,7 +24,7 @@ use crate::config::Settings;
 /// Headless diagnostic (`open`) resolves eagerly: the engine is needed
 /// immediately.
 pub async fn headless_launcher(settings: &Settings) -> Result<CdpLauncher, EngineError> {
-    let executable = explicit_or(settings, Product::ChromeHeadlessShell).await?;
+    let executable = resolve_executable(settings, Product::ChromeHeadlessShell).await?;
     Ok(
         CdpLauncher::new(executable, EngineBackend::ChromiumHeadlessShell)
             .with_extra_args(settings.extra_engine_args.clone()),
@@ -84,7 +84,7 @@ impl EngineLauncher for LazyLauncher {
 
 /// Resolves the executable for the mode's default product, honoring an
 /// explicit override.
-async fn explicit_or(settings: &Settings, product: Product) -> Result<PathBuf, EngineError> {
+async fn resolve_executable(settings: &Settings, product: Product) -> Result<PathBuf, EngineError> {
     let installed = ensure(
         product,
         &settings.cache_root,

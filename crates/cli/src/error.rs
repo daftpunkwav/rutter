@@ -30,10 +30,17 @@ pub enum CliError {
         reason: String,
     },
 
-    /// The MCP transport (stdio or streamable HTTP) failed.
-    #[error("mcp transport failed: {message}")]
-    Transport {
+    /// The stdio MCP transport failed.
+    #[error("mcp stdio transport failed: {message}")]
+    StdioTransport {
         /// What went wrong with the transport or service.
+        message: String,
+    },
+
+    /// The streamable HTTP MCP transport failed to bind or serve.
+    #[error("mcp http transport failed: {message}")]
+    HttpTransport {
+        /// What went wrong with the listener or the HTTP service.
         message: String,
     },
 
@@ -56,8 +63,13 @@ impl CliError {
             Self::SignalHandling { mode, .. } => {
                 format!("'{mode}' was interrupted while handling a signal; rerun the command")
             }
-            Self::Transport { .. } => {
+            Self::StdioTransport { .. } => {
                 "check that stdin/stdout are connected and not owned by another process".to_owned()
+            }
+            Self::HttpTransport { .. } => {
+                "check that the --http address is correct and the port is not \
+                 already held by another process, then retry"
+                    .to_owned()
             }
             Self::RemoteHttpBind { .. } => {
                 "pass --allow-remote if this server really must be reachable \

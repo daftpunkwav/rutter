@@ -84,7 +84,7 @@ async fn serve_stdio(manager: Arc<SessionManager>) -> Result<(), CliError> {
     let running = server
         .serve(rmcp::transport::stdio())
         .await
-        .map_err(|error| CliError::Transport {
+        .map_err(|error| CliError::StdioTransport {
             message: error.to_string(),
         })?;
 
@@ -92,7 +92,7 @@ async fn serve_stdio(manager: Arc<SessionManager>) -> Result<(), CliError> {
     let wait = running.waiting();
     tokio::select! {
         result = wait => {
-            result.map_err(|error| CliError::Transport {
+            result.map_err(|error| CliError::StdioTransport {
                 message: error.to_string(),
             })?;
         }
@@ -130,7 +130,7 @@ async fn serve_http(
     let http = rutter_mcp::http::serve_http(manager, addr);
     let interrupt = tokio::signal::ctrl_c();
     tokio::select! {
-        result = http => result.map_err(|message| CliError::Transport { message }),
+        result = http => result.map_err(|message| CliError::HttpTransport { message }),
         result = interrupt => {
             result.map_err(|error| CliError::SignalHandling {
                 mode: "serve".to_owned(),
@@ -171,6 +171,10 @@ mod tests {
         ensure_bind_is_consented(addr("192.168.1.10:9800"), true)
             .expect("explicit confirmation is accepted");
         ensure_bind_is_consented(addr("0.0.0.0:9800"), true)
+            .expect("explicit confirmation is accepted");
+        // The flag is unconditional consent, not an extra restriction:
+        // the loopback default keeps working with it set.
+        ensure_bind_is_consented(addr("127.0.0.1:9800"), true)
             .expect("explicit confirmation is accepted");
     }
 }
