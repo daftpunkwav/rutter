@@ -131,9 +131,9 @@ anything from a crate listed below it in this table.
 | rutter-observe   | core                                    | Injected serializer script + pure DOM→Snapshot builder      |
 | rutter-policy    | core                                    | Rule set, verdict evaluation, approval broker               |
 | rutter-session   | core, events, engine, observe, policy   | Orchestration: execution, contexts, storage state, recovery |
-| rutter-mcp       | core, session, events                   | MCP host (rmcp) and the tool surface                       |
+| rutter-mcp       | core, session                           | MCP host (rmcp) and the tool surface                       |
 | rutter-dashboard | core, events, session (read-only), policy | HTTP/WS server, embedded frontend, decision submission    |
-| rutter (cli)     | mcp, dashboard, session                 | Binary entry, config loading, CLI subcommands               |
+| rutter (cli)     | core, engine, engine-cdp, mcp, dashboard, observe, policy, session | Binary entry, composition root, config loading |
 
 Key seams and why they exist:
 
@@ -286,10 +286,10 @@ impl RuleSet {
   cannot establish — an unreadable page, or a target that is not a URL
   (including `user@host` credential tricks) — fails closed: class
   rules still apply and a bare allow upgrades to `RequireApproval`.
-- The approval broker parks the action (configurable timeout, default
-  120 s), publishes `ApprovalRequested`, and awaits a decision submitted
-  through the policy API (used by the dashboard). Denial and timeout map
-  to `ApprovalDenied` / `ApprovalTimedOut`.
+- The session publishes `ApprovalRequested` and parks the action on the
+  approval broker (configurable timeout, default 120 s), which delivers
+  the decision submitted through the policy API (used by the dashboard).
+  Denial and timeout map to `ApprovalDenied` / `ApprovalTimedOut`.
 - Dangerousness is decided by rutter's rules, never by the agent's
   self-declaration — that is the point of supervision.
 - Approval applies to Agent-origin actions only (§7.3). Human-origin

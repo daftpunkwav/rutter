@@ -14,8 +14,8 @@
 //! executes actions (blueprint §5). The screencast live view (§7.7)
 //! streams binary frames on demand through the same WebSocket.
 //!
-//! Module layout: [`auth`] owns the endpoint gate (host + token),
-//! [`ws`] owns the WebSocket loop; this file owns the server, routes,
+//! Module layout: `auth` owns the endpoint gate (host + token),
+//! `ws` owns the WebSocket loop; this file owns the server, routes,
 //! and static handlers.
 
 // Restriction lints are denied workspace-wide; tests may use plain
