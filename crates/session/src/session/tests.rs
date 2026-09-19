@@ -114,6 +114,32 @@ async fn close_page_removes_the_page_and_promotes_a_remaining_one() {
 }
 
 #[tokio::test]
+async fn closing_an_untracked_page_fails_without_a_fake_event() {
+    // tabs_close with a stale or invented id is a client error: a silent
+    // success would also publish a PageClosed event for a page that
+    // never existed.
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context));
+
+    let error = session.close_page(PageId::new("nope")).await;
+    assert!(
+        matches!(
+            error,
+            Err(SessionError::Action(ActionError::NotInteractable { .. }))
+        ),
+        "an unknown page id fails like tabs_select does: {error:?}"
+    );
+    assert!(
+        !session
+            .backbone()
+            .replay(&SessionId::new("s-test"))
+            .iter()
+            .any(|envelope| matches!(envelope.event, Event::PageClosed { .. })),
+        "no PageClosed event may be published for an unknown page"
+    );
+}
+
+#[tokio::test]
 async fn select_page_switches_activity_and_unknown_pages_fail() {
     let context = MockContext::new();
     let session = session_over(Arc::new(context.clone()));

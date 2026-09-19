@@ -369,8 +369,13 @@ impl Session {
     }
 
     /// Closes a page; closing the active page promotes the first
-    /// remaining page.
+    /// remaining page. An id the session does not track is a client
+    /// error: closing it would otherwise report success and publish a
+    /// `PageClosed` event for a page that never existed.
     pub async fn close_page(&self, page_id: PageId) -> Result<String, SessionError> {
+        if !self.lock_pages().iter().any(|slot| slot.id == page_id) {
+            return Err(unknown_page(&page_id));
+        }
         let context = self.context.read().await.clone();
         context
             .close_page(page_id.clone())
