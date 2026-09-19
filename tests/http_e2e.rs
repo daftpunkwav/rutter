@@ -127,3 +127,31 @@ async fn http_rejects_foreign_host() {
         "foreign host must be rejected: {response}"
     );
 }
+
+/// Browser-origin requests are rejected: browsers attach an Origin
+/// header and MCP clients never do, so a hostile web page driving the
+/// local browser over the transport is refused regardless of CORS.
+#[tokio::test]
+#[ignore = "requires the engine binary in the cache"]
+async fn http_rejects_browser_origin() {
+    let _client = connect(49913).await;
+
+    let mut stream = tokio::net::TcpStream::connect("127.0.0.1:49913")
+        .await
+        .expect("server reachable");
+    let request = "POST /mcp HTTP/1.1\r\n\
+                   host: 127.0.0.1:49913\r\n\
+                   origin: http://attacker.example\r\n\
+                   content-type: application/json\r\n\
+                   accept: application/json, text/event-stream\r\n\
+                   content-length: 2\r\n\
+                   connection: close\r\n\r\n{}";
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    stream.write_all(request.as_bytes()).await.expect("write");
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.expect("read");
+    assert!(
+        response.starts_with("HTTP/1.1 403"),
+        "browser-origin requests must be rejected: {response}"
+    );
+}

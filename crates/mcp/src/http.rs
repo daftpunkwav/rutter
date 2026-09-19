@@ -3,7 +3,8 @@
 //!
 //! Boundary: transport mapping only. rmcp's `StreamableHttpService`
 //! validates inbound `Host` headers against a loopback allowlist by
-//! default (DNS rebinding, blueprint §7.7-grade checks); each MCP
+//! default (DNS rebinding, blueprint §7.7-grade checks), and Origin
+//! enforcement rejects every browser-originated request; each MCP
 //! connection mints its own rutter session through the shared manager.
 //! Binding stays on the address the caller passes.
 
@@ -27,6 +28,14 @@ pub async fn serve_http(
     let manager_for_factory = Arc::clone(&manager);
     let counter = Arc::new(AtomicU64::new(0));
     let pid = std::process::id();
+    // Browsers always attach an Origin header and non-browser MCP
+    // clients never do, so enforcing validation with an empty allowlist
+    // rejects exactly the browser-originated requests. Without it a
+    // hostile page driving a local browser is kept out only as a side
+    // effect of CORS preflight (the mandatory application/json content
+    // type); this makes the boundary explicit. DNS rebinding stays
+    // covered by the Host allowlist.
+    let config = StreamableHttpServerConfig::default().enforce_origin_validation();
     let service = StreamableHttpService::new(
         move || {
             let serial = counter.fetch_add(1, Ordering::Relaxed);
@@ -34,7 +43,7 @@ pub async fn serve_http(
             Ok(RutterMcp::new(Arc::clone(&manager_for_factory), session_id))
         },
         Arc::new(LocalSessionManager::default()),
-        StreamableHttpServerConfig::default(),
+        config,
     );
 
     let app = axum::Router::new().route_service("/mcp", service);
