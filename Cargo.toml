@@ -79,6 +79,7 @@ thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
 toml = "0.8"
+url = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Lint policy (blueprint §8.4): no unwrap/expect/panic outside tests and

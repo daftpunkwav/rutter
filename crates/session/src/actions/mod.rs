@@ -288,20 +288,22 @@ pub(crate) struct PageOps<'a> {
 }
 
 impl PageOps<'_> {
-    /// Reads the page's current URL; degrades to `about:blank` when the
-    /// page does not answer.
-    pub async fn url(&self) -> String {
+    /// Reads the page's current URL; `None` when the page does not
+    /// answer (mid-navigation or dead). Policy judgments fail closed on
+    /// `None`; bookkeeping keeps the last known value instead.
+    pub async fn url(&self) -> Option<String> {
         self.page
             .evaluate("location.href")
             .await
             .ok()
             .and_then(|value| value.as_str().map(str::to_owned))
-            .unwrap_or_else(|| "about:blank".to_owned())
     }
 
     /// Renders the current page as a snapshot.
     pub async fn snapshot(&self) -> Result<Snapshot, SessionError> {
-        let url = self.url().await;
+        // Display only: a page that will not answer href keeps the
+        // familiar placeholder rather than failing the snapshot.
+        let url = self.url().await.unwrap_or_else(|| "about:blank".to_owned());
         let raw = self
             .page
             .evaluate(serializer_script())

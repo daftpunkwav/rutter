@@ -108,18 +108,26 @@ impl Session {
         Arc::clone(&self.broker)
     }
 
-    /// Enforces the policy for one operation against `url`: `Allow`
+    /// Enforces the policy for one operation judged at `url`: `Allow`
     /// passes, `Deny` fails with `ApprovalDenied`, and
     /// `RequireApproval` publishes the request and parks until a human
-    /// answers or the window closes (blueprint §7.6).
+    /// answers or the window closes (blueprint §7.6). The URL is
+    /// canonicalized before matching, and `None` — an unreadable page
+    /// or a navigation target that is not a URL — fails closed: the
+    /// verdict comes from [`rutter_policy::RuleSet::evaluate_unreadable`]
+    /// rather than from a placeholder match.
     async fn enforce_policy(
         &self,
         class: ActionClass,
-        url: &str,
+        url: Option<&str>,
         page_id: &PageId,
         action: &Action,
     ) -> Result<(), SessionError> {
-        match self.policy.evaluate(class, url) {
+        let verdict = match url.and_then(rutter_policy::canonical_url) {
+            Some(url) => self.policy.evaluate(class, &url),
+            None => self.policy.evaluate_unreadable(class),
+        };
+        match verdict {
             Verdict::Allow => return Ok(()),
             Verdict::Deny => {
                 return Err(SessionError::Action(ActionError::ApprovalDenied {
@@ -225,16 +233,25 @@ impl Session {
         let page_id = self.active_page_id();
 
         // Supervision gate (blueprint §7.6): agent-origin actions are
-        // evaluated against the current page URL; human-origin actions
-        // bypass approval and are recorded identically.
+        // judged at the URL the action leads to — a navigation at its
+        // target, everything else at the page it acts on. Human-origin
+        // actions bypass approval and are recorded identically.
         let ops = PageOps {
             page: page.as_ref(),
             config: &self.config,
         };
         if origin == Origin::Agent {
-            let url = ops.url().await;
-            self.enforce_policy(rutter_policy::class_of(&action), &url, &page_id, &action)
-                .await?;
+            let policy_url = match &action {
+                Action::Navigate { url } => Some(url.clone()),
+                _ => ops.url().await,
+            };
+            self.enforce_policy(
+                rutter_policy::class_of(&action),
+                policy_url.as_deref(),
+                &page_id,
+                &action,
+            )
+            .await?;
         }
 
         self.backbone.publish(
@@ -280,11 +297,18 @@ impl Session {
         // concurrent `select_page` may have switched the active slot
         // while this action was in flight, and the new page's URL must
         // not be overwritten with this page's.
-        let url = ops.url().await;
-        self.lock_pages()
-            .iter_mut()
-            .filter(|slot| slot.id == page_id)
-            .for_each(|slot| slot.url = url.clone());
+        let url = match ops.url().await {
+            Some(url) => {
+                self.lock_pages()
+                    .iter_mut()
+                    .filter(|slot| slot.id == page_id)
+                    .for_each(|slot| slot.url = url.clone());
+                url
+            }
+            // The page would not answer: keep the last known URL
+            // instead of overwriting tracking with a placeholder.
+            None => self.last_known_url(&page_id),
+        };
         self.persist_storage(&page, &url).await;
 
         result
@@ -410,10 +434,16 @@ impl Session {
         }
         .url()
         .await;
-        self.enforce_policy(ActionClass::Cookies, &url, &page_id, &Action::Reload)
-            .await?;
+        self.enforce_policy(
+            ActionClass::Cookies,
+            url.as_deref(),
+            &page_id,
+            &Action::Reload,
+        )
+        .await?;
         let context = self.context.read().await.clone();
         context.set_cookies(cookies).await.map_err(engine_error)?;
+        let url = url.unwrap_or_else(|| self.last_known_url(&page_id));
         self.persist_storage(&page, &url).await;
         Ok(())
     }
@@ -440,12 +470,14 @@ impl Session {
     /// file (explicit save; blueprint §7.4).
     pub async fn save_storage(&self) -> Result<(), SessionError> {
         let page = self.active_page().await.map_err(engine_error)?;
+        let page_id = self.active_page_id();
         let url = PageOps {
             page: page.as_ref(),
             config: &self.config,
         }
         .url()
         .await;
+        let url = url.unwrap_or_else(|| self.last_known_url(&page_id));
         self.persist_storage(&page, &url).await;
         Ok(())
     }
@@ -496,12 +528,15 @@ impl Session {
                 continue;
             };
             let _ = handle.navigate(&slot.url).await;
+            // The freshly opened page may not answer yet; the restored
+            // target scopes the state in that case.
             let origin = PageOps {
                 page: handle.as_ref(),
                 config: &self.config,
             }
             .url()
-            .await;
+            .await
+            .unwrap_or_else(|| slot.url.clone());
             state
                 .restore(context.as_ref(), &[(origin, Arc::clone(&handle))])
                 .await;
@@ -522,6 +557,17 @@ impl Session {
 
         self.backbone
             .publish(self.id.clone(), Event::EngineRestarted);
+    }
+
+    /// The tracked URL of `page_id`, for bookkeeping only: it survives
+    /// an unreadable page instead of degrading tracking, and policy
+    /// judgments never consume it — they fail closed on `None` instead.
+    fn last_known_url(&self, page_id: &PageId) -> String {
+        self.lock_pages()
+            .iter()
+            .find(|slot| slot.id == *page_id)
+            .map(|slot| slot.url.clone())
+            .unwrap_or_else(|| "about:blank".to_owned())
     }
 
     /// Captures and persists the storage state; the in-memory copy

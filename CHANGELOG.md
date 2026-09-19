@@ -14,8 +14,15 @@ and the project adheres to
   is no longer a weakly seeded hash persisted in localStorage.
 - Session storage state (cookies plus localStorage) is written
   atomically and, on Unix, owner-only (0600).
-- Engine downloads reject non-https artifact URLs; the MCP HTTP
-  transport warns when bound to a non-loopback address.
+- Engine downloads live on the pinned Chrome for Testing storage host,
+  reject non-https artifact URLs, and cap the fetched and extracted
+  byte sizes so a compromised manifest source cannot exhaust memory or
+  disk.
+- The MCP HTTP transport warns when bound to a non-loopback address.
+- Policy verdicts are judged at the URL an action leads to:
+  navigations evaluate their canonicalized target URL, and a page that
+  will not answer fails closed to approval instead of judging on an
+  `about:blank` placeholder.
 
 ### Fixed
 

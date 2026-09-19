@@ -280,6 +280,12 @@ impl RuleSet {
 
 - Rules come from a TOML config: action class × URL pattern → verdict.
   Defaults are conservative for destructive classes.
+- The judgment URL is where the action leads, not where it comes from:
+  `Navigate` is judged on its canonicalized target URL, every other
+  class on the canonicalized current page URL. A URL the session
+  cannot establish — an unreadable page, or a target that is not a URL
+  (including `user@host` credential tricks) — fails closed: class
+  rules still apply and a bare allow upgrades to `RequireApproval`.
 - The approval broker parks the action (configurable timeout, default
   120 s), publishes `ApprovalRequested`, and awaits a decision submitted
   through the policy API (used by the dashboard). Denial and timeout map

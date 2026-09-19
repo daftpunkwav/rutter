@@ -19,12 +19,14 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod broker;
+pub mod canonical;
 pub mod class;
 pub mod config;
 pub mod pattern;
 pub mod rules;
 
 pub use broker::{ApprovalBroker, ApprovalId, ApprovalOutcome, Decision};
+pub use canonical::canonical_url;
 pub use class::{ActionClass, class_of};
 pub use config::parse_policy;
 pub use pattern::Pattern;

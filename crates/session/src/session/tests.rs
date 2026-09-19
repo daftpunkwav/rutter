@@ -30,6 +30,27 @@ fn session_with_short_approval(context: Arc<dyn ContextHandle>) -> Session {
     )
 }
 
+fn session_with_policy(context: Arc<dyn ContextHandle>, rules: RuleSet) -> Session {
+    Session::new(
+        SessionId::new("s-test"),
+        context,
+        Arc::new(Backbone::new()),
+        SessionConfig::default(),
+        Arc::new(rules),
+        Arc::new(ApprovalBroker::new()),
+        None,
+    )
+}
+
+/// A navigation-class deny rule for `pattern`.
+fn navigation_deny(pattern: &str) -> rutter_policy::rules::PolicyRule {
+    rutter_policy::rules::PolicyRule {
+        action_class: Some("navigation".to_owned()),
+        url_pattern: rutter_policy::Pattern::parse(pattern),
+        verdict: rutter_policy::Verdict::Deny,
+    }
+}
+
 #[tokio::test]
 async fn close_closes_the_context_even_when_the_context_errors() {
     // The close contract: teardown always succeeds, and the real
@@ -449,51 +470,53 @@ async fn url_refresh_targets_the_page_the_action_ran_on() {
     assert!(b.active, "the selection survives the concurrent action");
 }
 
+/// A page whose `evaluate` never answers (`Value::Null` for
+/// everything): the shape of a page caught mid-navigation or dead.
+struct BrokenLens;
+
+#[async_trait::async_trait]
+impl PageHandle for BrokenLens {
+    async fn navigate(&self, url: &str) -> Result<String, EngineError> {
+        Ok(url.to_owned())
+    }
+
+    async fn reload(&self) -> Result<(), EngineError> {
+        Ok(())
+    }
+
+    async fn go_back(&self) -> Result<String, EngineError> {
+        Ok(String::new())
+    }
+
+    async fn go_forward(&self) -> Result<String, EngineError> {
+        Ok(String::new())
+    }
+
+    async fn evaluate(&self, _expression: &str) -> Result<Value, EngineError> {
+        Ok(Value::Null)
+    }
+
+    async fn dispatch_input(
+        &self,
+        _event: rutter_engine::input::InputEvent,
+    ) -> Result<(), EngineError> {
+        Ok(())
+    }
+
+    async fn capture_screenshot(&self) -> Result<Screenshot, EngineError> {
+        Err(EngineError::Terminated)
+    }
+
+    async fn start_screencast(&self) -> Result<ScreencastStream, EngineError> {
+        Err(EngineError::Terminated)
+    }
+}
+
 #[tokio::test]
 async fn screenshot_capture_errors_map_to_the_internal_taxonomy() {
     // TOOL_SPEC §4: capture errors surface as `ActionError::Internal` —
     // the taxonomy every action failure uses — not as a raw engine
     // error.
-    struct BrokenLens;
-
-    #[async_trait::async_trait]
-    impl PageHandle for BrokenLens {
-        async fn navigate(&self, url: &str) -> Result<String, EngineError> {
-            Ok(url.to_owned())
-        }
-
-        async fn reload(&self) -> Result<(), EngineError> {
-            Ok(())
-        }
-
-        async fn go_back(&self) -> Result<String, EngineError> {
-            Ok(String::new())
-        }
-
-        async fn go_forward(&self) -> Result<String, EngineError> {
-            Ok(String::new())
-        }
-
-        async fn evaluate(&self, _expression: &str) -> Result<Value, EngineError> {
-            Ok(Value::Null)
-        }
-
-        async fn dispatch_input(
-            &self,
-            _event: rutter_engine::input::InputEvent,
-        ) -> Result<(), EngineError> {
-            Ok(())
-        }
-
-        async fn capture_screenshot(&self) -> Result<Screenshot, EngineError> {
-            Err(EngineError::Terminated)
-        }
-
-        async fn start_screencast(&self) -> Result<ScreencastStream, EngineError> {
-            Err(EngineError::Terminated)
-        }
-    }
-
     let session = session_over(Arc::new(SinglePageContext(Arc::new(BrokenLens))));
     let error = session
         .screenshot()
@@ -502,5 +525,129 @@ async fn screenshot_capture_errors_map_to_the_internal_taxonomy() {
     assert!(
         matches!(error, SessionError::Action(ActionError::Internal { .. })),
         "capture errors use the action taxonomy: {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_navigation_is_judged_by_its_target_url() {
+    // A deny rule on the CURRENT page must not wave through to a
+    // navigation, and vice versa: the judgment URL for `Navigate` is
+    // where it goes (the old current-page judgment made
+    // `deny https://allowed.example/*` blind to every navigation
+    // away from it).
+    let context = MockContext::new();
+    let session = session_with_policy(
+        Arc::new(context.clone()),
+        RuleSet::new(
+            vec![navigation_deny("https://allowed.example/*")],
+            Verdict::Allow,
+        ),
+    );
+
+    session
+        .execute(
+            Action::Navigate {
+                url: "https://allowed.example/".to_owned(),
+            },
+            Origin::Human,
+        )
+        .await
+        .expect("human origin bypasses policy");
+
+    session
+        .execute(
+            Action::Navigate {
+                url: "https://other.example/".to_owned(),
+            },
+            Origin::Agent,
+        )
+        .await
+        .expect("the target URL is what counts, not the current page");
+}
+
+#[tokio::test]
+async fn a_denied_target_url_stops_the_navigation() {
+    let context = MockContext::new();
+    let session = session_with_policy(
+        Arc::new(context),
+        RuleSet::new(
+            vec![navigation_deny("https://denied.example/*")],
+            Verdict::Allow,
+        ),
+    );
+
+    let error = session
+        .execute(
+            Action::Navigate {
+                url: "https://denied.example/pay".to_owned(),
+            },
+            Origin::Agent,
+        )
+        .await;
+    assert!(
+        matches!(
+            error,
+            Err(SessionError::Action(ActionError::ApprovalDenied { .. }))
+        ),
+        "a denied destination must not load: {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_unreadable_page_fails_closed_to_approval() {
+    // Old semantics judged on a degraded `about:blank` and let the
+    // action sail through; the fail-closed upgrade parks it for a
+    // human instead.
+    let session = session_with_policy(
+        Arc::new(SinglePageContext(Arc::new(BrokenLens))),
+        RuleSet::new(vec![], Verdict::Allow).with_approval_timeout(Duration::from_millis(100)),
+    );
+
+    let error = session
+        .execute(
+            Action::Click {
+                reference: rutter_core::reference::Reference::new("e1"),
+            },
+            Origin::Agent,
+        )
+        .await;
+    assert!(
+        matches!(
+            error,
+            Err(SessionError::Action(ActionError::ApprovalTimedOut { .. }))
+        ),
+        "the fail-closed upgrade goes through the approval park: {error:?}"
+    );
+    assert!(
+        session
+            .backbone()
+            .replay(&SessionId::new("s-test"))
+            .iter()
+            .any(|envelope| matches!(envelope.event, Event::ApprovalRequested { .. })),
+        "the human is asked, silently allowing is not an option"
+    );
+}
+
+#[tokio::test]
+async fn an_unreadable_page_still_honors_class_level_denies() {
+    let session = session_with_policy(
+        Arc::new(SinglePageContext(Arc::new(BrokenLens))),
+        RuleSet::new(vec![], Verdict::Deny),
+    );
+
+    let error = session
+        .execute(
+            Action::Click {
+                reference: rutter_core::reference::Reference::new("e1"),
+            },
+            Origin::Agent,
+        )
+        .await;
+    assert!(
+        matches!(
+            error,
+            Err(SessionError::Action(ActionError::ApprovalDenied { .. }))
+        ),
+        "a deny default denies regardless of URL information: {error:?}"
     );
 }
