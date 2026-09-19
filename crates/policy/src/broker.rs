@@ -80,8 +80,9 @@ impl ApprovalBroker {
         (id, receiver)
     }
 
-    /// Waits for a decision, giving up after `timeout`. A timeout (or a
-    /// human answer) reclaims the parked slot, so a late
+    /// Waits for a decision, giving up after `timeout`. A timeout, a
+    /// human answer, or the wait future being dropped mid-park (a
+    /// cancelled caller) reclaims the parked slot, so a late
     /// [`ApprovalBroker::decide`] reports `false`.
     pub async fn wait(
         &self,
@@ -89,15 +90,33 @@ impl ApprovalBroker {
         receiver: oneshot::Receiver<Decision>,
         timeout: Duration,
     ) -> ApprovalOutcome {
-        let outcome = match tokio::time::timeout(timeout, receiver).await {
+        // Cleanup must not live after the await point: a dropped future
+        // never reaches it, and the slot would stay parked for the
+        // broker's lifetime. The guard runs on every exit path; on the
+        // paths that already removed the slot the removal is a no-op.
+        struct Reclaim<'a> {
+            id: ApprovalId,
+            pending: &'a Mutex<HashMap<ApprovalId, oneshot::Sender<Decision>>>,
+        }
+        impl Drop for Reclaim<'_> {
+            fn drop(&mut self) {
+                self.pending
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .remove(&self.id);
+            }
+        }
+        let _reclaim = Reclaim {
+            id: id.clone(),
+            pending: &self.pending,
+        };
+        match tokio::time::timeout(timeout, receiver).await {
             Ok(Ok(Decision::Grant)) => ApprovalOutcome::Granted,
             Ok(Ok(Decision::Deny)) => ApprovalOutcome::Denied,
             // The sender was dropped without a decision (manager shut
             // down); treat it like silence.
             Ok(Err(_)) | Err(_) => ApprovalOutcome::TimedOut,
-        };
-        self.lock_pending().remove(id);
-        outcome
+        }
     }
 
     /// Delivers a human decision. Returns `false` when the approval is
@@ -132,6 +151,7 @@ impl Default for ApprovalBroker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn granted_when_a_human_answers_in_time() {
@@ -176,5 +196,29 @@ mod tests {
     async fn deciding_an_unknown_approval_fails() {
         let broker = ApprovalBroker::new();
         assert!(!broker.decide(&ApprovalId("apr-404".to_owned()), Decision::Grant));
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_wait_reclaims_the_slot() {
+        // A caller aborted mid-park (a disconnecting MCP client) drops
+        // the wait future before it completes; the slot must go with it,
+        // or the broker parks it until the process exits.
+        let broker = Arc::new(ApprovalBroker::new());
+        let (id, receiver) = broker.open();
+        let parked = tokio::spawn({
+            let broker = Arc::clone(&broker);
+            let id = id.clone();
+            async move { broker.wait(&id, receiver, Duration::from_secs(60)).await }
+        });
+        // Let the waiter park, then cancel it mid-wait.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        parked.abort();
+        let _ = parked.await;
+
+        assert_eq!(broker.pending_count(), 0, "the drop reclaimed the slot");
+        assert!(
+            !broker.decide(&id, Decision::Grant),
+            "a decision after cancellation is rejected"
+        );
     }
 }
