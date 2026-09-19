@@ -36,6 +36,16 @@ pub enum CliError {
         /// What went wrong with the transport or service.
         message: String,
     },
+
+    /// A non-loopback HTTP bind was requested without `--allow-remote`.
+    #[error(
+        "refusing to serve MCP HTTP on {addr}: the transport drives a real \
+         browser with this user's sessions and has no authentication"
+    )]
+    RemoteHttpBind {
+        /// The address that was refused.
+        addr: std::net::SocketAddr,
+    },
 }
 
 impl CliError {
@@ -48,6 +58,11 @@ impl CliError {
             }
             Self::Transport { .. } => {
                 "check that stdin/stdout are connected and not owned by another process".to_owned()
+            }
+            Self::RemoteHttpBind { .. } => {
+                "pass --allow-remote if this server really must be reachable \
+                 from other machines, and put an authenticated gateway in front of it"
+                    .to_owned()
             }
         }
     }

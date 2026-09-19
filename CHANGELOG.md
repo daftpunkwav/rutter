@@ -18,7 +18,9 @@ and the project adheres to
   reject non-https artifact URLs, and cap the fetched and extracted
   byte sizes so a compromised manifest source cannot exhaust memory or
   disk.
-- The MCP HTTP transport warns when bound to a non-loopback address.
+- The MCP HTTP transport rejects browser-originated requests (Origin
+  validation) and refuses non-loopback binds unless `--allow-remote`
+  is passed.
 - Policy verdicts are judged at the URL an action leads to:
   navigations evaluate their canonicalized target URL, and a page that
   will not answer fails closed to approval instead of judging on an

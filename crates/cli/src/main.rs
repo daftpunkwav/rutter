@@ -50,6 +50,11 @@ struct Cli {
     /// (serve mode), for example 127.0.0.1:9800.
     #[arg(long, global = true, value_name = "ADDR")]
     http: Option<std::net::SocketAddr>,
+
+    /// Confirm a non-loopback --http bind: the transport drives a real
+    /// browser with this user's sessions and has no authentication.
+    #[arg(long, global = true)]
+    allow_remote: bool,
 }
 
 /// Available subcommands; no subcommand selects browse mode.
@@ -115,6 +120,7 @@ fn main() -> ExitCode {
         policy,
         cli.dashboard,
         cli.http,
+        cli.allow_remote,
     )) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

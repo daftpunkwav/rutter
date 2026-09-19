@@ -22,7 +22,8 @@ use crate::launcher;
 /// Serves MCP until the client disconnects or Ctrl-C arrives.
 /// Transports are mutually exclusive: `--http ADDR` serves streamable
 /// HTTP, anything else speaks stdio. The dashboard (optional port) and
-/// the policy file (optional TOML) attach here. Every exit path shuts
+/// the policy file (optional TOML) attach here. A non-loopback HTTP
+/// bind must be confirmed with `--allow-remote`. Every exit path shuts
 /// the manager down so the supervised browser never outlives the
 /// server.
 pub async fn run(
@@ -31,7 +32,11 @@ pub async fn run(
     policy: Option<rutter_policy::RuleSet>,
     dashboard_port: Option<u16>,
     http_addr: Option<std::net::SocketAddr>,
+    allow_remote: bool,
 ) -> Result<(), CliError> {
+    if let Some(addr) = http_addr {
+        ensure_bind_is_consented(addr, allow_remote)?;
+    }
     // Policy: the built-in conservative set unless a --policy TOML file
     // overrides it per deployment. Storage states persist under the
     // cache root (blueprint §7.4).
@@ -101,6 +106,19 @@ async fn serve_stdio(manager: Arc<SessionManager>) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Refuses a non-loopback HTTP bind unless the caller confirmed it:
+/// the transport drives a real browser with this user's sessions and
+/// has no authentication, so a silent LAN exposure is one typo away.
+fn ensure_bind_is_consented(
+    addr: std::net::SocketAddr,
+    allow_remote: bool,
+) -> Result<(), CliError> {
+    if allow_remote || addr.ip().is_loopback() {
+        return Ok(());
+    }
+    Err(CliError::RemoteHttpBind { addr })
+}
+
 /// Serves MCP over streamable HTTP until Ctrl-C fires. The interrupt
 /// must be observed here because `serve_http` otherwise only returns
 /// when the listener fails; without it, no Ctrl-C path could shut the
@@ -120,5 +138,39 @@ async fn serve_http(
             })?;
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn addr(text: &str) -> std::net::SocketAddr {
+        text.parse().unwrap()
+    }
+
+    #[test]
+    fn loopback_binds_need_no_confirmation() {
+        ensure_bind_is_consented(addr("127.0.0.1:9800"), false)
+            .expect("the default bind is loopback");
+        ensure_bind_is_consented(addr("[::1]:9800"), false).expect("::1 is loopback too");
+    }
+
+    #[test]
+    fn remote_binds_are_refused_without_the_flag() {
+        let error = ensure_bind_is_consented(addr("192.168.1.10:9800"), false)
+            .expect_err("a LAN bind is refused");
+        assert!(error.to_string().contains("refusing"), "{error}");
+        let error = ensure_bind_is_consented(addr("0.0.0.0:9800"), false)
+            .expect_err("a wildcard bind is refused");
+        assert!(error.to_string().contains("refusing"), "{error}");
+    }
+
+    #[test]
+    fn remote_binds_pass_with_the_flag() {
+        ensure_bind_is_consented(addr("192.168.1.10:9800"), true)
+            .expect("explicit confirmation is accepted");
+        ensure_bind_is_consented(addr("0.0.0.0:9800"), true)
+            .expect("explicit confirmation is accepted");
     }
 }
