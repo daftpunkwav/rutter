@@ -144,9 +144,13 @@ impl PageHandle for MockPage {
 
     async fn evaluate(&self, expression: &str) -> Result<Value, EngineError> {
         // Dispatch on the markers each rutter-observe script carries.
-        // The resolver and serializer share substrings, so the most
-        // specific markers are matched first.
-        if expression.contains("var REF = ") {
+        // Scripts share substrings (the select script carries both
+        // `var REF = ` and `var VALUES = `, the serializer carries
+        // `innerWidth`), so the most specific markers are matched
+        // first.
+        if expression.contains("var VALUES = ") {
+            Ok(json!({ "missing": false, "not_select": false, "matched": 1 }))
+        } else if expression.contains("var REF = ") {
             Ok(self.next_resolve_answer())
         } else if expression.contains("var NEEDLE = ") {
             Ok(json!({ "found": self.inner.found.load(Ordering::SeqCst) }))
@@ -159,8 +163,6 @@ impl PageHandle for MockPage {
                     "children": [{ "role": "button", "name": "Ok", "ref": "e1" }]
                 }
             }))
-        } else if expression.contains("var VALUES = ") {
-            Ok(json!({ "missing": false, "not_select": false, "matched": 1 }))
         } else if expression.contains("location.href") {
             Ok(json!(lock(&self.inner.url, |url| url.clone())))
         } else if expression.contains("innerWidth") {
