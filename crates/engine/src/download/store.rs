@@ -128,13 +128,16 @@ impl EngineStore {
             return installed;
         }
 
-        if let Some(parent) = final_dir.parent() {
-            fs::create_dir_all(parent).map_err(|error| EngineError::DownloadFailed {
+        if let Some(parent) = final_dir.parent()
+            && let Err(error) = fs::create_dir_all(parent)
+        {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(EngineError::DownloadFailed {
                 detail: format!(
                     "cannot create cache directory {}: {error}",
                     parent.display()
                 ),
-            })?;
+            });
         }
         if let Err(error) = fs::rename(&staging, &final_dir) {
             let _ = fs::remove_dir_all(&staging);
