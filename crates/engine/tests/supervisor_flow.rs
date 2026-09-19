@@ -302,3 +302,115 @@ async fn supervisor_recovers_after_a_failed_start() {
 
     supervisor.shutdown().await;
 }
+
+/// Engine whose `shutdown` parks until the test releases it: models a
+/// browser that answers `Browser.close` slowly (in the worst case a
+/// full command budget of waiting). Signals the moment `shutdown`
+/// starts so tests never race task scheduling.
+struct SlowShutdownEngine {
+    entered: tokio::sync::watch::Sender<bool>,
+    gate: Arc<tokio::sync::Notify>,
+}
+
+#[async_trait]
+impl Engine for SlowShutdownEngine {
+    fn descriptor(&self) -> EngineDescriptor {
+        EngineDescriptor {
+            backend: EngineBackend::ChromiumHeadlessShell,
+            version: "slow-shutdown".to_owned(),
+            capabilities: EngineCapabilities {
+                headless: true,
+                headed: false,
+                screencast: false,
+                per_context_isolation: false,
+            },
+        }
+    }
+
+    async fn create_context(
+        &self,
+        _config: ContextConfig,
+    ) -> Result<Arc<dyn ContextHandle>, EngineError> {
+        Err(EngineError::Unsupported {
+            operation: "create_context".to_owned(),
+            reason: "mock engine hosts no contexts".to_owned(),
+        })
+    }
+
+    async fn health(&self) -> Result<HealthReport, EngineError> {
+        Ok(HealthReport {
+            healthy: true,
+            backend_version: Some("slow-shutdown".to_owned()),
+            detail: None,
+        })
+    }
+
+    async fn shutdown(&self) -> Result<(), EngineError> {
+        let _ = self.entered.send_replace(true);
+        // Fault injection: the shutdown blocks until the test opens the
+        // gate (`notify_one` stores a permit, so an early release is
+        // not lost).
+        self.gate.notified().await;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn engine_readers_fail_fast_while_shutdown_is_in_flight() {
+    struct SlowShutdownLauncher {
+        entered: tokio::sync::watch::Sender<bool>,
+        gate: Arc<tokio::sync::Notify>,
+    }
+    #[async_trait]
+    impl EngineLauncher for SlowShutdownLauncher {
+        fn describe(&self) -> String {
+            "slow-shutdown".to_owned()
+        }
+        async fn launch(&self, _mode: LaunchMode) -> Result<Arc<dyn Engine>, EngineError> {
+            Ok(Arc::new(SlowShutdownEngine {
+                entered: self.entered.clone(),
+                gate: Arc::clone(&self.gate),
+            }))
+        }
+    }
+
+    let (entered, mut entered_rx) = tokio::sync::watch::channel(false);
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let supervisor = Arc::new(Supervisor::new(
+        Arc::new(SlowShutdownLauncher {
+            entered: entered.clone(),
+            gate: Arc::clone(&gate),
+        }),
+        LaunchMode::Headless,
+    ));
+    supervisor.start().await.expect("start");
+    assert!(supervisor.engine().await.is_ok());
+
+    // Shutdown starts and parks inside the engine's `shutdown`.
+    let shutting_down = {
+        let supervisor = Arc::clone(&supervisor);
+        tokio::spawn(async move { supervisor.shutdown().await })
+    };
+    tokio::time::timeout(Duration::from_secs(5), entered_rx.wait_for(|open| *open))
+        .await
+        .expect("engine shutdown must start")
+        .expect("watch stays open");
+
+    // While the engine shutdown is still parked, an engine reader must
+    // get `Terminated` immediately (the slot is empty), not wait behind
+    // the slot's write lock for the parked shutdown.
+    let probe = tokio::time::timeout(Duration::from_secs(1), supervisor.engine()).await;
+    match probe {
+        Ok(Err(EngineError::Terminated)) => {}
+        Ok(Ok(_)) => panic!("the slot must be empty while shutdown is in flight"),
+        Ok(Err(error)) => panic!("unexpected engine error during shutdown: {error}"),
+        Err(_) => panic!("engine() must fail fast, not wait behind the parked shutdown"),
+    }
+
+    // Release the parked shutdown so the test ends cleanly.
+    gate.notify_one();
+    tokio::time::timeout(Duration::from_secs(5), shutting_down)
+        .await
+        .expect("shutdown must finish after the gate opens")
+        .expect("shutdown task");
+}

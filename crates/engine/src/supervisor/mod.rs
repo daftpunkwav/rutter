@@ -161,7 +161,13 @@ impl Supervisor {
         if let Some(handle) = self.heartbeat.lock().await.take() {
             handle.abort();
         }
-        if let Some(engine) = self.supervised.engine.write().await.take()
+        // The engine is taken out first and the guard dropped before the
+        // shutdown runs: `Engine::shutdown` can wait out a full command
+        // budget, and holding the slot's write lock that long would park
+        // concurrent `engine()` readers instead of letting them fail
+        // fast with `Terminated`.
+        let engine = self.supervised.engine.write().await.take();
+        if let Some(engine) = engine
             && let Err(error) = engine.shutdown().await
         {
             eprintln!("rutter: engine shutdown failed: {error}");
