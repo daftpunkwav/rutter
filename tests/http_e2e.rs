@@ -15,8 +15,60 @@ use rmcp::transport::StreamableHttpClientTransport;
 use serde_json::{Value, json};
 use tokio::process::Command;
 
-/// Boots `rutter serve --http` and returns the connected client.
-async fn connect(port: u16) -> rmcp::service::RunningService<rmcp::RoleClient, ()> {
+/// A running `rutter serve --http` child, its port, and the connected
+/// client. Dropping this tears the server's whole process tree down,
+/// so no serve (or browser grandchild) can outlive the test that
+/// started it: a leaked child would keep the cargo-test pipes open
+/// (`cargo test | grep` never sees EOF) and a later run could meet a
+/// stale server.
+struct Server {
+    client: rmcp::service::RunningService<rmcp::RoleClient, ()>,
+    port: u16,
+    /// The serve process id, for the tree teardown in `Drop`.
+    pid: Option<u32>,
+    /// Ownership guard: kill-on-drop is the fallback that never leaves
+    /// the serve child itself behind.
+    _child: tokio::process::Child,
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        // On Windows, spawning a child copies *every* inheritable
+        // handle into it (bInheritHandles), not just the standard
+        // streams — so the browser grandchildren of `serve` end up
+        // holding the test harness's pipe handles. Killing the serve
+        // child alone (kill-on-drop) orphans them, and an orphaned
+        // chrome-headless-shell keeps `cargo test | grep` hanging
+        // forever. `taskkill /T` tears down the whole tree instead.
+        #[cfg(windows)]
+        if let Some(pid) = self.pid {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/T", "/PID"])
+                .arg(pid.to_string())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+        // Off Windows children do not inherit unrelated handles (fds
+        // are close-on-exec), so the kill-on-drop guard suffices.
+    }
+}
+
+/// Grabs a free loopback port by binding and releasing an ephemeral
+/// listener. The OS hands out a port that is free right now, so
+/// parallel tests and consecutive runs never collide on a fixed port.
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .expect("bind an ephemeral listener")
+        .local_addr()
+        .expect("local address")
+        .port()
+}
+
+/// Boots `rutter serve --http` on a fresh port and returns the server
+/// plus the connected client.
+async fn connect() -> Server {
+    let port = free_port();
     let mut command = Command::new(common::rutter_bin());
     command
         .arg("serve")
@@ -25,16 +77,21 @@ async fn connect(port: u16) -> rmcp::service::RunningService<rmcp::RoleClient, (
         // Null stdio: an inherited stdout pipe would keep the test
         // harness waiting for EOF after the assertions.
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
     let child = command.spawn().expect("spawn rutter serve");
-    // Keep the child running for the whole test; the assertions need
-    // the server, and it is intentionally not waited on.
-    std::mem::forget(child);
+    let pid = child.id();
 
     wait_for_http(port).await;
 
     let transport = StreamableHttpClientTransport::from_uri(format!("http://127.0.0.1:{port}/mcp"));
-    ().serve(transport).await.expect("client initialization")
+    let client = ().serve(transport).await.expect("client initialization");
+    Server {
+        client,
+        port,
+        pid,
+        _child: child,
+    }
 }
 
 /// Polls the /mcp endpoint until the server accepts requests.
@@ -84,17 +141,17 @@ fn first_text(result: &CallToolResult) -> String {
 #[tokio::test]
 #[ignore = "requires the engine binary in the cache"]
 async fn http_transport_round_trip() {
-    let client = connect(49911).await;
+    let server = connect().await;
 
     let page = "data:text/html,<h1>Http E2E</h1>";
-    let result = call(&client, "navigate", json!({ "url": page })).await;
+    let result = call(&server.client, "navigate", json!({ "url": page })).await;
     assert!(
         !result.is_error.unwrap_or(false),
         "navigate failed: {:?}",
         first_text(&result)
     );
 
-    let snapshot = call(&client, "snapshot", json!({})).await;
+    let snapshot = call(&server.client, "snapshot", json!({})).await;
     assert!(
         first_text(&snapshot).contains("heading \"Http E2E\""),
         "snapshot over http: {}",
@@ -107,9 +164,9 @@ async fn http_transport_round_trip() {
 #[tokio::test]
 #[ignore = "requires the engine binary in the cache"]
 async fn http_rejects_foreign_host() {
-    let _client = connect(49912).await;
+    let server = connect().await;
 
-    let mut stream = tokio::net::TcpStream::connect("127.0.0.1:49912")
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", server.port))
         .await
         .expect("server reachable");
     let request = "POST /mcp HTTP/1.1\r\n\
@@ -134,18 +191,21 @@ async fn http_rejects_foreign_host() {
 #[tokio::test]
 #[ignore = "requires the engine binary in the cache"]
 async fn http_rejects_browser_origin() {
-    let _client = connect(49913).await;
+    let server = connect().await;
 
-    let mut stream = tokio::net::TcpStream::connect("127.0.0.1:49913")
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", server.port))
         .await
         .expect("server reachable");
-    let request = "POST /mcp HTTP/1.1\r\n\
-                   host: 127.0.0.1:49913\r\n\
-                   origin: http://attacker.example\r\n\
-                   content-type: application/json\r\n\
-                   accept: application/json, text/event-stream\r\n\
-                   content-length: 2\r\n\
-                   connection: close\r\n\r\n{}";
+    let request = format!(
+        "POST /mcp HTTP/1.1\r\n\
+         host: 127.0.0.1:{}\r\n\
+         origin: http://attacker.example\r\n\
+         content-type: application/json\r\n\
+         accept: application/json, text/event-stream\r\n\
+         content-length: 2\r\n\
+         connection: close\r\n\r\n{{}}",
+        server.port
+    );
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     stream.write_all(request.as_bytes()).await.expect("write");
     let mut response = String::new();

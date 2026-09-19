@@ -594,6 +594,81 @@ async fn a_denied_target_url_stops_the_navigation() {
 }
 
 #[tokio::test]
+async fn a_denied_target_is_not_bypassed_by_case_or_default_port() {
+    // The judgment URL is the canonical form: a spelling the browser
+    // resolves to the same origin (host case, an explicit default port)
+    // must reach the same rule. Judged on the raw string instead, the
+    // byte-level pattern match would treat this navigation as a miss
+    // and let it through.
+    let context = MockContext::new();
+    let session = session_with_policy(
+        Arc::new(context),
+        RuleSet::new(
+            vec![navigation_deny("https://denied.example/*")],
+            Verdict::Allow,
+        ),
+    );
+
+    let error = session
+        .execute(
+            Action::Navigate {
+                url: "HTTPS://Denied.Example:443/pay".to_owned(),
+            },
+            Origin::Agent,
+        )
+        .await;
+    assert!(
+        matches!(
+            error,
+            Err(SessionError::Action(ActionError::ApprovalDenied { .. }))
+        ),
+        "the canonical form of the target is what the rule sees: {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_credential_target_fails_closed_to_approval() {
+    // A user@host target has no canonical form (the decoy before the @
+    // would end up in a textual judgment while the browser contacts the
+    // host after it), so the navigation must take the fail-closed path:
+    // URL-scoped rules cannot match, and the bare allow upgrades to an
+    // approval instead of silently passing as a pattern miss.
+    let context = MockContext::new();
+    let session = session_with_policy(
+        Arc::new(context),
+        RuleSet::new(
+            vec![navigation_deny("https://denied.example/*")],
+            Verdict::Allow,
+        )
+        .with_approval_timeout(Duration::from_millis(100)),
+    );
+
+    let error = session
+        .execute(
+            Action::Navigate {
+                url: "https://good.example@evil.example/".to_owned(),
+            },
+            Origin::Agent,
+        )
+        .await;
+    assert!(
+        matches!(
+            error,
+            Err(SessionError::Action(ActionError::ApprovalTimedOut { .. }))
+        ),
+        "the credential target parks for a human: {error:?}"
+    );
+    assert!(
+        session
+            .backbone()
+            .replay(&SessionId::new("s-test"))
+            .iter()
+            .any(|envelope| matches!(envelope.event, Event::ApprovalRequested { .. })),
+        "the human is asked, silently allowing is not an option"
+    );
+}
+
+#[tokio::test]
 async fn an_unreadable_page_fails_closed_to_approval() {
     // Old semantics judged on a degraded `about:blank` and let the
     // action sail through; the fail-closed upgrade parks it for a
