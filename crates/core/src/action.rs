@@ -15,7 +15,12 @@ use crate::reference::Reference;
 /// origin decides attribution and whether approval rules apply:
 /// agent-origin actions go through policy evaluation; human-origin
 /// actions bypass approval and are recorded identically.
+///
+/// Serialized with the event vocabulary's convention (`"type"` tag,
+/// snake_case names) so event consumers read the same casing here as
+/// everywhere else in an envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Origin {
     /// Requested by an MCP client (the supervised path).
     Agent,
@@ -25,7 +30,12 @@ pub enum Origin {
 }
 
 /// A typed operation requested against a page.
+///
+/// Serialized with the event vocabulary's convention (`"type"` tag,
+/// snake_case names): actions ride in `Event` payloads, and consumers
+/// such as the dashboard name an action through its `type` field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
     /// Navigates the page to the given URL.
     Navigate {
@@ -79,7 +89,11 @@ pub enum Action {
 }
 
 /// Direction of an [`Action::Scroll`] operation.
+///
+/// Serialized snake_case so the wire form matches the scroll tool's
+/// input schema (`docs/TOOL_SPEC.md` §4: `up|down|left|right`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ScrollDirection {
     /// Toward the top of the page.
     Up,

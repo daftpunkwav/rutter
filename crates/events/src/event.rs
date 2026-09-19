@@ -115,5 +115,8 @@ mod tests {
         let back: Event = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, event);
         assert!(json.contains("action_failed"), "tagged enum: {json}");
+        // The embedded action follows the same convention: the dashboard
+        // names an action through its `type` field (snake_case tag).
+        assert!(json.contains(r#""type":"click""#), "tagged action: {json}");
     }
 }

@@ -14,6 +14,8 @@ change (blueprint §5).
 ## Key types
 
 - `Action` + `Origin` — what an agent asked for, and who asked.
+  Serialized with the event convention (`"type"` tag, snake_case)
+  because they ride in events.
 - `Snapshot` / `SnapshotNode` — the YAML-rendered accessibility view
   (format contract: `docs/SNAPSHOT_SPEC.md`).
 - `Reference` — stable per-page element handle minted by the
