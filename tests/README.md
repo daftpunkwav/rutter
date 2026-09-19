@@ -13,4 +13,4 @@ in the cache).
 | `http_e2e.rs` | Streamable HTTP transport end to end |
 
 The binary is located via `CARGO_BIN_EXE_rutter` when set, else the
-workspace `target/debug` layout, else the `RUTTER_BIN` override.
+`RUTTER_BIN` override, else the workspace `target/debug` layout.

@@ -231,10 +231,10 @@ async fn wait_for_resolves_and_times_out() {
     client.cancel().await.expect("shutdown");
 }
 
-/// Tabs: open a second page through recovery-shaped tracking, list it,
-/// select it, and close it. The MCP surface only tracks pages the
-/// session knows about, so this exercises the tabs tools over a
-/// session with one real page plus the tools' empty-list wording.
+/// Close is terminal for the connection: a live session closes
+/// cleanly, and every later tool call on the same connection fails at
+/// the protocol level naming the closed session instead of silently
+/// reopening it (TOOL_SPEC §4).
 #[tokio::test]
 #[ignore = "requires the engine binary in the cache"]
 async fn close_session_fails_fast_after_closing() {
