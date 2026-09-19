@@ -278,6 +278,13 @@ impl rutter_engine::page::PageHandle for CdpPage {
         // stops the capture on its own, and stops when the viewer drops
         // the stream. Every CDP call inside stays under a deadline so a
         // dead browser ends the stream instead of parking the task.
+        //
+        // Frames are handed off without awaiting: a stalled viewer must
+        // never block this task, because the backlog would then pile up
+        // in the chromiumoxide event listener, which is an unbounded
+        // queue. Frames are droppable (blueprint §7.5, latest-wins
+        // backpressure); over a full channel the newest frames are
+        // dropped and the memory stays bounded by the channel capacity.
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -294,8 +301,11 @@ impl rutter_engine::page::PageHandle for CdpPage {
                         else {
                             continue;
                         };
-                        if sender.send(ScreencastFrame { jpeg }).await.is_err() {
-                            break;
+                        match sender.try_send(ScreencastFrame { jpeg }) {
+                            Ok(()) => {}
+                            // A slow viewer loses frames, not memory.
+                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {}
+                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => break,
                         }
                     }
                     Some(_) = navigations.next() => {
