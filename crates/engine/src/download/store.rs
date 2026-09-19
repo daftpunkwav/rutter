@@ -15,6 +15,15 @@ use crate::error::EngineError;
 /// success so a crash never leaves a half-extracted version visible.
 const TMP_PREFIX: &str = ".tmp-";
 
+/// Hard caps for archive extraction. Legit Chrome for Testing archives
+/// stay far below them (a full chrome-win64 install extracts to a few
+/// hundred MB); the caps only bound a hostile archive so a compromised
+/// manifest source cannot exhaust memory or disk. Archive entries are
+/// hostile input (blueprint §8.4), and a zip's declared sizes cannot be
+/// trusted, so the caps apply to the bytes actually decompressed.
+const MAX_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_EXTRACTED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
 /// A located engine binary ready to launch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstalledEngine {
@@ -175,6 +184,27 @@ impl EngineStore {
         zip_bytes: &[u8],
         staging: &Path,
     ) -> Result<InstalledEngine, EngineError> {
+        self.extract_archive_with_caps(
+            product,
+            version,
+            zip_bytes,
+            staging,
+            MAX_ENTRY_BYTES,
+            MAX_EXTRACTED_BYTES,
+        )
+    }
+
+    /// [`Self::extract_archive`] with explicit caps; the install path
+    /// passes the constants, tests pass small ones.
+    fn extract_archive_with_caps(
+        &self,
+        product: &str,
+        version: &str,
+        zip_bytes: &[u8],
+        staging: &Path,
+        max_entry_bytes: u64,
+        max_extracted_bytes: u64,
+    ) -> Result<InstalledEngine, EngineError> {
         let reader = std::io::Cursor::new(zip_bytes);
         let mut archive =
             zip::ZipArchive::new(reader).map_err(|error| EngineError::DownloadFailed {
@@ -183,6 +213,7 @@ impl EngineStore {
 
         let wanted = binary_name(product);
         let mut executable = None;
+        let mut extracted_bytes: u64 = 0;
         for index in 0..archive.len() {
             let mut file =
                 archive
@@ -209,11 +240,32 @@ impl EngineStore {
                     detail: format!("cannot create {}: {error}", parent.display()),
                 })?;
             }
-            let mut contents = Vec::with_capacity(file.size() as usize);
-            file.read_to_end(&mut contents)
-                .map_err(|error| EngineError::DownloadFailed {
-                    detail: format!("cannot read '{name}' from engine zip: {error}"),
+            // Read through a take() bound: the entry must fit under the
+            // per-entry cap or the archive is hostile (zip bomb).
+            let mut contents = Vec::new();
+            {
+                let mut limited = (&mut file).take(max_entry_bytes.saturating_add(1));
+                limited.read_to_end(&mut contents).map_err(|error| {
+                    EngineError::DownloadFailed {
+                        detail: format!("cannot read '{name}' from engine zip: {error}"),
+                    }
                 })?;
+            }
+            if contents.len() as u64 > max_entry_bytes {
+                return Err(EngineError::DownloadFailed {
+                    detail: format!(
+                        "engine zip entry '{name}' is over the {max_entry_bytes}-byte extraction cap"
+                    ),
+                });
+            }
+            extracted_bytes += contents.len() as u64;
+            if extracted_bytes > max_extracted_bytes {
+                return Err(EngineError::DownloadFailed {
+                    detail: format!(
+                        "engine zip is over the {max_extracted_bytes}-byte total extraction cap"
+                    ),
+                });
+            }
             fs::write(&target, &contents).map_err(|error| EngineError::DownloadFailed {
                 detail: format!("cannot write {}: {error}", target.display()),
             })?;
@@ -418,5 +470,54 @@ mod tests {
     fn version_parse_orders_numerically() {
         assert!(parse_version("141.0.10") > parse_version("141.0.2"));
         assert!(parse_version("abc").is_none());
+    }
+
+    #[test]
+    fn an_entry_over_the_per_entry_cap_is_rejected() {
+        // Caps are parameters so a bomb-sized archive can be simulated
+        // with a tiny one: 2 bytes fits the binary entry, the next
+        // entry blows the per-entry cap.
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = EngineStore::new(root.path());
+        let staging = root.path().join(".tmp-caps");
+        std::fs::create_dir_all(&staging).expect("staging dir");
+
+        let error = store
+            .extract_archive_with_caps(
+                "chrome-headless-shell",
+                "141.0.1",
+                &shell_zip(),
+                &staging,
+                2,
+                u64::MAX,
+            )
+            .expect_err("an oversized entry must fail");
+        assert!(
+            error.to_string().contains("extraction cap"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn an_archive_over_the_total_cap_is_rejected() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = EngineStore::new(root.path());
+        let staging = root.path().join(".tmp-caps");
+        std::fs::create_dir_all(&staging).expect("staging dir");
+
+        let error = store
+            .extract_archive_with_caps(
+                "chrome-headless-shell",
+                "141.0.1",
+                &shell_zip(),
+                &staging,
+                u64::MAX,
+                1,
+            )
+            .expect_err("an oversized total must fail");
+        assert!(
+            error.to_string().contains("total extraction cap"),
+            "unexpected error: {error}"
+        );
     }
 }
