@@ -105,7 +105,9 @@ impl StorageState {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let json = serde_json::to_string(self).unwrap_or_else(|_| "{}".to_owned());
+        // A serialization failure must fail the write, not rename an
+        // empty state over the persisted one.
+        let json = serde_json::to_string(self).map_err(std::io::Error::from)?;
         let file_name = path
             .file_name()
             .and_then(|name| name.to_str())
