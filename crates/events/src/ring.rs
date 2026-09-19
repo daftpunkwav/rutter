@@ -32,16 +32,6 @@ impl RingBuffer {
     pub fn history(&self) -> Vec<Envelope> {
         self.entries.iter().cloned().collect()
     }
-
-    /// Number of envelopes currently held.
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    /// Whether the ring holds nothing.
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
 }
 
 #[cfg(test)]
@@ -67,7 +57,7 @@ mod tests {
         }
 
         let replayed = ring.history();
-        assert_eq!(ring.len(), 3);
+        assert_eq!(replayed.len(), 3);
         let seqs: Vec<u64> = replayed.iter().map(|envelope| envelope.seq).collect();
         assert_eq!(seqs, vec![3, 4, 5], "oldest evicted, order preserved");
     }

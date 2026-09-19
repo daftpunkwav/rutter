@@ -17,10 +17,13 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod backbone;
-pub mod bus;
 pub mod envelope;
 pub mod event;
-pub mod ring;
+
+// The bus and the rings are `Backbone`'s implementation: consumers
+// speak the backbone, the envelope, and the event vocabulary only.
+mod bus;
+mod ring;
 
 pub use backbone::Backbone;
 pub use envelope::Envelope;
