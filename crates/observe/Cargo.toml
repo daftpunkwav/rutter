@@ -16,7 +16,8 @@ workspace = true
 rutter-core = { workspace = true }
 serde_json = { workspace = true }
 
+# Test targets link [dependencies] too, so serde_json needs no second
+# dev-dependencies entry.
 [dev-dependencies]
 insta = { workspace = true }
 proptest = { workspace = true }
-serde_json = { workspace = true }
