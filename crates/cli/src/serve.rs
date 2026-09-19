@@ -18,6 +18,7 @@ use rutter_session::manager::SessionManager;
 use crate::config::Settings;
 use crate::error::CliError;
 use crate::launcher;
+
 /// Serves MCP until the client disconnects or Ctrl-C arrives.
 /// Transports are mutually exclusive: `--http ADDR` serves streamable
 /// HTTP, anything else speaks stdio. The dashboard (optional port) and

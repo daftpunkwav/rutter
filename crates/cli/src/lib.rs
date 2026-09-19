@@ -14,10 +14,14 @@
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
-pub mod browse;
+// Only the pieces the thin binary and the tests/ targets consume are
+// public; the mode implementations and the launcher wiring stay
+// crate-internal (the composition root's assembly details).
 pub mod config;
 pub mod entry;
 pub mod error;
-pub mod launcher;
-pub mod open;
-pub mod serve;
+
+mod browse;
+mod launcher;
+mod open;
+mod serve;
