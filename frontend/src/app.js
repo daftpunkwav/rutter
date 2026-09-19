@@ -37,8 +37,16 @@
   function t(key) { return I18N[key] || key; }
 
   var socket = null;
+  // Seconds between reconnect attempts; reset on a successful open and
+  // capped so a dead server cannot spin the loop forever.
+  var reconnectDelay = 1000;
 
   function connect() {
+    // The server replays every session's history on connect, so a
+    // reconnect must start from an empty timeline or the replay appends
+    // a second copy of every event.
+    var timeline = document.getElementById('events');
+    if (timeline) { timeline.textContent = ''; }
     var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     socket = new WebSocket(
       protocol + '//' + window.location.host + withToken('/ws'));
@@ -51,13 +59,15 @@
       }
       var envelope;
       try { envelope = JSON.parse(message.data); } catch (error) { return; }
-      if (envelope.type === 'note') { append('timeline', envelope.text); return; }
+      if (envelope.type === 'note') { append(envelope.text); return; }
       if (envelope.type === 'decision-ack' || envelope.type === 'screencast-ack') { return; }
       render(envelope);
     };
+    socket.onopen = function () { reconnectDelay = 1000; };
     socket.onclose = function () {
-      append('events', t('reconnecting'));
-      setTimeout(connect, 1000);
+      append(t('reconnecting'));
+      setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
     };
   }
 
@@ -97,14 +107,14 @@
         hideApproval(event.request_id);
         break;
       default:
-        append('events', describe(envelope));
+        append(describe(envelope));
     }
   }
 
   function describe(envelope) {
     var event = envelope.event || {};
     var base = '#' + envelope.seq + ' ' + envelope.recorded_at + ' ' +
-      event.type;
+      envelope.session + ' ' + event.type;
     if (event.action && event.action.type) {
       base += ' ' + event.action.type;
     }
@@ -115,6 +125,9 @@
   }
 
   function showApproval(session, event) {
+    // Reconnect replays re-deliver requests already on screen; drop the
+    // stale card first or duplicate ids pile up on the approval list.
+    hideApproval(event.request_id);
     var node = document.createElement('div');
     node.className = 'approval';
     node.id = event.request_id;
@@ -148,11 +161,14 @@
     document.getElementById('sessions').textContent = '';
   }
 
-  function append(sectionId, text) {
+  // Every line (events, notes, connection status) lands in the single
+  // timeline content container (`#events`), so a reconnect can clear
+  // them all together.
+  function append(text) {
     var node = document.createElement('div');
     node.className = 'event';
     node.textContent = text;
-    var list = document.getElementById(sectionId === 'timeline' ? 'events' : 'timeline');
+    var list = document.getElementById('events');
     if (list) { list.prepend(node); }
   }
 })();
