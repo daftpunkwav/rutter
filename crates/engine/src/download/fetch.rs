@@ -14,6 +14,11 @@ use crate::error::EngineError;
 /// Maximum attempts per fetch (first try plus retries).
 const MAX_ATTEMPTS: u32 = 3;
 
+/// Upper bound for one fetched document. Legit Chrome for Testing
+/// artifacts stay far below this; the cap only bounds a hostile or
+/// broken source so a compromised manifest cannot exhaust memory.
+const MAX_FETCH_BYTES: u64 = 1024 * 1024 * 1024;
+
 /// Backoff between attempts: 2 s, 4 s, capped at 8 s.
 fn retry_backoff() -> Backoff {
     Backoff::new(Duration::from_secs(2), Duration::from_secs(8))
@@ -50,10 +55,33 @@ async fn fetch_with_budget(url: &str, budget: Duration) -> Result<Vec<u8>, Engin
         }
         match client.get(url).send().await {
             Ok(response) => match response.error_for_status() {
-                Ok(response) => match response.bytes().await {
-                    Ok(bytes) => return Ok(bytes.to_vec()),
-                    Err(error) => last_error = Some(format!("cannot read body: {error}")),
-                },
+                Ok(response) => {
+                    // An announced body over the cap fails fast: a retry
+                    // would only pull the same oversized document again.
+                    if response
+                        .content_length()
+                        .is_some_and(|length| length > MAX_FETCH_BYTES)
+                    {
+                        return Err(EngineError::DownloadFailed {
+                            detail: format!(
+                                "response from '{url}' is over the {MAX_FETCH_BYTES}-byte cap"
+                            ),
+                        });
+                    }
+                    match read_capped(response).await {
+                        BodyOutcome::Done(bytes) => return Ok(bytes),
+                        // An over-cap body is deterministic like a client
+                        // error: retrying changes nothing.
+                        BodyOutcome::OverCap => {
+                            return Err(EngineError::DownloadFailed {
+                                detail: format!(
+                                    "response from '{url}' is over the {MAX_FETCH_BYTES}-byte cap"
+                                ),
+                            });
+                        }
+                        BodyOutcome::ReadFailed(message) => last_error = Some(message),
+                    }
+                }
                 Err(error) => {
                     // Client errors are deterministic: retrying changes
                     // nothing, so fail fast. Server and transport errors
@@ -81,6 +109,34 @@ async fn fetch_with_budget(url: &str, budget: Duration) -> Result<Vec<u8>, Engin
     })
 }
 
+/// Body read outcome: success, a transport failure (retriable), or a
+/// body over the cap (deterministic, not retried).
+enum BodyOutcome {
+    Done(Vec<u8>),
+    ReadFailed(String),
+    OverCap,
+}
+
+/// Reads the response body in chunks, refusing anything over
+/// [`MAX_FETCH_BYTES`]. The cap applies to the bytes actually received:
+/// a hostile source cannot rely on the declared content length.
+async fn read_capped(mut response: reqwest::Response) -> BodyOutcome {
+    let mut body = Vec::new();
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => {
+                let received = body.len() as u64 + chunk.len() as u64;
+                if received > MAX_FETCH_BYTES {
+                    return BodyOutcome::OverCap;
+                }
+                body.extend_from_slice(&chunk);
+            }
+            Ok(None) => return BodyOutcome::Done(body),
+            Err(error) => return BodyOutcome::ReadFailed(format!("cannot read body: {error}")),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,5 +157,36 @@ mod tests {
             .expect_err("unreachable host must fail");
         assert!(matches!(error, EngineError::DownloadFailed { .. }));
         assert!(error.to_string().contains("3 attempts"));
+    }
+
+    #[tokio::test]
+    async fn oversized_content_length_fails_fast() {
+        // A local server announcing a body over the cap: the fetch must
+        // reject it from the declared length instead of draining it, and
+        // must not retry.
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut buffer = [0u8; 4096];
+            let _ = socket.read(&mut buffer).await;
+            let head = format!(
+                "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                2 * 1024 * 1024 * 1024u64
+            );
+            let _ = socket.write_all(head.as_bytes()).await;
+        });
+
+        let error = fetch_bytes(&format!("http://127.0.0.1:{port}/shell.zip"))
+            .await
+            .expect_err("an oversized body must fail");
+        server.await.expect("server task");
+        assert!(
+            error.to_string().contains("byte cap"),
+            "unexpected error: {error}"
+        );
     }
 }

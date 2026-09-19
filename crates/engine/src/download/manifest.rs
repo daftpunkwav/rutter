@@ -12,6 +12,13 @@ use crate::error::EngineError;
 /// download URLs for every platform.
 pub const MANIFEST_URL: &str = "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json";
 
+/// Host every artifact URL must live on. The manifest is the trust
+/// anchor for which version to fetch; the URL it names is code rutter
+/// executes, so without this pin a compromised manifest source could
+/// redirect that download to an arbitrary server. Chrome for Testing
+/// artifacts are published on this host only.
+const ARTIFACT_HOST: &str = "storage.googleapis.com";
+
 /// One downloadable engine binary from the manifest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineArtifact {
@@ -78,17 +85,35 @@ pub fn parse_stable_artifact(
         })?
         .to_owned();
 
-    // The manifest itself is fetched over TLS; an artifact URL that is
-    // not https would downgrade the engine binary transfer (code that
-    // rutter executes) to plaintext, so anything else is malformed
-    // rather than followed.
-    if !url.starts_with("https://") {
+    // The manifest itself is fetched over TLS, and the artifact URL it
+    // names must stay on TLS *and* on the Chrome for Testing storage
+    // host: the transfer is code that rutter executes, so a downgraded
+    // scheme or a redirected host is malformed rather than followed.
+    let host = https_host(&url)
+        .ok_or_else(|| malformed(&format!("manifest artifact URL is not https: '{url}'")))?;
+    if host != ARTIFACT_HOST {
         return Err(malformed(&format!(
-            "manifest artifact URL is not https: '{url}'"
+            "manifest artifact URL must live on '{ARTIFACT_HOST}', not '{host}'"
         )));
     }
 
     Ok(EngineArtifact { version, url })
+}
+
+/// Extracts the host of an https URL; the caller has already ruled on
+/// the scheme, so anything without the https authority is rejected.
+fn https_host(url: &str) -> Option<&str> {
+    let authority = url
+        .strip_prefix("https://")?
+        .split(['/', '?', '#'])
+        .next()?;
+    // A port is legal URL syntax but never part of the host comparison;
+    // artifact URLs do not carry one, so stripping is only hardening.
+    let host = authority
+        .rsplit_once(':')
+        .map(|(host, _port)| host)
+        .unwrap_or(authority);
+    (!host.is_empty()).then_some(host)
 }
 
 fn malformed(detail: &str) -> EngineError {
@@ -112,13 +137,13 @@ mod tests {
                     "revision": "f00b4r",
                     "downloads": {
                         "chrome": [
-                            { "platform": "linux64", "url": "https://example.com/chrome-linux64.zip" },
-                            { "platform": "win64", "url": "https://example.com/chrome-win64.zip" }
+                            { "platform": "linux64", "url": "https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.78/linux64/chrome-linux64.zip" },
+                            { "platform": "win64", "url": "https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.78/win64/chrome-win64.zip" }
                         ],
                         "chrome-headless-shell": [
-                            { "platform": "linux64", "url": "https://example.com/shell-linux64.zip" },
-                            { "platform": "mac-arm64", "url": "https://example.com/shell-mac-arm64.zip" },
-                            { "platform": "win64", "url": "https://example.com/shell-win64.zip" }
+                            { "platform": "linux64", "url": "https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.78/linux64/chrome-headless-shell-linux64.zip" },
+                            { "platform": "mac-arm64", "url": "https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.78/mac-arm64/chrome-headless-shell-mac-arm64.zip" },
+                            { "platform": "win64", "url": "https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.78/win64/chrome-headless-shell-win64.zip" }
                         ]
                     }
                 }
@@ -131,7 +156,24 @@ mod tests {
         let artifact = parse_stable_artifact(&fixture(), "chrome-headless-shell", "win64")
             .expect("fixture must parse");
         assert_eq!(artifact.version, "141.0.7390.78");
-        assert_eq!(artifact.url, "https://example.com/shell-win64.zip");
+        assert_eq!(
+            artifact.url,
+            "https://storage.googleapis.com/chrome-for-testing-public/141.0.7390.78/win64/chrome-headless-shell-win64.zip"
+        );
+    }
+
+    #[test]
+    fn foreign_artifact_hosts_are_rejected() {
+        let mut manifest = fixture();
+        // The win64 entry is the one the parse below selects.
+        manifest["channels"]["Stable"]["downloads"]["chrome-headless-shell"][2]["url"] =
+            json!("https://mirror.attacker.example/chrome-headless-shell-win64.zip");
+        let error = parse_stable_artifact(&manifest, "chrome-headless-shell", "win64")
+            .expect_err("a redirected host must fail");
+        assert!(
+            error.to_string().contains("storage.googleapis.com"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
@@ -162,6 +204,26 @@ mod tests {
         assert!(
             error.to_string().contains("Stable channel"),
             "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn host_extraction_keeps_hostile_authorities_verbatim() {
+        assert_eq!(
+            https_host("https://storage.googleapis.com/a.zip"),
+            Some("storage.googleapis.com")
+        );
+        assert_eq!(
+            https_host("https://storage.googleapis.com:443/a.zip"),
+            Some("storage.googleapis.com")
+        );
+        assert_eq!(https_host("http://storage.googleapis.com/a.zip"), None);
+        assert_eq!(https_host("https:///a.zip"), None);
+        // A userinfo trick keeps the whole authority, which the host
+        // equality check then rejects.
+        assert_eq!(
+            https_host("https://storage.googleapis.com@evil.example/a.zip"),
+            Some("storage.googleapis.com@evil.example")
         );
     }
 
