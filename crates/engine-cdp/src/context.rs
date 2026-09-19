@@ -132,7 +132,15 @@ impl ContextHandle for CdpContext {
         if over_cap {
             let target_id = handle.target_id();
             let browser = self.browser.lock().await;
-            let _ = browser.execute(CloseTargetParams::new(target_id)).await;
+            // Same wedged-handler threat model as every call here: the
+            // cleanup must be bounded or a hung browser would park
+            // `open_page` forever while holding the browser mutex.
+            let _ = crate::error::with_deadline(
+                "close_overflow_page",
+                crate::error::COMMAND_TIMEOUT,
+                browser.execute(CloseTargetParams::new(target_id)),
+            )
+            .await;
             return Err(EngineError::Capacity {
                 detail: format!(
                     "context '{}' reached its cap of {} pages; close a page first",
@@ -277,12 +285,21 @@ impl ContextHandle for CdpContext {
 
 /// Whether the browser still knows a target; the answer defaults to
 /// `true` when the probe itself fails, so an unverifiable target keeps
-/// the original close error instead of being torn down on a guess.
+/// the original close error instead of being torn down on a guess. The
+/// probe carries a deadline like every call here: on a wedged handler
+/// the honest answer is "unverifiable", not an unbounded wait that pins
+/// the shared browser mutex (and `close_page`) forever.
 async fn target_still_exists(
     browser: &chromiumoxide::Browser,
     target_id: chromiumoxide::cdp::browser_protocol::target::TargetId,
 ) -> bool {
-    match browser.execute(GetTargetsParams::default()).await {
+    match crate::error::with_deadline(
+        "close_page_probe",
+        crate::error::COMMAND_TIMEOUT,
+        browser.execute(GetTargetsParams::default()),
+    )
+    .await
+    {
         Ok(response) => response
             .result
             .target_infos

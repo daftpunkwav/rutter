@@ -71,7 +71,15 @@ impl EngineLauncher for CdpLauncher {
         // it ends when the connection closes.
         tokio::spawn(async move { while handler.next().await.is_some() {} });
 
-        let version = browser.version().await.map_err(error::fold)?;
+        // The version query carries a deadline like every CDP call: it
+        // runs inside the supervisor's restart loop, so a browser that
+        // accepts the socket but never answers would otherwise park the
+        // heartbeat (and its restart mutex) forever, disabling all
+        // recovery. On timeout the dropped `Browser` kills the child, so
+        // the policy's next attempt starts clean.
+        let version =
+            error::with_deadline("engine_version", error::COMMAND_TIMEOUT, browser.version())
+                .await?;
         Ok(Arc::new(CdpEngine::new(
             Arc::new(tokio::sync::Mutex::new(browser)),
             self.backend.clone(),
