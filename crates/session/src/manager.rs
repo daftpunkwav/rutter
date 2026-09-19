@@ -126,7 +126,17 @@ impl SessionManager {
             // supervisor; spawning here as well would run recovery twice
             // per restart.
             let running = start_running(&self.inner).await?;
-            let engine = running.supervisor.engine().await?;
+            // The engine slot can already be empty again if the heartbeat
+            // cleared the just-started instance. Dropping `running` without
+            // stopping the supervisor would orphan its heartbeat task,
+            // which would keep relaunching a browser nobody owns.
+            let engine = match running.supervisor.engine().await {
+                Ok(engine) => engine,
+                Err(error) => {
+                    running.supervisor.shutdown().await;
+                    return Err(error);
+                }
+            };
             let descriptor = engine.descriptor();
             // The engine event lands in the first session's history: it
             // is the session that witnessed the launch.
