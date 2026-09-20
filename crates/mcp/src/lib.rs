@@ -1,10 +1,10 @@
 //! MCP tool surface for rutter.
 //!
-//! Boundary: the rmcp host mapping `docs/TOOL_SPEC.md` onto the session
+//! Boundary: the rmcp host mapping `docs/tool-catalog.md` onto the session
 //! layer. One MCP connection is one session; tools return snapshots as
-//! text, action failures as `isError` results with a hint (TOOL_SPEC
+//! text, action failures as `isError` results with a hint (docs/tool-catalog.md
 //! §2). The server performs no I/O until the first tool call needs a
-//! page (lazy engine, blueprint §8.5).
+//! page (lazy engine, docs/architecture.md).
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.

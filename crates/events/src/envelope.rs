@@ -7,7 +7,7 @@ use rutter_core::ids::SessionId;
 use crate::event::Event;
 
 /// One published event, stamped with a server-wide sequence number and
-/// the RFC 3339 UTC time it was recorded (blueprint §8.6).
+/// the RFC 3339 UTC time it was recorded (docs/glossary.md).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Envelope {
     /// Server-wide monotonic sequence number.

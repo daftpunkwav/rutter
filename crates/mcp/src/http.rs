@@ -1,9 +1,9 @@
-//! Streamable HTTP transport for the MCP server (blueprint §3:
+//! Streamable HTTP transport for the MCP server (docs/architecture.md:
 //! "stdio first, streamable HTTP later" — this is the later).
 //!
 //! Boundary: transport mapping only. rmcp's `StreamableHttpService`
 //! validates inbound `Host` headers against a loopback allowlist by
-//! default (DNS rebinding, blueprint §7.7-grade checks), and Origin
+//! default (DNS rebinding, dashboard-grade checks; docs/dashboard.md), and Origin
 //! enforcement rejects every browser-originated request; each MCP
 //! connection mints its own rutter session through the shared manager.
 //! Binding stays on the address the caller passes.

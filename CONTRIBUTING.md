@@ -1,9 +1,8 @@
 # Contributing
 
 Thanks for looking at rutter. This document covers the working rules;
-the architecture map is [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-and the canonical engineering reference is
-[`docs/BLUEPRINT.md`](docs/BLUEPRINT.md).
+the code-facing reference lives under [`docs/`](docs/architecture.md),
+starting from the architecture map.
 
 ## Ground rules
 
@@ -12,14 +11,17 @@ and the canonical engineering reference is
   (`scripts/check_encoding.sh`) enforces this. Documentation ships as
   English `README.md` files with Chinese `README.zh.md` mirrors —
   update the two together, and keep prose out of code comments.
-- **The blueprint is normative.** Non-goals are enforced at review:
-  no rendering engine, no stealth/anti-fingerprinting, no consumer
-  browser UI, no cloud service. Scope creep is rejected by default.
+- **Scope is fixed.** The non-goals in
+  [`docs/architecture.md`](docs/architecture.md) are enforced at
+  review: no rendering engine, no stealth/anti-fingerprinting, no
+  consumer browser UI, no cloud service. Scope creep is rejected by
+  default.
 - **Glossary terms are exact.** Engine, Context, Page, Session,
   Snapshot, Reference, Action, Verdict, Event, Origin — one concept,
-  one term (BLUEPRINT §6). No synonyms in code or docs.
+  one term ([`docs/glossary.md`](docs/glossary.md)). No synonyms in
+  code or docs.
 - **Every source file opens with a truthful header** stating purpose
-  and boundary (BLUEPRINT §8.3); the header gate
+  and boundary; the header gate
   (`scripts/check_headers.sh`) checks the shape, reviews check the
   truth.
 
@@ -62,7 +64,7 @@ fix: keep ack loop alive across navigations
 
 ## Specs before surfaces
 
-`docs/TOOL_SPEC.md` and `docs/SNAPSHOT_SPEC.md` are contracts: a
+`docs/tool-catalog.md` and `docs/snapshot-format.md` are contracts: a
 change to tool semantics or snapshot output lands as a spec change
 first (a separate docs commit), then the implementation. Contract
 changes hidden inside implementation commits will be asked to split.

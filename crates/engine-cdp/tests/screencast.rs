@@ -1,4 +1,4 @@
-//! Screencast acceptance: the live view contract of blueprint §7.7 —
+//! Screencast acceptance: the live view contract of docs/dashboard.md —
 //! JPEG frames with a correct ack loop, on-demand start/stop, and
 //! restart across navigations.
 //!
@@ -98,7 +98,7 @@ async fn screencast_stops_when_dropped() {
     assert_eq!(&frame.jpeg[..2], &[0xFF, 0xD8]);
 }
 
-/// The capture keeps flowing across navigations (blueprint §7.7: CDP
+/// The capture keeps flowing across navigations (docs/dashboard.md: CDP
 /// stops screencasts on navigation and the backend restarts them).
 #[tokio::test]
 #[ignore = "requires a downloaded engine binary"]

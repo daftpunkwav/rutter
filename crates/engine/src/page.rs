@@ -37,7 +37,7 @@ pub struct ScreencastFrame {
 }
 
 /// A live screencast frame stream; dropping it stops the capture
-/// (blueprint §7.7: on-demand, stops when the last viewer leaves).
+/// (docs/dashboard.md: on-demand, stops when the last viewer leaves).
 pub struct ScreencastStream {
     receiver: tokio::sync::mpsc::Receiver<ScreencastFrame>,
 }
@@ -81,7 +81,7 @@ pub trait PageHandle: Send + Sync {
     async fn capture_screenshot(&self) -> Result<Screenshot, EngineError>;
 
     /// Starts a JPEG screencast (~1-5 fps, width capped); frames flow
-    /// on the returned stream until it is dropped (blueprint §7.7).
+    /// on the returned stream until it is dropped (docs/dashboard.md).
     /// Backends must restart the capture after navigations, where the
     /// protocol stops it on its own.
     async fn start_screencast(&self) -> Result<ScreencastStream, EngineError>;

@@ -3,7 +3,7 @@
 [English](README.md) | 中文
 
 在 chromiumoxide 之上实现 `rutter-engine` 的 trait。这是 workspace
-中唯一允许点名 CDP 或 chromiumoxide 类型的 crate（blueprint §5）；公
+中唯一允许点名 CDP 或 chromiumoxide 类型的 crate（docs/architecture.md）；公
 开面是 `CdpLauncher`——一个 `EngineLauncher`——所有实现模块都是私有
 的，公开签名中不出现任何 CDP 类型。
 

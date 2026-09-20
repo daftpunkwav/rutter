@@ -8,6 +8,6 @@
 | `tests.rs` | 无浏览器测试：阶段超时、预算重启、输入坐标 |
 
 自动等待阶段按序运行（visible → stable → enabled），各自有独立预
-算，只有阶段前进时才重启（TOOL_SPEC §3）——闪烁的页面无法把等待无
+算，只有阶段前进时才重启（docs/tool-catalog.md §3）——闪烁的页面无法把等待无
 限拉长。policy 与审批是调用者（`Session::execute`）的职责，绝不在
 这里运行。

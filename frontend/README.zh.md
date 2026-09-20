@@ -13,4 +13,4 @@
 
 与 `rutter-dashboard` 的协议契约：WebSocket 事件/screencast（屏幕
 流）帧 + `POST /api/decisions`，见 `crates/dashboard/README.md` 与
-blueprint §7.7。
+docs/dashboard.md。

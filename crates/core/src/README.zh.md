@@ -5,7 +5,7 @@
 | 文件 | 职责 |
 |---|---|
 | `action.rs` | `Action` 枚举、`Origin`、`ScrollDirection`——请求词汇表 |
-| `snapshot.rs` | `Snapshot`/`SnapshotNode` 及 YAML 渲染（SNAPSHOT_SPEC） |
+| `snapshot.rs` | `Snapshot`/`SnapshotNode` 及 YAML 渲染（docs/snapshot-format.md） |
 | `reference.rs` | `Reference`——不透明的单页元素句柄 |
 | `cookie.rs` | 传给 Engine（引擎）后端的 `Cookie`/`SameSite` |
 | `ids.rs` | Newtype id（`SessionId`、`PageId`、`ContextId`、`ApprovalId` 形态） |

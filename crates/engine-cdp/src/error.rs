@@ -3,7 +3,7 @@
 //! Boundary: one place maps third-party errors onto the engine error
 //! contract and bounds every CDP call with a deadline, so the rest of
 //! the crate stays mapping-free, no CDP error type escapes into a
-//! public signature, and no call can wait forever (blueprint §8.4).
+//! public signature, and no call can wait forever (docs/architecture.md).
 
 use std::future::Future;
 use std::time::{Duration, Instant};

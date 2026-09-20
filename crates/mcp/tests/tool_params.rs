@@ -1,6 +1,6 @@
 //! Functional tests for the MCP tool input types through the crate's
 //! public API: schema-driven deserialization and the mapping onto
-//! `rutter-core` vocabulary (TOOL_SPEC §4). Session lifecycle tests
+//! `rutter-core` vocabulary (docs/tool-catalog.md §4). Session lifecycle tests
 //! live in `src/server/tests.rs` because they exercise private paths.
 
 // Restriction lints are denied workspace-wide; tests may use plain
@@ -31,7 +31,7 @@ fn cookie_inputs_map_with_defaults() {
 
 #[test]
 fn unknown_same_site_is_rejected_by_deserialization() {
-    // The schema enumerates strict|lax|none (TOOL_SPEC §4), so an
+    // The schema enumerates strict|lax|none (docs/tool-catalog.md §4), so an
     // unknown policy is invalid_params at the deserialization layer.
     let error = serde_json::from_str::<CookieInput>(
         r#"{"name":"s","value":"42","domain":"example.com","same_site":"sloppy"}"#,

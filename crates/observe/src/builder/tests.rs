@@ -18,7 +18,7 @@ fn items(count: usize, name: Option<&str>) -> Vec<Value> {
 
 #[test]
 fn viewport_classification_uses_rect_extents_alone() {
-    // Rects are viewport-relative (spec §3); classification must not
+    // Rects are viewport-relative (docs/snapshot-format.md §3); classification must not
     // depend on any scroll offset.
     let meta = meta();
 

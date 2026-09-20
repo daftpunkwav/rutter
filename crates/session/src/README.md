@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 | `resolve.rs` | Reference resolution through the observe scripts |
 | `storage.rs` | Storage state (cookies + localStorage), atomic owner-only persistence |
 | `wait.rs` | `poll_until` with the 600 s budget clamp (clock-overflow guard) |
-| `config.rs` | `SessionConfig` defaults pinned by TOOL_SPEC §3 (the `wait_for` budget default lives on the MCP tool layer, §4) |
+| `config.rs` | `SessionConfig` defaults pinned by docs/tool-catalog.md §3 (the `wait_for` budget default lives on the MCP tool layer, §4) |
 | `error.rs` | `SessionError` bridging engine and action errors |
 | `mock.rs` | Test-only engine doubles (`#[cfg(test)]`) for browser-free tests |
 

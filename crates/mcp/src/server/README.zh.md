@@ -11,4 +11,4 @@
 参数映射测试在本 crate 的 `tests/tool_params.rs`。
 
 `#[tool_router]` impl 块必须把所有 `#[tool]` 方法放在一处（rmcp 宏
-约束）。工具名与参数名是 TOOL_SPEC 契约——不得重命名。
+约束）。工具名与参数名是 docs/tool-catalog.md 契约——不得重命名。

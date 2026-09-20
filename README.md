@@ -13,16 +13,24 @@ for sensitive operations.
 
 | Document | Role |
 |----------|------|
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Reading-order entry point: crates, runtime shape, contracts |
-| [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) | Architecture blueprint: design rules and normative decisions (§-referenced from code) |
-| [`docs/TOOL_SPEC.md`](docs/TOOL_SPEC.md) | The MCP tool surface: parameters, semantics, error mapping |
-| [`docs/SNAPSHOT_SPEC.md`](docs/SNAPSHOT_SPEC.md) | The snapshot format: serialization, references, token budget |
+| [`docs/architecture.md`](docs/architecture.md) | Reading-order entry point: crates, runtime shape, invariants |
+| [`docs/glossary.md`](docs/glossary.md) | The normative domain vocabulary |
+| [`docs/tool-catalog.md`](docs/tool-catalog.md) | The MCP tool surface: transport, semantics, auto-wait, error mapping |
+| [`docs/snapshot-format.md`](docs/snapshot-format.md) | The snapshot contract: serialization, references, token budget |
+| [`docs/engine-supervision.md`](docs/engine-supervision.md) | Engine trait, binary acquisition, supervisor, CDP notes |
+| [`docs/sessions.md`](docs/sessions.md) | Session model, action path, storage state, recovery |
+| [`docs/events.md`](docs/events.md) | Event vocabulary, backbone semantics, replay |
+| [`docs/policy.md`](docs/policy.md) | Action classes, verdicts, fail-closed rules, approvals |
+| [`docs/dashboard.md`](docs/dashboard.md) | Dashboard server, access control, WebSocket protocol |
+| [`docs/testing.md`](docs/testing.md) | Test levels, contract pins, how to run |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Working rules and local gates |
 
 Every source directory carries a `README.md` stating its
 responsibility, boundary, and file map — start at
-[`crates/README.md`](crates/README.md). Each README has a Chinese
-mirror named `README.zh.md`; the two are updated together.
+[`crates/README.md`](crates/README.md). Each README and each
+`docs/` document has a Chinese mirror: `README.zh.md` beside its
+`README.md`, and `<name>.zh.md` beside `<name>.md` under `docs/`;
+the two languages are updated together.
 
 ## Usage
 
@@ -102,7 +110,7 @@ at an existing binary).
 
 ```
 rutter/
-├── docs/         # blueprint, architecture, tool and snapshot specs
+├── docs/         # code-facing documentation (English + zh mirrors)
 ├── scripts/      # quality-gate helpers run by CI
 ├── crates/       # workspace members (see below)
 ├── tests/        # cross-crate acceptance tests driving the binary

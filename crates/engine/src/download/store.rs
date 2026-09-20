@@ -19,7 +19,7 @@ const TMP_PREFIX: &str = ".tmp-";
 /// stay far below them (a full chrome-win64 install extracts to a few
 /// hundred MB); the caps only bound a hostile archive so a compromised
 /// manifest source cannot exhaust memory or disk. Archive entries are
-/// hostile input (blueprint §8.4), and a zip's declared sizes cannot be
+/// hostile input (docs/architecture.md), and a zip's declared sizes cannot be
 /// trusted, so the caps apply to the bytes actually decompressed.
 const MAX_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_EXTRACTED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -296,7 +296,7 @@ impl EngineStore {
 /// Joins `relative` onto `base`, refusing hostile archive paths:
 /// components must be plain names (no `..`, `.`, empty parts, absolute
 /// prefixes, or Windows drive/UNC syntax), and the result must stay
-/// inside `base`. Archive entries are hostile input (blueprint §8.4).
+/// inside `base`. Archive entries are hostile input (docs/architecture.md).
 fn safe_join(base: &Path, relative: &str) -> Result<PathBuf, EngineError> {
     let hostile = relative.is_empty()
         || relative.starts_with(['/', '\\'])

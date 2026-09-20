@@ -5,7 +5,7 @@ English | [中文](README.zh.md)
 Ten crates, one dependency direction: everything flows from `core`
 outward, and only `cli` (the composition root) sees all of them. The
 seams exist so that each crate has one reason to change
-(blueprint §5, §8.1); `cli` wires them together at startup.
+(docs/architecture.md); `cli` wires them together at startup.
 
 | Crate | Role | Depends on (workspace) |
 |---|---|---|

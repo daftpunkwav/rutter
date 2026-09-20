@@ -1,11 +1,10 @@
 //! Engine registration point of the binary.
 //!
-//! Boundary: selects the backend and resolves its executable (blueprint
-//! §8.1). The download/cache resolution lives in `rutter-engine`; this
+//! Boundary: selects the backend and resolves its executable (docs/architecture.md). The download/cache resolution lives in `rutter-engine`; this
 //! module only decides which product a mode needs and wires the CDP
 //! launcher. No other module may construct launchers. Serving modes use
 //! [`LazyLauncher`] so the process starts before any engine I/O happens
-//! (blueprint §8.5: engine lazy, startup < 100 ms).
+//! (docs/architecture.md: engine lazy, startup < 100 ms).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -48,7 +47,7 @@ pub async fn headed_launcher(settings: &Settings) -> Result<CdpLauncher, EngineE
 
 /// A launcher that defers binary resolution to the first launch, so
 /// `rutter serve` reaches MCP-ready before any download or disk probe
-/// (blueprint §8.5: startup < 100 ms, engine lazy).
+/// (docs/architecture.md: startup < 100 ms, engine lazy).
 pub struct LazyLauncher {
     settings: Settings,
     headed: bool,

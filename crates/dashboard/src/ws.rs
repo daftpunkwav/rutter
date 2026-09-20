@@ -1,6 +1,6 @@
 //! The dashboard WebSocket: replay first, then live events; approval
 //! decisions arrive as client messages, screencast frames leave as
-//! binary frames on demand (blueprint §7.5, §7.7).
+//! binary frames on demand (docs/events.md, docs/dashboard.md).
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.
@@ -49,7 +49,7 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
 
     // Live: forward the broadcast stream; client decisions come back
     // on the same socket, so all writes happen in this loop. Screencast
-    // frames are on-demand (blueprint §7.7): they flow only while a
+    // frames are on-demand (docs/dashboard.md): they flow only while a
     // viewer asked for them, as binary WebSocket frames.
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<Message>(64);
     let mut current: Option<ScreencastStream> = None;
@@ -77,7 +77,7 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                         // The bus dropped envelopes while this client was
                         // slow, but the rings still hold the semantic
-                        // events (blueprint §7.5): resync from the last
+                        // events (docs/events.md): resync from the last
                         // sequence sent instead of losing the gap until a
                         // reconnect.
                         let mut gap: Vec<Envelope> = Vec::new();
@@ -165,7 +165,7 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                     .await;
                             }
                             Some("subscribe") => {
-                                // Blueprint §7.7 lists subscribe as a
+                                // docs/dashboard.md lists subscribe as a
                                 // client message; replay and the live
                                 // stream start automatically on connect,
                                 // so there is nothing further to do.

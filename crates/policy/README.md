@@ -12,7 +12,7 @@ publishes the request, and resolves on a human decision or timeout.
 Depends on `core` only; no I/O beyond parsing the TOML config. It
 never executes anything and never asks who is asking — dangerousness
 is decided by the rules, never by the agent's self-declaration
-(blueprint §7.6). The approval window (default 120 s, rejected above
+(docs/policy.md). The approval window (default 120 s, rejected above
 24 h) lives on the `RuleSet`, set via `approval_timeout_ms` in the
 config.
 

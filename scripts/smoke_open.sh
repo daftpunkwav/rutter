@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # M0 acceptance helper: runs `rutter open` against a fixed corpus of
-# real sites and reports a pass/fail summary (blueprint §10, M0 gate).
+# real sites and reports a pass/fail summary (docs/testing.md).
 # Manual and network-dependent by design; never part of CI gates.
 
 set -uo pipefail

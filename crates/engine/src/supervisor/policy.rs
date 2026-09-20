@@ -2,7 +2,7 @@
 //!
 //! Boundary: pure decisions over restart timestamps. No I/O, no clock
 //! access of its own — callers pass `Instant::now()` so tests stay
-//! deterministic. The breaker implements the blueprint rule: too many
+//! deterministic. The breaker implements the supervision rule: too many
 //! restarts within a time window fails callers with a clear error
 //! instead of thrashing the host with relaunch attempts.
 

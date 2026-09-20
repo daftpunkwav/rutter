@@ -3,7 +3,7 @@
 //! Responsibilities:
 //! - Convert the JSON tree reported by the page serializer into a
 //!   [`rutter_core::Snapshot`] through the pure [`build`] function,
-//!   applying the token budget of `docs/SNAPSHOT_SPEC.md` §6: depth
+//!   applying the token budget of `docs/snapshot-format.md` §6: depth
 //!   budget, sibling folding, viewport-first culling, and the hard
 //!   character budget, in that order.
 //!
@@ -19,32 +19,32 @@ use rutter_core::snapshot::{Snapshot, SnapshotNode};
 use serde_json::Value;
 
 /// Maximum tree depth accepted from page data. A hard safety limit,
-/// independent of the token budget (spec §6, rule 5).
+/// independent of the token budget (docs/snapshot-format.md §6, rule 5).
 const MAX_DEPTH: usize = 512;
 
 /// Maximum number of nodes accepted from page data. A hard safety limit,
-/// independent of the token budget (spec §6, rule 5).
+/// independent of the token budget (docs/snapshot-format.md §6, rule 5).
 const MAX_NODES: usize = 100_000;
 
-/// Depth budget under the token budget (spec §6, rule 1).
+/// Depth budget under the token budget (docs/snapshot-format.md §6, rule 1).
 const BUDGET_DEPTH: usize = 48;
 
-/// Default token budget in rendered characters (spec §6).
+/// Default token budget in rendered characters (docs/snapshot-format.md §6).
 pub const DEFAULT_BUDGET_CHARS: usize = 20_000;
 
 /// Sibling runs of at least this many same-role nameless children fold
-/// into one summary line (spec §6, rule 2).
+/// into one summary line (docs/snapshot-format.md §6, rule 2).
 const FOLD_RUN_MIN: usize = 8;
 
 /// Margin around the viewport for out-of-viewport classification
-/// (spec §6, rule 3).
+/// (docs/snapshot-format.md §6, rule 3).
 const VIEWPORT_MARGIN_PX: f64 = 200.0;
 
 /// Minimum rendered size before an out-of-viewport subtree folds
-/// (spec §6, rule 3).
+/// (docs/snapshot-format.md §6, rule 3).
 const FOLD_SIZE_MIN_CHARS: usize = 400;
 
-/// Safety clamp for hostile overlong strings (spec §3). The serializer
+/// Safety clamp for hostile overlong strings (docs/snapshot-format.md §3). The serializer
 /// caps names at 120 and values at 200 characters; the builder clamps
 /// anything larger rather than trusting the input.
 const MAX_ROLE_CHARS: usize = 64;

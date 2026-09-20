@@ -11,7 +11,7 @@
 | `resolve.rs` | 经 observe 脚本做 Reference（引用）解析 |
 | `storage.rs` | 存储状态（cookies + localStorage），原子且仅限属主的持久化 |
 | `wait.rs` | `poll_until`，带 600 s 预算钳制（时钟溢出防护） |
-| `config.rs` | `SessionConfig` 默认值由 TOOL_SPEC §3 钉死（`wait_for` 预算默认值在 MCP 工具层，§4） |
+| `config.rs` | `SessionConfig` 默认值由 docs/tool-catalog.md §3 钉死（`wait_for` 预算默认值在 MCP 工具层，§4） |
 | `error.rs` | `SessionError`，衔接引擎错误与动作错误 |
 | `mock.rs` | 仅供测试的引擎替身（`#[cfg(test)]`），用于无浏览器测试 |
 

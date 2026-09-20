@@ -1,7 +1,7 @@
 //! CDP engine backend for rutter, built on chromiumoxide.
 //!
 //! Boundary: the only crate in the workspace permitted to speak CDP
-//! (blueprint §5). Everything above `rutter-engine`'s traits stays
+//! (docs/architecture.md). Everything above `rutter-engine`'s traits stays
 //! protocol-agnostic; swapping or adding engines is confined to this
 //! crate plus a registration point in the CLI. Chromiumoxide failures
 //! are folded into [`rutter_engine::EngineError`] here; no CDP type
@@ -13,7 +13,7 @@
 
 // The implementation modules stay private on purpose: their items take
 // chromiumoxide types, and the crate boundary is `EngineLauncher` alone
-// (blueprint §5: no CDP type crosses a public signature).
+// (docs/architecture.md: no CDP type crosses a public signature).
 mod context;
 mod engine;
 mod error;

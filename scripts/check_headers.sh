@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Header gate: every tracked source file must open with a header comment
-# stating purpose and boundary (blueprint §8.3). Rust files open with
+# stating purpose and boundary. Rust files open with
 # `//!` inner doc comments; shell and Python files may open with a
 # shebang followed by a comment header; JS files open with a comment.
 

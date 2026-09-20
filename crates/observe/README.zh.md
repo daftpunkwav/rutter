@@ -15,5 +15,5 @@
 
 ## 契约
 
-渲染文本由 `docs/SNAPSHOT_SPEC.md` 规定（行格式、ref 铸造、预算、
+渲染文本由 `docs/snapshot-format.md` 规定（行格式、ref 铸造、预算、
 `… truncated` 标记）。规范即契约；本 crate 实现它。

@@ -2,12 +2,12 @@
 //!
 //! Boundary: session lifecycle, engine ownership, supervision wiring,
 //! and recovery. The engine starts lazily on the first session request
-//! (blueprint §8.5) and shuts down when the manager does; every session
+//! (docs/architecture.md) and shuts down when the manager does; every session
 //! evaluates the shared policy and parks approvals on the shared broker
-//! (blueprint §7.6). When the supervisor replaces a dead engine, a
+//! (docs/policy.md). When the supervisor replaces a dead engine, a
 //! recovery task rebuilds each session: fresh context, storage-state
 //! replay, page restoration, and an `EngineRestarted` event per session
-//! (blueprint §7.4).
+//! (docs/sessions.md).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -254,7 +254,7 @@ async fn start_running(inner: &Arc<Inner>) -> Result<Running, EngineError> {
 
 /// Watches for engine replacements and rebuilds every session:
 /// fresh context, storage-state replay, page restoration, and an
-/// `EngineRestarted` event per session (blueprint §7.4).
+/// `EngineRestarted` event per session (docs/sessions.md).
 fn spawn_recovery(inner: &Arc<Inner>, mut watcher: tokio::sync::watch::Receiver<u64>) {
     let weak = Arc::downgrade(inner);
     tokio::spawn(async move {

@@ -2,7 +2,7 @@
 #
 # M2 acceptance benchmark: runs `rutter open` (navigate + snapshot
 # round-trip) against a 20-site corpus and reports the success rate
-# (blueprint §10, M2 gate; §9 benchmark level). Manual and
+# (docs/testing.md benchmark level). Manual and
 # network-dependent by design; never part of CI gates.
 
 set -uo pipefail

@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-把 `docs/TOOL_SPEC.md` 暴露为一个 rmcp server：stdio 与 streamable
+把 `docs/tool-catalog.md` 暴露为一个 rmcp server：stdio 与 streamable
 HTTP 两种 transport，一条 MCP 连接 = 一个 Session（会话）。快照以文
 本返回（带 `… truncated` 标记），截图以图像块返回，失败以携带消息加
 提示的 `isError` 结果返回。

@@ -14,5 +14,5 @@ is `launch.rs`'s `CdpLauncher` alone.
 | `error.rs` | `with_deadline` wrappers + folding CDP errors into `EngineError` |
 
 Never let a chromiumoxide type reach a `pub` signature — the traits in
-`rutter-engine` are the only way out (blueprint §5). Every CDP call
+`rutter-engine` are the only way out (docs/architecture.md). Every CDP call
 goes through a deadline; none may hang bare.

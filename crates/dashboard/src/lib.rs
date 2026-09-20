@@ -6,12 +6,12 @@
 //!   127.0.0.1 only, gated by a per-launch random token printed to the
 //!   terminal; the first visit exchanges the query token for an
 //!   HttpOnly session cookie, and `Host` headers are validated against
-//!   DNS rebinding (blueprint §7.7).
+//!   DNS rebinding (docs/dashboard.md).
 //! - Stream events over one WebSocket: replay first, then live; the
 //!   client submits approval decisions through the same socket.
 //!
 //! Boundary: observation plus verdict submission — the dashboard never
-//! executes actions (blueprint §5). The screencast live view (§7.7)
+//! executes actions (docs/architecture.md). The screencast live view (docs/dashboard.md)
 //! streams binary frames on demand through the same WebSocket.
 //!
 //! Module layout: `auth` owns the endpoint gate (host + token),
@@ -39,13 +39,13 @@ use rutter_session::manager::SessionManager;
 use serde_json::Value;
 
 /// Static frontend sources, embedded at compile time (no build step,
-/// blueprint §7.7).
+/// docs/dashboard.md).
 mod assets {
     /// The dashboard page shell.
     pub const INDEX_HTML: &str = include_str!("../../../frontend/src/index.html");
     /// The dashboard application script.
     pub const APP_JS: &str = include_str!("../../../frontend/src/app.js");
-    /// The English string catalog (default locale, blueprint §7.7).
+    /// The English string catalog (default locale, docs/dashboard.md).
     pub const I18N_EN: &str = include_str!("../../../frontend/i18n/en.json");
 }
 
@@ -77,7 +77,7 @@ impl DashboardServer {
         }
     }
 
-    /// The per-launch access token (blueprint §7.7). The
+    /// The per-launch access token (docs/dashboard.md). The
     /// `RUTTER_DASHBOARD_TOKEN` override exists for automation; without
     /// it the token hashes the launch time and process id with a
     /// randomly keyed hasher seeded from OS entropy, so its value is
@@ -136,7 +136,7 @@ async fn index(
         return Err(StatusCode::FORBIDDEN);
     }
     // First visit carries the token in the query; the answer exchanges
-    // it for a session cookie (blueprint §7.7), and later requests
+    // it for a session cookie (docs/dashboard.md), and later requests
     // authenticate through the cookie alone.
     let mut response = Html(assets::INDEX_HTML).into_response();
     if let Some(cookie) = auth::token_cookie_header(&state.token) {

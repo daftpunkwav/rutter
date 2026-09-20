@@ -10,7 +10,7 @@
 ## 边界
 
 不依赖 workspace 内的任何东西。每个跨 crate 签名都用这些类型表述，
-因此改动它们就是一次全 workspace 的契约变更（blueprint §5）。
+因此改动它们就是一次全 workspace 的契约变更（docs/architecture.md）。
 
 ## 关键类型
 
@@ -18,7 +18,7 @@
   按事件约定序列化（`"type"` 标签、snake_case），因为它们随事件传
   播。
 - `Snapshot` / `SnapshotNode`——以 YAML 渲染的无障碍视图（格式契
-  约：`docs/SNAPSHOT_SPEC.md`）。
+  约：`docs/snapshot-format.md`）。
 - `Reference`——由序列化器铸造的稳定单页元素句柄，导航后失效。
 - `ActionError`——失败词汇表；按事件约定序列化（`"type"` 标签、
   snake_case），因为它随事件传播。

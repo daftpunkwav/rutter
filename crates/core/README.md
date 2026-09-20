@@ -11,7 +11,7 @@ engine knowledge.
 
 Depends on nothing inside the workspace. Every cross-crate signature is
 phrased in these types, so changing them is a workspace-wide contract
-change (blueprint §5).
+change (docs/architecture.md).
 
 ## Key types
 
@@ -19,7 +19,7 @@ change (blueprint §5).
   Serialized with the event convention (`"type"` tag, snake_case)
   because they ride in events.
 - `Snapshot` / `SnapshotNode` — the YAML-rendered accessibility view
-  (format contract: `docs/SNAPSHOT_SPEC.md`).
+  (format contract: `docs/snapshot-format.md`).
 - `Reference` — stable per-page element handle minted by the
   serializer, invalidated by navigation.
 - `ActionError` — the failure vocabulary; serialized with the event

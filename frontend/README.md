@@ -13,4 +13,4 @@ via the i18n catalog, no framework, no npm.
 
 Protocol contract with `rutter-dashboard`: WebSocket events/screencast
 frames + `POST /api/decisions`, per `crates/dashboard/README.md` and
-blueprint §7.7.
+docs/dashboard.md.

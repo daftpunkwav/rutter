@@ -2,7 +2,7 @@
 //! tool schemas, and their mappings onto `rutter-core` vocabulary.
 //!
 //! Boundary: pure data. These types know the spec's parameter shapes
-//! (`docs/TOOL_SPEC.md` §4) and nothing about the server, the session,
+//! (`docs/tool-catalog.md` §4) and nothing about the server, the session,
 //! or the engine.
 
 use rmcp::ErrorData as McpError;
@@ -37,7 +37,7 @@ impl From<Direction> for ScrollDirection {
 }
 
 /// Cross-site sending policy accepted by the set_cookies tool
-/// (`docs/TOOL_SPEC.md` §4: `strict|lax|none`).
+/// (`docs/tool-catalog.md` §4: `strict|lax|none`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SameSiteInput {
@@ -59,7 +59,7 @@ impl From<SameSiteInput> for SameSite {
     }
 }
 
-/// One cookie as agents set it (`docs/TOOL_SPEC.md` §4).
+/// One cookie as agents set it (`docs/tool-catalog.md` §4).
 #[derive(Debug, Clone, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct CookieInput {
     /// Cookie name.

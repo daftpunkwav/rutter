@@ -1,7 +1,7 @@
 //! Typed operations an agent can request, plus the origin of an action.
 //!
 //! Boundary: the payload shapes here are the vocabulary shared by every
-//! layer; the authoritative tool schema is `docs/TOOL_SPEC.md`, and
+//! layer; the authoritative tool schema is `docs/tool-catalog.md`, and
 //! execution semantics (auto-wait, settlement, snapshots after acting)
 //! live in `rutter-session`.
 
@@ -91,7 +91,7 @@ pub enum Action {
 /// Direction of an [`Action::Scroll`] operation.
 ///
 /// Serialized snake_case so the wire form matches the scroll tool's
-/// input schema (`docs/TOOL_SPEC.md` §4: `up|down|left|right`).
+/// input schema (`docs/tool-catalog.md` §4: `up|down|left|right`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScrollDirection {

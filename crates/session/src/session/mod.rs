@@ -1,11 +1,11 @@
 //! One session: a client's context, its pages, and its events.
 //!
 //! Boundary: the orchestration surface the MCP tools call. The session
-//! owns exactly one context (blueprint §4), tracks its open pages and
+//! owns exactly one context (docs/architecture.md), tracks its open pages and
 //! their URLs, executes actions through the [`crate::actions`]
-//! executor, enforces the policy with approvals (§7.6), and persists
+//! executor, enforces the policy with approvals (docs/policy.md), and persists
 //! its storage state after every change so a supervisor restart can
-//! rebuild it (§7.4). Recovery swaps in a fresh context and replays.
+//! rebuild it (docs/sessions.md). Recovery swaps in a fresh context and replays.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -55,7 +55,7 @@ pub struct Session {
     policy: Arc<RuleSet>,
     broker: Arc<ApprovalBroker>,
     /// Swappable so recovery can install a fresh context after an
-    /// engine restart (blueprint §7.4).
+    /// engine restart (docs/sessions.md).
     context: tokio::sync::RwLock<Arc<dyn ContextHandle>>,
     pages: Mutex<Vec<PageSlot>>,
     /// Where the storage state persists; `None` disables persistence.
@@ -111,7 +111,7 @@ impl Session {
     /// Enforces the policy for one operation judged at `url`: `Allow`
     /// passes, `Deny` fails with `ApprovalDenied`, and
     /// `RequireApproval` publishes the request and parks until a human
-    /// answers or the window closes (blueprint §7.6). The URL is
+    /// answers or the window closes (docs/policy.md). The URL is
     /// canonicalized before matching, and `None` — an unreadable page
     /// or a navigation target that is not a URL — fails closed: the
     /// verdict comes from [`rutter_policy::RuleSet::evaluate_without_url`]
@@ -226,13 +226,13 @@ impl Session {
     /// Executes one action with the given origin and returns the fresh
     /// snapshot; requested/completed/failed land on the event backbone.
     /// After every attempt, successful or not, the tracked page URL and
-    /// the storage state are refreshed (blueprint §7.4: persist on
+    /// the storage state are refreshed (docs/sessions.md: persist on
     /// change).
     pub async fn execute(&self, action: Action, origin: Origin) -> Result<Snapshot, SessionError> {
         let page = self.active_page().await.map_err(engine_error)?;
         let page_id = self.active_page_id();
 
-        // Supervision gate (blueprint §7.6): agent-origin actions are
+        // Supervision gate (docs/policy.md): agent-origin actions are
         // judged at the URL the action leads to — a navigation at its
         // target, everything else at the page it acts on. Human-origin
         // actions bypass approval and are recorded identically.
@@ -292,7 +292,7 @@ impl Session {
         };
 
         // Refresh the tracked URL of the page the action ran on, then
-        // persist the changed state (blueprint §7.4: persist per session
+        // persist the changed state (docs/sessions.md: persist per session
         // on change). Filtering by id, not by the current active flag: a
         // concurrent `select_page` may have switched the active slot
         // while this action was in flight, and the new page's URL must
@@ -327,14 +327,13 @@ impl Session {
     }
 
     /// Starts a live screencast of the active page; the stream is
-    /// observation only — dropping it stops the capture (blueprint
-    /// §7.7: on-demand, dashboard never executes actions).
+    /// observation only — dropping it stops the capture (docs/dashboard.md: on-demand, dashboard never executes actions).
     pub async fn screencast(&self) -> Result<ScreencastStream, SessionError> {
         let page = self.active_page().await.map_err(engine_error)?;
         page.start_screencast().await.map_err(SessionError::Engine)
     }
 
-    /// Captures the active page. TOOL_SPEC §4: capture errors map onto
+    /// Captures the active page. docs/tool-catalog.md §4: capture errors map onto
     /// `ActionError::Internal` so the agent sees the action taxonomy, not
     /// a raw engine failure.
     pub async fn screenshot(&self) -> Result<Screenshot, SessionError> {
@@ -467,7 +466,7 @@ impl Session {
     }
 
     /// Saves the current storage state to the session's persistence
-    /// file (explicit save; blueprint §7.4).
+    /// file (explicit save; docs/sessions.md).
     pub async fn save_storage(&self) -> Result<(), SessionError> {
         let page = self.active_page().await.map_err(engine_error)?;
         let page_id = self.active_page_id();
@@ -483,7 +482,7 @@ impl Session {
     }
 
     /// Loads a previously saved storage state and applies it to the
-    /// session (explicit load; blueprint §7.4). Restores over the
+    /// session (explicit load; docs/sessions.md). Restores over the
     /// currently open pages and records the loaded state as the last
     /// known one, so a later persistence run does not rewrite it.
     pub async fn load_storage(&self) -> Result<(), SessionError> {
@@ -504,7 +503,7 @@ impl Session {
 
     /// Rebuilds the session on a fresh context after an engine restart:
     /// replays cookies and localStorage, re-opens the tracked pages at
-    /// their URLs, and publishes `EngineRestarted` (blueprint §7.4).
+    /// their URLs, and publishes `EngineRestarted` (docs/sessions.md).
     pub(crate) async fn recover(&self, context: Arc<dyn ContextHandle>) {
         let saved = std::mem::take(&mut *self.lock_pages());
         let state = self.lock_last_storage().clone();
@@ -573,7 +572,7 @@ impl Session {
     /// Captures and persists the storage state; the in-memory copy
     /// updates first so recovery works even if the file write fails.
     /// The disk write is skipped when the captured state is identical to
-    /// the last persisted one: "persist on change" (blueprint §7.4)
+    /// the last persisted one: "persist on change" (docs/sessions.md)
     /// needs no rewrite when nothing changed, and rewriting identical
     /// JSON on every action only burns file I/O.
     async fn persist_storage(&self, page: &Arc<dyn PageHandle>, url: &str) {

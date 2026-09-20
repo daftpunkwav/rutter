@@ -12,4 +12,4 @@ Parameter-mapping tests live in the crate's `tests/tool_params.rs`.
 
 The `#[tool_router]` impl block must keep all `#[tool]` methods in one
 place (rmcp macro constraint). Tool names and parameter names are
-TOOL_SPEC contract — do not rename.
+docs/tool-catalog.md contract — do not rename.

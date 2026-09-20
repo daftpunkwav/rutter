@@ -1,5 +1,4 @@
-# rutter workspace manifest. Crates materialize with the milestone that
-# needs them (blueprint §10); empty crates are forbidden.
+# rutter workspace manifest. Empty crates are forbidden.
 
 [workspace]
 resolver = "2"
@@ -29,7 +28,7 @@ license = "Apache-2.0"
 # dependencies from the wildcard-version deny.
 publish = false
 
-# Packaging via cargo-dist (blueprint §10, M3): `cargo dist build`
+# Packaging via cargo-dist: `cargo dist build`
 # produces the rutter binary archives; tagging a release triggers the
 # publish workflow. The engine is not bundled — rutter downloads the
 # Chrome for Testing binary into its cache on first use.
@@ -82,7 +81,7 @@ toml = "0.8"
 url = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
-# Lint policy (blueprint §8.4): no unwrap/expect/panic outside tests and
+# Lint policy: no unwrap/expect/panic outside tests and
 # process init, no placeholder markers, public items documented.
 [workspace.lints.rust]
 missing_docs = "warn"

@@ -4,7 +4,7 @@
 
 十个 crate，一条依赖方向：一切都从 `core` 向外流动，且只有 `cli`（组
 合根）能看到全部成员。这些接缝的存在让每个 crate 只有一个变更理由
-（blueprint §5、§8.1）；`cli` 在启动时把它们组装在一起。
+（docs/architecture.md）；`cli` 在启动时把它们组装在一起。
 
 | Crate | 职责 | 依赖（workspace 内） |
 |---|---|---|

@@ -115,7 +115,7 @@ async fn page_cap_is_enforced() -> Result<(), Box<dyn std::error::Error>> {
 /// Closing an already-closed context succeeds: the browser answers a
 /// repeated dispose with "not found", and the handle folds that into
 /// success so a session teardown can never wedge on a dead context
-/// (blueprint §7.4 recovery races).
+/// (docs/sessions.md recovery races).
 #[tokio::test]
 #[ignore = "requires a downloaded engine binary"]
 async fn context_close_is_idempotent() -> Result<(), Box<dyn std::error::Error>> {

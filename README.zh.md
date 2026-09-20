@@ -11,15 +11,22 @@
 
 | 文档 | 定位 |
 |------|------|
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 阅读顺序入口：crate 划分、运行时形态、契约 |
-| [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) | 架构蓝图：设计规则与规范性决策（代码中以 § 引用） |
-| [`docs/TOOL_SPEC.md`](docs/TOOL_SPEC.md) | MCP 工具面：参数、语义、错误映射 |
-| [`docs/SNAPSHOT_SPEC.md`](docs/SNAPSHOT_SPEC.md) | 快照格式：序列化、引用、token 预算 |
+| [`docs/architecture.md`](docs/architecture.md) | 阅读顺序入口：crate 划分、运行时形态、横切不变量 |
+| [`docs/glossary.md`](docs/glossary.md) | 规范领域词汇表 |
+| [`docs/tool-catalog.md`](docs/tool-catalog.md) | MCP 工具面：传输、语义、auto-wait、错误映射 |
+| [`docs/snapshot-format.md`](docs/snapshot-format.md) | 快照契约：序列化、引用、token 预算 |
+| [`docs/engine-supervision.md`](docs/engine-supervision.md) | 引擎 trait、二进制获取、supervisor、CDP 说明 |
+| [`docs/sessions.md`](docs/sessions.md) | session 模型、动作执行路径、storage state、恢复 |
+| [`docs/events.md`](docs/events.md) | 事件词汇、backbone 语义、replay |
+| [`docs/policy.md`](docs/policy.md) | 动作分类、verdict、fail-closed 规则、审批 |
+| [`docs/dashboard.md`](docs/dashboard.md) | 仪表盘服务器、访问控制、WebSocket 协议 |
+| [`docs/testing.md`](docs/testing.md) | 测试层级、契约钉定、运行方式 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 工作规则与本地门禁 |
 
 每个源码目录都带有说明自身职责、边界与文件清单的 `README.md` —— 从
-[`crates/README.md`](crates/README.md) 开始。每个 README 都有名为
-`README.zh.md` 的中文镜像；两者同步更新。
+[`crates/README.md`](crates/README.md) 开始。每个 README 与每篇
+`docs/` 文档都有中文镜像：`README.md` 旁是 `README.zh.md`，
+`docs/` 下 `<name>.md` 旁是 `<name>.zh.md`；两种语言同步更新。
 
 ## 用法
 
@@ -93,7 +100,7 @@ cargo-dist 附在 GitHub releases 上；见
 
 ```
 rutter/
-├── docs/         # 蓝图、架构、工具与快照规范
+├── docs/         # 面向代码的文档（英文 + 中文镜像）
 ├── scripts/      # CI 运行的质量门禁辅助脚本
 ├── crates/       # workspace 成员（见下表）
 ├── tests/        # 驱动二进制的跨 crate 验收测试

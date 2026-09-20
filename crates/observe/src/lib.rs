@@ -34,7 +34,7 @@ pub use response::snapshot_from_response;
 ///
 /// The script walks the composed DOM including shadow roots, mints
 /// element references, and returns the envelope described in
-/// `docs/SNAPSHOT_SPEC.md`. Evaluate it with a page's `evaluate` and
+/// `docs/snapshot-format.md`. Evaluate it with a page's `evaluate` and
 /// pass the result to [`snapshot_from_response`].
 pub fn serializer_script() -> &'static str {
     assets::SERIALIZER_JS

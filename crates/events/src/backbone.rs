@@ -20,7 +20,7 @@ pub const DEFAULT_RING_CAPACITY: usize = 1000;
 
 /// Publishes events to live subscribers and per-session history.
 ///
-/// `publish` never blocks and never fails (blueprint §7.5): the envelope
+/// `publish` never blocks and never fails (docs/events.md): the envelope
 /// always lands in the ring and reaches every live subscriber that keeps
 /// up. Semantic events survive for late joiners through [`Backbone::replay`].
 #[derive(Debug)]

@@ -1,10 +1,10 @@
-//! The MCP server: rmcp host mapping TOOL_SPEC onto the session layer.
+//! The MCP server: rmcp host mapping docs/tool-catalog.md onto the session layer.
 //!
 //! Responsibilities:
-//! - Expose the blueprint §7.8 tool surface as rmcp tools.
+//! - Expose the docs/tool-catalog.md tool surface as rmcp tools.
 //! - Return snapshots as text, screenshots as image blocks, and action
 //!   failures as `isError` results carrying the error plus its hint
-//!   (`docs/TOOL_SPEC.md` §2).
+//!   (`docs/tool-catalog.md` §2).
 //!
 //! Boundary: protocol mapping only. All semantics live in
 //! `rutter-session`; this module validates parameters against the spec
@@ -40,11 +40,11 @@ use rutter_session::manager::SessionManager;
 use rutter_session::session::Session;
 
 /// Server error code for engine-level failures beyond a tool result
-/// (`docs/TOOL_SPEC.md` §2).
+/// (`docs/tool-catalog.md` §2).
 const SERVER_ERROR_CODE: i32 = -32000;
 
 /// Default `wait_for` budget when the caller sends no timeout
-/// (`docs/TOOL_SPEC.md` §4: 10 000 ms).
+/// (`docs/tool-catalog.md` §4: 10 000 ms).
 const WAIT_FOR_DEFAULT_BUDGET: Duration = Duration::from_secs(10);
 
 /// The per-connection MCP server.
@@ -267,7 +267,7 @@ impl RutterMcp {
         Parameters(PageParams { page_id }): Parameters<PageParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
-        // TOOL_SPEC §4: an unknown page id is invalid_params, not an
+        // docs/tool-catalog.md §4: an unknown page id is invalid_params, not an
         // action failure.
         if !session
             .pages()
@@ -289,7 +289,7 @@ impl RutterMcp {
         Parameters(PageParams { page_id }): Parameters<PageParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
-        // TOOL_SPEC §4: a page id names an open page, so an unknown id is
+        // docs/tool-catalog.md §4: a page id names an open page, so an unknown id is
         // invalid_params as in tabs_select, not an action failure.
         if !session
             .pages()
@@ -366,7 +366,7 @@ impl ServerHandler for RutterMcp {
     }
 }
 
-/// Snapshot text plus the truncation marker of TOOL_SPEC §2.
+/// Snapshot text plus the truncation marker of docs/tool-catalog.md §2.
 fn snapshot_result(snapshot: &rutter_core::snapshot::Snapshot) -> CallToolResult {
     let mut text = snapshot.to_string();
     if snapshot.truncated {
@@ -375,7 +375,7 @@ fn snapshot_result(snapshot: &rutter_core::snapshot::Snapshot) -> CallToolResult
     CallToolResult::success(vec![ContentBlock::text(text)])
 }
 
-/// An action failure as a result: message plus hint (TOOL_SPEC §2).
+/// An action failure as a result: message plus hint (docs/tool-catalog.md §2).
 fn error_result(error: &SessionError) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(format!(
         "{error}\nhint: {}",
@@ -388,7 +388,7 @@ fn invalid_params(message: String) -> McpError {
 }
 
 fn protocol_error(error: SessionError) -> McpError {
-    // TOOL_SPEC §2: protocol-level failures carry the same
+    // docs/tool-catalog.md §2: protocol-level failures carry the same
     // message-plus-hint text as isError results.
     McpError::new(
         ErrorCode(SERVER_ERROR_CODE),

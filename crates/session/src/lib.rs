@@ -2,13 +2,12 @@
 //!
 //! Responsibilities:
 //! - Own one supervised engine per process and hand out one
-//!   [`session::Session`] per MCP client (blueprint §4, §7.8).
+//!   [`session::Session`] per MCP client (docs/architecture.md, docs/tool-catalog.md).
 //! - Execute typed [`rutter_core::action::Action`]s through the
 //!   three-phase auto-wait (visible, stable, enabled — act — settle) and
-//!   return a fresh snapshot for every mutating action (blueprint §7.3,
-//!   `docs/TOOL_SPEC.md` §3).
+//!   return a fresh snapshot for every mutating action (docs/tool-catalog.md §3).
 //! - Emit the event backbone's semantic events for everything a session
-//!   does (blueprint §7.5).
+//!   does (docs/events.md).
 //!
 //! Boundary: the only place where engine, observation, and events meet.
 //! Policy verdicts and approval flow through this crate's executor;

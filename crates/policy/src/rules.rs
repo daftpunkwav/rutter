@@ -1,4 +1,4 @@
-//! The rule set and verdict evaluation (blueprint §7.6).
+//! The rule set and verdict evaluation (docs/policy.md).
 
 use serde::{Deserialize, Serialize};
 
@@ -44,7 +44,7 @@ pub struct PolicyRule {
 }
 
 /// An ordered rule set plus the verdict for actions no rule matches,
-/// and the window a human has to answer approvals (blueprint §7.6:
+/// and the window a human has to answer approvals (docs/policy.md:
 /// configurable, default 120 s).
 ///
 /// The default set is conservative for the sensitive class: cookie
@@ -123,7 +123,7 @@ impl RuleSet {
     /// the target embeds credentials. URL-scoped rules cannot match,
     /// class-only rules still do, and a bare `Allow` upgrades to
     /// `RequireApproval`, so missing URL information never passes an
-    /// action unsupervised (blueprint §7.6).
+    /// action unsupervised (docs/policy.md).
     pub fn evaluate_without_url(&self, class: ActionClass) -> Verdict {
         match self.evaluate(class, "") {
             Verdict::Allow => Verdict::RequireApproval,

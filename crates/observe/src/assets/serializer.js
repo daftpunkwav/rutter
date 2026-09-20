@@ -2,7 +2,7 @@
  * @fileoverview In-page DOM serializer for rutter accessibility snapshots.
  *
  * Walks the composed DOM (including open shadow roots and slot
- * assignments) and reports a plain JSON tree per docs/SNAPSHOT_SPEC.md
+ * assignments) and reports a plain JSON tree per docs/snapshot-format.md
  * sections 2-4. Hidden elements are omitted, never guessed at. The
  * script never throws: every per-node computation is guarded and a
  * failure degrades that node to role "generic".

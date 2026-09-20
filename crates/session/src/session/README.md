@@ -9,6 +9,6 @@ English | [中文](README.zh.md)
 
 One active page is the invariant every caller relies on; `execute`
 refreshes URL + storage after every attempt (persist on change,
-blueprint §7.4), and `close` tears down the whole browser context
+docs/sessions.md), and `close` tears down the whole browser context
 idempotently. `tests.rs` exists so the logic file stays readable —
 keep new tests there.

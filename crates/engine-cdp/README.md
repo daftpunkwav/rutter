@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Implements `rutter-engine`'s traits over chromiumoxide. This is the
 only crate in the workspace allowed to name CDP or chromiumoxide types
-(blueprint §5); the public surface is `CdpLauncher`, an
+(docs/architecture.md); the public surface is `CdpLauncher`, an
 `EngineLauncher` — every implementation module is private and no CDP
 type appears in a public signature.
 

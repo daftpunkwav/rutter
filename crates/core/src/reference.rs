@@ -1,7 +1,7 @@
 //! Stable handles to elements inside snapshots.
 //!
 //! Boundary: references are minted by the page serializer's in-page
-//! store (`docs/SNAPSHOT_SPEC.md` §4) and stay usable across snapshots
+//! store (`docs/snapshot-format.md` §4) and stay usable across snapshots
 //! of the same page; a navigation invalidates them. Callers treat them
 //! as opaque tokens passed back inside actions; resolution to a live
 //! element happens in the session layer's resolver.

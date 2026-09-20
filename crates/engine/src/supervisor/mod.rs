@@ -6,7 +6,7 @@
 //!   [`RestartPolicy`] (capped backoff, window breaker).
 //!
 //! Boundary: process lifecycle only. Session state restoration is a
-//! session-layer concern (blueprint §7.4) and is not attempted here; a
+//! session-layer concern (docs/sessions.md) and is not attempted here; a
 //! restart yields a fresh, empty engine. While the breaker is open or a
 //! restart is in flight, [`Supervisor::engine`] reports
 //! [`EngineError::Terminated`] — callers fail their affected operations.
@@ -32,7 +32,7 @@ pub mod policy;
 pub use policy::RestartPolicy;
 
 /// How a factory produces engine instances; the engine registration
-/// point (blueprint §8.1). Backends plug in by implementing this trait;
+/// point (docs/architecture.md). Backends plug in by implementing this trait;
 /// the binary selects one at startup.
 #[async_trait]
 pub trait EngineLauncher: Send + Sync {
@@ -74,7 +74,7 @@ pub struct Supervisor {
     supervised: Arc<Supervised>,
     heartbeat: Mutex<Option<JoinHandle<()>>>,
     /// Bumped every time a dead engine is successfully replaced;
-    /// recovery consumers watch this (blueprint §7.4).
+    /// recovery consumers watch this (docs/sessions.md).
     restarts: tokio::sync::watch::Sender<u64>,
 }
 

@@ -17,7 +17,7 @@ pub enum ActionClass {
     Selection,
     /// Scrolling.
     Scroll,
-    /// Cookie manipulation; sensitive by default (blueprint §7.6).
+    /// Cookie manipulation; sensitive by default (docs/policy.md).
     Cookies,
 }
 

@@ -38,7 +38,7 @@ struct Cli {
     #[arg(long = "engine-arg", global = true, value_name = "ARG")]
     engine_args: Vec<String>,
 
-    /// Policy TOML file for serve mode (blueprint §7.6).
+    /// Policy TOML file for serve mode (docs/policy.md).
     #[arg(long, global = true, value_name = "FILE")]
     policy: Option<std::path::PathBuf>,
 

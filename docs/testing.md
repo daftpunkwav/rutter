@@ -1,0 +1,78 @@
+# Testing
+
+English | [中文](testing.zh.md)
+
+Where verification lives, which tests pin which contract, and how to
+run the suites.
+
+## 1. Levels
+
+| Level | Scope | Tooling |
+|---|---|---|
+| Unit | Pure crates (core, observe, policy, events) and private paths beside the code | plain `#[test]` |
+| Golden | Snapshot builder output on fixture DOM trees | `insta` |
+| Property | Culling/folding invariants; serializer never panics | `proptest` |
+| Integration | Real headless shell: launch, navigate, act, recover | per-crate `tests/`, `#[ignore]`d by default |
+| E2E | Full MCP client → rutter → engine round-trips (mcp, approval, http transports) | workspace `tests/` package |
+| Benchmark | 20-site fixed corpus: click hit rate, snapshot tokens | harness in `scripts/` |
+
+## 2. What pins which contract
+
+- [Tool catalog](tool-catalog.md) semantics are pinned by
+  `rutter-mcp` unit tests (result conventions, error mapping, schema
+  details) and by the e2e suites in `tests/`.
+- [Snapshot format](snapshot-format.md) is pinned by golden fixtures
+  and property tests in `rutter-observe` and `rutter-core`
+  (`Display` rendering).
+- Numeric defaults — auto-wait budgets, page/session caps, approval
+  window, restart policy — are asserted in the owning crate's unit
+  tests (for example
+  [`SessionConfig::default`](../crates/session/src/config.rs) matches
+  the tool catalog).
+- Engine supervision behavior (backoff, breaker, heartbeat recovery)
+  uses injected clocks and fast, deterministic policy overrides in
+  `rutter-engine` tests.
+
+## 3. Running
+
+```sh
+cargo test --all            # unit + golden + property suites
+```
+
+Integration and acceptance suites drive the real engine and are
+`#[ignore]`d locally; run them explicitly (they reuse the cache
+`rutter open` fills):
+
+```sh
+cargo test -p rutter-engine-cdp --test integration -- --ignored
+cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
+cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
+cargo test -p rutter-integration-tests --test http_e2e -- --ignored
+cargo test -p rutter-engine-cdp --test screencast -- --ignored
+```
+
+Corpus harnesses:
+
+```sh
+scripts/smoke_open.sh    # 10 real sites through `rutter open`, pass/fail summary
+scripts/benchmark.sh     # 20-site navigate+snapshot benchmark, 90 % success bar
+```
+
+## 4. Quality gates
+
+CI runs on every push/PR, identical to the local checks in
+[`CONTRIBUTING.md`](../CONTRIBUTING.md):
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all
+bash scripts/check_headers.sh   # every source file opens with a truthful header
+bash scripts/check_encoding.sh  # code and comments stay English-only
+```
+
+Plus `cargo-deny` (`deny.toml`: advisories, licenses, bans) and an
+integration job that runs the `#[ignore]`d suites with a cached
+engine. Release archives are cut by cargo-dist on tags
+(`.github/workflows/release.yml`). The benchmark bar (≥ 90 % click
+hit rate on the corpus) gates releases.

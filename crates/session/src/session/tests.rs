@@ -514,7 +514,7 @@ impl PageHandle for BrokenLens {
 
 #[tokio::test]
 async fn screenshot_capture_errors_map_to_the_internal_taxonomy() {
-    // TOOL_SPEC §4: capture errors surface as `ActionError::Internal` —
+    // docs/tool-catalog.md §4: capture errors surface as `ActionError::Internal` —
     // the taxonomy every action failure uses — not as a raw engine
     // error.
     let session = session_over(Arc::new(SinglePageContext(Arc::new(BrokenLens))));

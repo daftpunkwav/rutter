@@ -2,7 +2,7 @@
 //!
 //! Responsibilities:
 //! - Classify actions and evaluate `RuleSet + Action + URL -> Verdict`
-//!   as a pure function (blueprint §7.6).
+//!   as a pure function (docs/policy.md).
 //! - Parse the TOML policy configuration (action class x URL pattern ->
 //!   verdict).
 //! - Park actions that require approval and hand decisions back to the
@@ -11,7 +11,7 @@
 //! Boundary: pure computation plus parked-future bookkeeping. Rule and
 //! verdict data have no I/O; dangerousness is decided by rutter's
 //! rules, never by the agent's self-declaration — that is the point of
-//! supervision (blueprint §7.6). File reading and event publishing live
+//! supervision (docs/policy.md). File reading and event publishing live
 //! in the callers.
 
 // Restriction lints are denied workspace-wide; tests may use plain

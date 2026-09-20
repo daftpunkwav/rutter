@@ -4,7 +4,7 @@
 //! - Define the [`event::Event`] vocabulary and the [`envelope::Envelope`]
 //!   that carries it with a sequence number and RFC 3339 timestamp.
 //! - Publish fire-and-forget on a tokio broadcast bus; publishing never
-//!   blocks action execution (blueprint §7.5).
+//!   blocks action execution (docs/events.md).
 //! - Keep a bounded per-session ring so the dashboard can backfill
 //!   history on connect through [`backbone::Backbone::replay`].
 //!

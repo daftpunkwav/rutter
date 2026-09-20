@@ -5,7 +5,7 @@ English | [中文](README.zh.md)
 | File | Role |
 |---|---|
 | `action.rs` | `Action` enum, `Origin`, `ScrollDirection` — the request vocabulary |
-| `snapshot.rs` | `Snapshot`/`SnapshotNode` and the YAML rendering (SNAPSHOT_SPEC) |
+| `snapshot.rs` | `Snapshot`/`SnapshotNode` and the YAML rendering (docs/snapshot-format.md) |
 | `reference.rs` | `Reference` — opaque per-page element handle |
 | `cookie.rs` | `Cookie`/`SameSite` as passed to engine backends |
 | `ids.rs` | Newtype ids (`SessionId`, `PageId`, `ContextId`, `ApprovalId`-shaped) |

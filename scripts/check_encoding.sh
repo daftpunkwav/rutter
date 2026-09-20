@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Encoding gate: code, comments, and commit messages are
-# English-only (blueprint §8.6). Fails on any CJK codepoint: Han
+# English-only. Fails on any CJK codepoint: Han
 # (including extensions), Kana, Hangul, CJK punctuation, and fullwidth
 # forms. Binary files are skipped by git grep. The allowlist below
 # holds explicit exceptions; the Chinese documentation mirrors
@@ -16,7 +16,10 @@ pattern='[\x{1100}-\x{11FF}\x{3000}-\x{303F}\x{3040}-\x{30FF}\x{3100}-\x{312F}\x
 
 # Allowlist entries are git pathspecs, for example:
 #   allowlist=('tests/fixtures/**')
-allowlist=('**/*.zh.md' 'scripts/check_encoding.sh')
+# `*.zh.md` and `**/*.zh.md` together cover the Chinese mirrors at any
+# depth on every git build (some treat `**/` as requiring one
+# directory).
+allowlist=('*.zh.md' '**/*.zh.md' 'scripts/check_encoding.sh')
 
 exclusions=()
 for entry in "${allowlist[@]}"; do
@@ -32,9 +35,10 @@ if [[ $status -ge 2 ]]; then
 fi
 
 if [[ $status -eq 0 ]]; then
-  # The language switcher line in the English READMEs is the one
-  # sanctioned CJK use outside the zh mirrors (blueprint §8.6).
-  filter='^[^:]+:[0-9]+:English \| \[中文\]\(README\.zh\.md\)$'
+  # The language switcher line ("English | [中文](<name>.zh.md)") in
+  # the English READMEs and docs is the one sanctioned CJK use
+  # outside the zh mirrors.
+  filter='^[^:]+:[0-9]+:English \| \[中文\]\([A-Za-z0-9.-]+\.zh\.md\)$'
   violations=$(printf '%s\n' "$raw" | grep -vE "$filter")
   if [[ -n $violations ]]; then
     printf 'encoding gate: CJK codepoints found in tracked files:\n' >&2

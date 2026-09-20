@@ -1,6 +1,6 @@
 //! Storage state capture and persistence: cookies plus localStorage.
 //!
-//! Boundary: snapshotting the state the blueprint names (§7.4) and its
+//! Boundary: snapshotting the session state (docs/sessions.md) and its
 //! JSON form. File locations and write timing are the caller's; cookie
 //! transport is the context's. localStorage dumps and restores run as
 //! page scripts owned by `rutter-observe`.
@@ -64,7 +64,7 @@ impl StorageState {
 
     /// Restores cookies context-wide and localStorage on pages whose
     /// origin matches an entry. Best effort: failures degrade to fewer
-    /// restored entries, never an error (blueprint §8.4).
+    /// restored entries, never an error (docs/architecture.md).
     pub async fn restore(
         &self,
         context: &dyn ContextHandle,

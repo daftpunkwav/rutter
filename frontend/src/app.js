@@ -9,7 +9,7 @@
   'use strict';
   var I18N = {};
   // First visit carries the token in the query; the server exchanges it
-  // for an HttpOnly session cookie (blueprint 7.7), so page scripts
+  // for an HttpOnly session cookie (docs/dashboard.md), so page scripts
   // never store or read it. Requests below fall back to the cookie
   // when no query token is present (a refresh, a bookmarked path).
   var token = new URLSearchParams(window.location.search).get('token');

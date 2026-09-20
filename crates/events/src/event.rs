@@ -3,7 +3,7 @@
 //! Boundary: events are data, derived from what the orchestration layer
 //! does. Screencast frames are not events on the backbone — they flow
 //! as binary WebSocket frames with their own latest-wins backpressure
-//! rule (blueprint §7.5, §7.7).
+//! rule (docs/events.md, docs/dashboard.md).
 
 use serde::{Deserialize, Serialize};
 
@@ -27,7 +27,7 @@ pub enum Event {
         version: String,
     },
     /// The supervisor replaced a dead engine; state before the restart
-    /// is gone and time has passed (blueprint §7.4).
+    /// is gone and time has passed (docs/sessions.md).
     EngineRestarted,
     /// A page opened inside the session's context.
     PageOpened {

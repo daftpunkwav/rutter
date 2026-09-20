@@ -1,4 +1,4 @@
-//! Access control for every dashboard endpoint (blueprint §7.7): the
+//! Access control for every dashboard endpoint (docs/dashboard.md): the
 //! `Host` header must name loopback (DNS rebinding) and the request
 //! must carry the per-launch token, exchanged for an HttpOnly cookie
 //! on the first visit.
@@ -13,7 +13,7 @@ use axum::http::HeaderMap;
 
 use crate::Dashboard;
 
-/// Host header validation: only loopback names pass (blueprint §7.7,
+/// Host header validation: only loopback names pass (docs/dashboard.md,
 /// DNS rebinding). The host name is compared after stripping any port;
 /// a prefix match would let `127.0.0.1.evil.com` through, and the
 /// check runs on every endpoint, including the WebSocket upgrade.
@@ -41,7 +41,7 @@ fn token_ok(state: &Dashboard, headers: &HeaderMap, provided: Option<&String>) -
 }
 
 /// Name of the HttpOnly cookie carrying the dashboard token after the
-/// first visit (blueprint §7.7: the query token is exchanged for a
+/// first visit (docs/dashboard.md: the query token is exchanged for a
 /// cookie on first connect).
 const TOKEN_COOKIE: &str = "rutter_token";
 

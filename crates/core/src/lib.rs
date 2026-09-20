@@ -8,7 +8,7 @@
 //!
 //! Boundary: pure vocabulary only. This crate performs no I/O, contains no
 //! async code, and knows nothing about engines or transport protocols.
-//! The glossary in `docs/BLUEPRINT.md` §6 is normative for every name
+//! The glossary in `docs/glossary.md` is normative for every name
 //! defined here.
 
 // Restriction lints are denied workspace-wide; tests may use plain

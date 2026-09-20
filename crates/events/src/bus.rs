@@ -2,7 +2,7 @@
 //!
 //! Boundary: tokio broadcast semantics only. `send` never blocks and
 //! never waits for receivers; lagging subscribers lose old envelopes
-//! (they read a `Lagged` error), which matches the blueprint rule that
+//! (they read a `Lagged` error), which matches the rule that
 //! only semantic events must survive — and they do, through the ring
 //! buffers, not through the bus.
 
@@ -32,7 +32,7 @@ impl EventBus {
     pub fn publish(&self, envelope: Envelope) {
         // A send error only means every receiver is gone; the ring keeps
         // the envelope, so dropping the result is the fire-and-forget
-        // contract (blueprint §7.5).
+        // contract (docs/events.md).
         let _ = self.sender.send(envelope);
     }
 

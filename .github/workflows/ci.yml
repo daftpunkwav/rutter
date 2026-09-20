@@ -1,4 +1,4 @@
-# Continuous integration: the release gates of blueprint §9 run on
+# Continuous integration: the release gates of docs/testing.md run on
 # every push and pull request. The integration job downloads the real
 # Chrome for Testing engine (cached by version+platform) and runs the
 # ignored engine tests.

@@ -2,7 +2,7 @@
 //!
 //! Boundary: one connection is one session; the engine starts lazily on
 //! the first tool call through [`launcher::LazyLauncher`], so the server
-//! is MCP-ready before any engine I/O (blueprint §8.5, TOOL_SPEC §1).
+//! is MCP-ready before any engine I/O (docs/architecture.md, docs/tool-catalog.md §1).
 //! stdio owns stdout — nothing else writes to it while serving.
 
 use std::sync::Arc;
@@ -39,7 +39,7 @@ pub async fn run(
     }
     // Policy: the built-in conservative set unless a --policy TOML file
     // overrides it per deployment. Storage states persist under the
-    // cache root (blueprint §7.4).
+    // cache root (docs/sessions.md).
     let state_dir = Some(settings.cache_root.join("sessions"));
     let manager = Arc::new(SessionManager::new(
         Arc::new(launcher::LazyLauncher::new(settings.clone(), headed)),

@@ -11,7 +11,7 @@
 
 只依赖 `core`；除解析 TOML 配置外无 I/O。它从不执行任何东西，也从不
 追问请求者是谁——危险性由规则决定，绝不由 agent 自我声明决定
-（blueprint §7.6）。审批窗口（默认 120 s，超过 24 h 一律拒绝）位于
+（docs/policy.md）。审批窗口（默认 120 s，超过 24 h 一律拒绝）位于
 `RuleSet` 上，经配置中的 `approval_timeout_ms` 设置。
 
 ## 消费者

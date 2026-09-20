@@ -1,7 +1,7 @@
 //! Cookies as part of the domain vocabulary.
 //!
 //! Boundary: pure data passed to engine backends. Persistence across
-//! restarts (storage state) is a session-layer concern (blueprint §7.4).
+//! restarts (storage state) is a session-layer concern (docs/sessions.md).
 
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +24,7 @@ pub struct Cookie {
     pub same_site: Option<SameSite>,
     /// Expiry as seconds since the Unix epoch; `None` is a session
     /// cookie. Captured storage state preserves this so logins survive
-    /// restarts (blueprint §7.4).
+    /// restarts (docs/sessions.md).
     pub expires: Option<f64>,
 }
 

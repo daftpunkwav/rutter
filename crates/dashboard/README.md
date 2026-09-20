@@ -9,7 +9,7 @@ human approval decisions back to the broker.
 ## Boundary
 
 Observation plus verdict submission — the dashboard never executes
-actions (blueprint §5). It reads the event backbone (replay, then
+actions (docs/architecture.md). It reads the event backbone (replay, then
 live), pulls screencast frames only while a viewer watches, and posts
 decisions to the same broker the sessions park on. Every endpoint goes
 through one gate: loopback `Host` check + token (query or HttpOnly

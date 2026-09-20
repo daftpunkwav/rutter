@@ -8,7 +8,7 @@ use thiserror::Error;
 /// Why a session operation failed.
 #[derive(Debug, Error)]
 pub enum SessionError {
-    /// A typed action failure from the blueprint §7.3 taxonomy.
+    /// A typed action failure from the docs/tool-catalog.md §3 taxonomy.
     #[error("{0}")]
     Action(#[from] ActionError),
 

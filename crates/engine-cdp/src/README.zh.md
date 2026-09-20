@@ -14,5 +14,5 @@
 | `error.rs` | `with_deadline` 包装器 + 把 CDP 错误折入 `EngineError` |
 
 绝不让 chromiumoxide 类型出现在 `pub` 签名上——`rutter-engine` 的
-trait 是唯一出口（blueprint §5）。每个 CDP 调用都带 deadline；任何
+trait 是唯一出口（docs/architecture.md）。每个 CDP 调用都带 deadline；任何
 调用都不许裸挂。

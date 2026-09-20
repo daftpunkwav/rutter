@@ -1,8 +1,8 @@
 //! Session and auto-wait configuration.
 //!
 //! Boundary: numeric policy for one process. The values are defaults
-//! pinned by `docs/TOOL_SPEC.md` §3; the `wait_for` budget default is
-//! pinned by the MCP tool layer (TOOL_SPEC §4), not here. The approval
+//! pinned by `docs/tool-catalog.md` §3; the `wait_for` budget default is
+//! pinned by the MCP tool layer (docs/tool-catalog.md §4), not here. The approval
 //! window lives on the policy's [`rutter_policy::RuleSet`], which the
 //! session reads directly.
 
@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use rutter_engine::config::ContextConfig;
 
-/// Defaults for one server process (blueprint §7.8 tool semantics).
+/// Defaults for one server process (docs/tool-catalog.md tool semantics).
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
     /// Maximum pages per session context.
