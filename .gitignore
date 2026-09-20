@@ -28,10 +28,10 @@ CLAUDE.local.md
 
 # Local agent planning artifacts
 .zcode/
+.claude/
 
 # Insta snapshot journals and inline-snapshot backups
 *.pending-snap
 *.snap.new
 
-# Local review/audit reports (working notes, not shipped docs)
 /docs-local/
