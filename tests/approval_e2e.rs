@@ -1,7 +1,7 @@
-//! M2 acceptance: approval flows (grant / deny / timeout) against the
+//! Acceptance for approval flows (grant / deny / timeout) against the
 //! real stack — an MCP client drives `rutter serve` with a policy that
 //! requires approval for pointer actions, and decisions arrive through
-//! the dashboard HTTP API (blueprint §7.6, §10).
+//! the dashboard HTTP API (blueprint §7.6).
 //!
 //! `#[ignore]`d by default: the CI integration job (or a developer)
 //! runs them once the engine is in the cache.

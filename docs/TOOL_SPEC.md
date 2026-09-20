@@ -131,7 +131,7 @@ allowed — the next `navigate` opens a new one.
 `{ cookies: [{ name, value, domain, path?, secure?, http_only?,
 same_site? }] }` → text confirmation. Cookies apply to the session's
 Context (context isolation, blueprint §6). `same_site` is
-`strict|lax|none`; persistence across restarts is M2 (storage state).
+`strict|lax|none`; persistence across restarts works through storage state (see §4.2).
 
 ### close_session
 `{}` → text confirmation. Closes the session's pages and context and
@@ -144,12 +144,12 @@ when a session closes.
 ## 5. Event backbone (not a tool)
 
 The event backbone of blueprint §7.5 (typed events, bus, per-session
-ring, replay) runs inside the server; M1 has no MCP notifications or
-event tools. The dashboard (M2) consumes replay over WebSocket.
+ring, replay) runs inside the server. MCP has no notifications or
+event tools; the dashboard consumes replay over WebSocket.
 
-## 6. Acceptance (M1 gate)
+## 6. Acceptance suites
 
-Three e2e task classes must pass against the real engine
+Three e2e task classes pass against the real engine
 (`#[ignore]`-gated integration tests driving the built binary over
 stdio):
 

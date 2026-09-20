@@ -7,10 +7,11 @@ and the canonical engineering reference is
 
 ## Ground rules
 
-- **English everywhere.** Code, comments, docs, commit messages,
-  issues, and PRs are English-only. CI enforces this with the encoding
-  gate (`scripts/check_encoding.sh`); the only future exception is
-  test fixtures under `tests/fixtures/**` (open decision OD-1).
+- **English is the working language.** Code, comments, commit
+  messages, issues, and PRs are English-only; the encoding gate
+  (`scripts/check_encoding.sh`) enforces this. Documentation ships as
+  English `README.md` files with Chinese `README.zh.md` mirrors —
+  update the two together, and keep prose out of code comments.
 - **The blueprint is normative.** Non-goals are enforced at review:
   no rendering engine, no stealth/anti-fingerprinting, no consumer
   browser UI, no cloud service. Scope creep is rejected by default.
@@ -43,9 +44,9 @@ and the canonical engineering reference is
 
    ```sh
    cargo test -p rutter-engine-cdp --test integration -- --ignored
-   cargo test -p rutter --test mcp_e2e -- --ignored
-   cargo test -p rutter --test approval_e2e -- --ignored
-   cargo test -p rutter --test http_e2e -- --ignored
+   cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
+   cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
+   cargo test -p rutter-integration-tests --test http_e2e -- --ignored
    cargo test -p rutter-engine-cdp --test screencast -- --ignored
    ```
 

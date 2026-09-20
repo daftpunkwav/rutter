@@ -1,4 +1,4 @@
-//! M3 acceptance: the streamable HTTP transport (blueprint §3, §10).
+//! Acceptance for the streamable HTTP transport (blueprint §3, §7.8).
 //! An MCP client connects to `rutter serve --http` over HTTP, runs a
 //! navigate + snapshot round-trip, and the DNS-rebinding Host check
 //! rejects foreign hosts.

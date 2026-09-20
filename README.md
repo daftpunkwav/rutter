@@ -1,5 +1,7 @@
 # rutter
 
+English | [中文](README.zh.md)
+
 A single-binary, headless browser orchestration service for AI agents,
 written in Rust. rutter manages a real browser engine as a supervised
 child process, exposes a structured view of pages (accessibility-tree
@@ -7,17 +9,20 @@ snapshots) instead of pixels, executes typed actions with deterministic
 semantics, and offers a local supervision dashboard with human approval
 for sensitive operations.
 
-Status: milestones M0-M2 work end to end — `rutter open` prints
-snapshots, `rutter serve` speaks MCP over stdio with the full tool
-surface (navigate, snapshot, click, type, tabs, cookies, ...) against a
-real, supervised Chrome for Testing engine, sessions carry a policy
-with human approvals, storage state survives engine restarts, and the
-supervision dashboard (live screencast, events, approvals) serves on
-localhost. Packaging and the public 0.1.0 release remain (milestone
-M3). The canonical architecture reference is
-[`docs/BLUEPRINT.md`](docs/BLUEPRINT.md); contracts:
-[`docs/SNAPSHOT_SPEC.md`](docs/SNAPSHOT_SPEC.md) and
-[`docs/TOOL_SPEC.md`](docs/TOOL_SPEC.md).
+## Documentation
+
+| Document | Role |
+|----------|------|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Reading-order entry point: crates, runtime shape, contracts |
+| [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md) | Architecture blueprint: design rules and normative decisions (§-referenced from code) |
+| [`docs/TOOL_SPEC.md`](docs/TOOL_SPEC.md) | The MCP tool surface: parameters, semantics, error mapping |
+| [`docs/SNAPSHOT_SPEC.md`](docs/SNAPSHOT_SPEC.md) | The snapshot format: serialization, references, token budget |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Working rules and local gates |
+
+Every source directory carries a `README.md` stating its
+responsibility, boundary, and file map — start at
+[`crates/README.md`](crates/README.md). Each README has a Chinese
+mirror named `README.zh.md`; the two are updated together.
 
 ## Usage
 
@@ -69,6 +74,15 @@ use capped exponential backoff, and a sliding-window circuit breaker
 stops restart storms — a crashed engine surfaces as an error on
 affected operations, never as a crash of rutter.
 
+### Policy and approvals
+
+Actions are classified (navigation, pointer, keyboard, selection,
+scroll, cookies) and judged against a rule set of `class × URL pattern
+→ verdict` loaded from a TOML file. Verdicts are `allow`, `deny`, and
+`require_approval`; navigations are judged on their canonicalized
+target URL, and an unreadable page fails closed to a human decision.
+Cookies require approval by default.
+
 ## Installation
 
 From source (requires Rust 1.88+):
@@ -84,22 +98,16 @@ browser engine itself is not bundled — rutter downloads Chrome for
 Testing into its cache on first use (or point `--engine-executable`
 at an existing binary).
 
-Contributions follow [`CONTRIBUTING.md`](CONTRIBUTING.md); the
-architecture map is [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
 ## Repository layout
 
 ```
 rutter/
-├── docs/         # blueprint, snapshot spec (the contracts)
+├── docs/         # blueprint, architecture, tool and snapshot specs
 ├── scripts/      # quality-gate helpers run by CI
 ├── crates/       # workspace members (see below)
 ├── tests/        # cross-crate acceptance tests driving the binary
 └── frontend/     # dashboard sources (vanilla JS, no build step)
 ```
-
-Every source directory carries a README stating its responsibility,
-boundary, and file map — start at [`crates/README.md`](crates/README.md).
 
 | Crate | Responsibility |
 |-------|----------------|
@@ -129,7 +137,7 @@ Quality gates, identical to CI:
 
 ```sh
 bash scripts/check_headers.sh   # every source file opens with a header
-bash scripts/check_encoding.sh  # tracked text files stay English-only
+bash scripts/check_encoding.sh  # code and comments stay English-only
 ```
 
 Engine integration tests need a real binary and are `#[ignore]`d by
@@ -140,17 +148,18 @@ fills):
 cargo test -p rutter-engine-cdp --test integration -- --ignored
 cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
+cargo test -p rutter-integration-tests --test http_e2e -- --ignored
 cargo test -p rutter-engine-cdp --test screencast -- --ignored
 ```
 
-`scripts/benchmark.sh` runs the 20-site navigate+snapshot benchmark
-(M2 gate: 90 percent success).
-
-`scripts/smoke_open.sh` runs the M0 acceptance corpus (10 real sites)
-and prints a pass/fail summary.
+`scripts/smoke_open.sh` drives 10 real sites through `rutter open` and
+prints a pass/fail summary; `scripts/benchmark.sh` runs the 20-site
+navigate+snapshot benchmark with a 90 % success bar.
 
 ## Policies
 
 - Commits follow Conventional Commits, English, imperative mood.
-- License: Apache-2.0 (the documented default of open decision OD-3 in
-  the blueprint; see `LICENSE`).
+- Code, comments, and commit messages are English-only (enforced by
+  the encoding gate); documentation ships as English `README.md` with
+  Chinese `README.zh.md` mirrors.
+- License: Apache-2.0 (see [`LICENSE`](LICENSE)).

@@ -1,9 +1,8 @@
 # Architecture
 
-> rutter 0.1.0 · This document mirrors the canonical reference in
-> [`BLUEPRINT.md`](BLUEPRINT.md) at release time: what exists, how the
-> pieces talk, and which boundaries hold. The blueprint stays
-> normative; this file is the reading-order entry point.
+> This document is the reading-order entry point: what exists, how
+> the pieces talk, and which boundaries hold. The normative rules and
+> contracts are in [`BLUEPRINT.md`](BLUEPRINT.md).
 
 ## What rutter is
 
@@ -90,9 +89,9 @@ human ──browser──► dashboard (127.0.0.1) ──decisions──► brok
 
 CI runs on every push/PR: fmt, clippy `-D warnings`, the full test
 suite, the header gate (every source file opens with a truthful
-header), and the encoding gate (tracked text files stay English-only;
-CJK is reserved for future fixtures under an explicit allowlist,
-open decision OD-1). Integration and acceptance suites (engine, MCP
+header), and the encoding gate (code and comments stay English-only;
+documentation ships as English `README.md` with Chinese `README.zh.md`
+mirrors, which the gate exempts). Integration and acceptance suites (engine, MCP
 e2e, approval flows, screencast, HTTP transport) drive the real engine
 and are `#[ignore]`d locally, run by the CI integration job with a
 cached engine. Release archives are cut by cargo-dist on tags

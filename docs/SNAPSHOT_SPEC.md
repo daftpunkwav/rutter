@@ -38,8 +38,8 @@ then converts the returned JSON with `observe::snapshot_from_response()`.
 - `viewport` / `scroll` — CSS pixels of the page's viewport and scroll
   position. The budget consumes only `viewport`: node rects are
   viewport-relative (§3), so scroll offsets play no part in
-  classification and `scroll` is reserved for future consumers
-  (screencast framing in milestone M2). If the viewport is absent or
+  classification and `scroll` is consumed by the dashboard’s screencast
+  framing. If the viewport is absent or
   malformed the converter treats it as unbounded (no viewport-first
   folding) and relies on the remaining budgets.
 - `root` — one node for the document root (role `root`).
