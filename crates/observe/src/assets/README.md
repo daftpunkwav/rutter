@@ -1,5 +1,7 @@
 # assets/ — in-page scripts
 
+English | [中文](README.zh.md)
+
 `serializer.js` runs inside the page (injected via `evaluate`) and
 serializes the accessibility tree to the JSON envelope
 `response.rs` parses: role/name/ref/rect nodes, viewport report, and

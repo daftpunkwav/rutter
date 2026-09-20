@@ -1,5 +1,7 @@
 # src/ — file map
 
+English | [中文](README.zh.md)
+
 | File | Role |
 |---|---|
 | `action.rs` | `Action` enum, `Origin`, `ScrollDirection` — the request vocabulary |

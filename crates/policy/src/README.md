@@ -1,5 +1,7 @@
 # src/ — file map
 
+English | [中文](README.zh.md)
+
 | File | Role |
 |---|---|
 | `lib.rs` | Public exports: `RuleSet`, `Verdict`, `ApprovalBroker` |

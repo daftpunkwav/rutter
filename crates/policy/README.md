@@ -1,5 +1,7 @@
 # rutter-policy/ — supervision rules
 
+English | [中文](README.zh.md)
+
 Pure verdict computation plus the approval state machine. A TOML rule
 set maps action class × URL pattern to `Allow | Deny |
 RequireApproval`; the `ApprovalBroker` parks require-approval actions,

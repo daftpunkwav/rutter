@@ -1,5 +1,7 @@
 # actions/ — action execution
 
+English | [中文](README.zh.md)
+
 | File | Role |
 |---|---|
 | `mod.rs` | `Executor::run` (one action → auto-wait → dispatch → settle → snapshot) and `PageOps` (url/snapshot/wait_for); `phase_rank` for the auto-wait budgets |

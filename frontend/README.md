@@ -1,5 +1,7 @@
 # frontend/ — dashboard sources
 
+English | [中文](README.zh.md)
+
 Vanilla JS with no build step: the dashboard crate embeds everything
 here at compile time (`include_str!`). Plain ES2017+, English strings
 via the i18n catalog, no framework, no npm.

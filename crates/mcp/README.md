@@ -1,5 +1,7 @@
 # rutter-mcp/ — MCP tool surface
 
+English | [中文](README.zh.md)
+
 Exposes `docs/TOOL_SPEC.md` as an rmcp server: stdio and streamable
 HTTP transports, one MCP connection = one session. Snapshots return as
 text (with the `… truncated` marker), screenshots as image blocks,

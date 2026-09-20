@@ -1,5 +1,7 @@
 # rutter/ (cli) — binary entry
 
+English | [中文](README.zh.md)
+
 The `rutter` binary and the composition root: the only place that
 depends on every workspace crate. Three entry modes — browse (headed
 window, no MCP), serve (MCP over stdio or `--http`, optional

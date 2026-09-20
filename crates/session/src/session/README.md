@@ -1,5 +1,7 @@
 # session/ — the Session type
 
+English | [中文](README.zh.md)
+
 | File | Role |
 |---|---|
 | `mod.rs` | `Session` + `PageSlot`/`PageInfo`: active page, execute, tabs operations, storage persistence, screencast, close |

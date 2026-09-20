@@ -1,5 +1,7 @@
 # src/ — file map
 
+English | [中文](README.zh.md)
+
 | Item | Role |
 |---|---|
 | `lib.rs` | Public exports; the crate is the engine/observe/policy/events junction |

@@ -1,5 +1,7 @@
 # src/ — file map
 
+English | [中文](README.zh.md)
+
 | File | Role |
 |---|---|
 | `event.rs` | The event vocabulary (serde `tag = "type"`, snake_case) |

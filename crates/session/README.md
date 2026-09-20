@@ -1,5 +1,7 @@
 # rutter-session/ — orchestration
 
+English | [中文](README.zh.md)
+
 The only place where engine, observation, policy, and events meet: one
 `Session` per MCP client owns a browser context, executes typed actions
 with three-phase auto-wait, evaluates policy and parks approvals,

@@ -1,5 +1,7 @@
 # supervisor/ — keep one engine alive
 
+English | [中文](README.zh.md)
+
 Owns the current engine slot: launch with retry/backoff, heartbeat
 health probes, capped restarts behind a sliding-window circuit breaker,
 and clean shutdown.

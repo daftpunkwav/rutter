@@ -1,5 +1,7 @@
 # crates/ — workspace members
 
+English | [中文](README.zh.md)
+
 Ten crates, one dependency direction: everything flows from `core`
 outward, and only `cli` (the composition root) sees all of them. The
 seams exist so that each crate has one reason to change

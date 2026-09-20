@@ -1,5 +1,7 @@
 # builder/ — snapshot pipeline
 
+English | [中文](README.zh.md)
+
 | File | Role |
 |---|---|
 | `mod.rs` | `build()`: convert → cut depth → fold sibling runs → viewport culling → fit to the character budget → render |

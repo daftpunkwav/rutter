@@ -1,5 +1,7 @@
 # rutter-core/ — domain vocabulary
 
+English | [中文](README.zh.md)
+
 The protocol-neutral language every other crate speaks: typed actions,
 snapshots, element references, cookies, ids, and the error taxonomy
 agents see. Pure data plus small pure functions — no I/O, no async, no

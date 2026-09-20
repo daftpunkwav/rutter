@@ -1,5 +1,7 @@
 # rutter-engine/ — engine traits, download, supervision
 
+English | [中文](README.zh.md)
+
 Defines what a browser engine is for the rest of rutter (`Engine`,
 `ContextHandle`, `PageHandle` traits) and owns everything that keeps
 one alive: the Chrome-for-Testing downloader and the supervisor with

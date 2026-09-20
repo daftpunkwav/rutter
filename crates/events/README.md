@@ -1,5 +1,7 @@
 # rutter-events/ — event backbone
 
+English | [中文](README.zh.md)
+
 Typed semantic events (serde) with a global sequence number and RFC
 3339 timestamp, fanned out on a tokio broadcast bus and kept in a
 bounded per-session ring for replay.

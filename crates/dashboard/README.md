@@ -1,5 +1,7 @@
 # rutter-dashboard/ — supervision dashboard
 
+English | [中文](README.zh.md)
+
 Local web server (127.0.0.1, per-launch token) streaming events and
 screencast frames to the embedded vanilla-JS frontend, and submitting
 human approval decisions back to the broker.

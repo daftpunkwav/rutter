@@ -1,5 +1,7 @@
 # rutter-observe/ — snapshot building
 
+English | [中文](README.zh.md)
+
 Turns a serialized DOM tree into a token-budgeted accessibility
 snapshot. Owns the in-page JavaScript (serializer, resolver, wait,
 storage helpers) that session injects through an engine's `evaluate`.

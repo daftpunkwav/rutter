@@ -1,5 +1,7 @@
 # tests/ — real-engine integration
 
+English | [中文](README.zh.md)
+
 Runs against a downloaded chrome-headless-shell and is `#[ignore]`d by
 default (CI's integration job runs them explicitly):
 

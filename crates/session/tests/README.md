@@ -1,5 +1,7 @@
 # tests/ — per-crate functional tests
 
+English | [中文](README.zh.md)
+
 Tests the crate through its **public API** only: the manager → session
 flow, the approval grant path, and the wait_for contract, all against
 the scripted engine in `common/` — no real browser.

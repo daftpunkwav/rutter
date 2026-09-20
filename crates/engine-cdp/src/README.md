@@ -1,5 +1,7 @@
 # src/ — file map
 
+English | [中文](README.zh.md)
+
 All implementation modules are private on purpose; the crate boundary
 is `launch.rs`'s `CdpLauncher` alone.
 

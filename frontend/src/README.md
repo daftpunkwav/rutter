@@ -1,5 +1,7 @@
 # src/ — dashboard client
 
+English | [中文](README.zh.md)
+
 | File | Role |
 |---|---|
 | `index.html` | Page shell: panes (timeline, approvals, live view), `data-i18n` hooks |
