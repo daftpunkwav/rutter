@@ -8,17 +8,26 @@ use std::time::Duration;
 
 use thiserror::Error;
 
+use rutter_core::error::TransportCause;
+
 /// Why an engine-layer operation failed.
 #[derive(Debug, Clone, Error)]
 pub enum EngineError {
     /// The page could not be loaded: bad URL, DNS, TLS, or a server
     /// error. Distinguished from internal bugs so callers can treat it
     /// as input feedback rather than a defect.
+    ///
+    /// `cause` is classified by the backend that saw the failure. The
+    /// vocabulary of network errors belongs to whoever speaks the
+    /// protocol, so a caller above this crate never matches on error
+    /// text (docs/architecture.md).
     #[error("navigation to '{url}' failed: {detail}")]
     NavigationFailed {
         /// URL that was requested.
         url: String,
-        /// Transport-level detail from the backend.
+        /// Transport-level classification of the failure.
+        cause: TransportCause,
+        /// Backend detail, kept for the human-readable message.
         detail: String,
     },
 

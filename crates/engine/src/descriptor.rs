@@ -27,8 +27,15 @@ impl fmt::Display for EngineBackend {
     }
 }
 
-/// What an engine backend can do; consumers must check before relying on
-/// an optional capability.
+/// What an engine backend reports about itself.
+///
+/// This is self-reported metadata: it reaches diagnostics and the
+/// `EngineStarted` event. It is not yet a behavior gate — no code path
+/// consults a capability before attempting the operation, and an
+/// unsupported operation surfaces as [`crate::error::EngineError::
+/// Unsupported`] from the backend instead. A second engine is the moment
+/// to decide which of these become checked; until then the fields say
+/// what the one backend is, not what callers may assume.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineCapabilities {
     /// Whether the backend can run headless.

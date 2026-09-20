@@ -25,6 +25,13 @@ pub enum SessionError {
         detail: String,
     },
 
+    /// The session has no open page to observe. Distinct from an engine
+    /// failure: nothing is wrong with the browser, there is simply no tab
+    /// yet — and opening one would be an action, which an observation must
+    /// never take (docs/architecture.md: the dashboard executes none).
+    #[error("no open page to observe")]
+    NoOpenPage,
+
     /// A bug was contained at the session boundary; never a silent pass.
     #[error("internal session error: {detail}")]
     Internal {
@@ -42,6 +49,10 @@ impl SessionError {
             Self::Capacity { .. } => "close one of this server's sessions before opening \
                  another; the cap bounds concurrent clients, not pages"
                 .to_owned(),
+            Self::NoOpenPage => {
+                "navigate to a URL or select a page first; observation shows what already exists"
+                    .to_owned()
+            }
             Self::Internal { detail } => {
                 format!("an internal bug was contained; report it, citing: {detail}")
             }
@@ -63,6 +74,7 @@ mod tests {
             SessionError::Capacity {
                 detail: "probe".to_owned(),
             },
+            SessionError::NoOpenPage,
             SessionError::Internal {
                 detail: "probe".to_owned(),
             },

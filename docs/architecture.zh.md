@@ -24,20 +24,23 @@ crate 永远不 import 排在它下方的 crate。Rust 在语言层面禁止循�
 | Crate | 依赖 | 唯一职责 |
 |---|---|---|
 | `rutter-core` | serde | 领域词汇：`Action`、`Snapshot`、`Reference`、错误 |
-| `rutter-events` | core | 事件类型、broadcast bus、环形缓冲、replay |
 | `rutter-engine` | core | `Engine`/`Page` trait、supervisor、引擎下载器 |
 | `rutter-engine-cdp` | engine, core | CDP 实现细节（chromiumoxide）——仅此而已 |
 | `rutter-observe` | core | 注入式序列化脚本 + 纯 DOM→`Snapshot` 构建器 |
 | `rutter-policy` | core | 规则集、verdict 评估、approval broker |
+| `rutter-events` | core, policy | 事件类型、broadcast bus、环形缓冲、replay |
 | `rutter-session` | core, events, engine, observe, policy | 编排：执行、context、storage state、恢复 |
 | `rutter-mcp` | core, session | MCP 宿主（rmcp）与工具面 |
 | `rutter-dashboard` | core, events, policy, session | HTTP/WS 服务器、内嵌前端、决策提交 |
-| `rutter`（cli） | 以上全部 | 二进制入口模式、组合根、配置加载 |
+| `rutter`（cli） | 以上除 `events` 外的全部（经传递引入） | 二进制入口模式、组合根、配置加载 |
 
 这些 seam 存在的理由：
 
 - **`core` 对上层一无所知。** 它是纯词汇；更换引擎或传输层永远
   不会触及它。
+- **`events` 只因一个字段接触 `policy`。** 审批事件携带 policy 构造
+  的简报，因为只有 policy 知道类别、被判定的规范化 URL、以及说话的
+  那条规则。骨干里其余部分不认识 policy。
 - **`engine-cdp` 是唯一允许说 CDP 的 crate。** 更换或新增引擎被
   限制在一个 crate 加 CLI 中的一个注册点
   （[`EngineLauncher`](../crates/engine/src/supervisor/mod.rs)）。
@@ -116,20 +119,21 @@ chrome-headless-shell (child process)   Human browser (dashboard viewer)
 - **敌意输入降级，绝不 panic。** 快照管线把任意页面数据当作不可信
   输入：截断、折叠、标记未知而不是失败。`unwrap`/`expect`/`panic`
   只允许出现在测试与进程初始化中（clippy 拒绝）。
-- **事件永不阻塞工作。** 发布是 fire-and-forget；语义事件通过
+- **事件绝不等待消费者。** 发布是 fire-and-forget；语义事件通过
   有界的 per-session ring 为迟到者保留，而 screencast 帧在负载下
   可丢弃（[events](events.zh.md)）。
 - **确定性失败不重试。** 带上限的指数退避只用于引擎启动/连接；
   熔断器阻止重启风暴。
 
-性能目标，由 `scripts/benchmark.sh` 的语料基准度量：
+性能目标（设计目标；没有自动化基准度量它们——`scripts/benchmark.sh`
+只报告 navigate+snapshot 成功率）：
 
 | 指标 | 目标 |
 |---|---|
 | rutter 启动 → MCP 就绪（引擎惰性） | < 100 ms |
 | 快照往返，热引擎，p50 | < 150 ms |
 | 编排层 RSS（不含引擎） | < 50 MB |
-| 每引擎进程的并发 context | ≥ 50（有上限） |
+| 每引擎进程的并发 context | 由 `max_sessions` 封顶（默认 8） |
 | 仪表盘帧延迟（页面变化 → 像素） | < 500 ms |
 
 ## 文档地图

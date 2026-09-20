@@ -4,6 +4,7 @@
 use super::*;
 use crate::mock::{MockContext, MockPage};
 use rutter_core::ids::ContextId;
+use rutter_policy::Verdict;
 use serde_json::{Value, json};
 
 fn session_over(context: Arc<dyn ContextHandle>) -> Session {
@@ -108,7 +109,7 @@ async fn close_page_removes_the_page_and_promotes_a_remaining_one() {
     // Sessions track a second page only through recovery; inject it
     // the way `recover` would (same-module test, private fields).
     let (other_id, other_handle) = context.open_page().await.expect("second page");
-    session.lock_pages().push(PageSlot {
+    session.registry().append_for_test(PageSlot {
         id: other_id.clone(),
         url: "https://other.example".to_owned(),
         handle: other_handle,
@@ -167,7 +168,7 @@ async fn select_page_switches_activity_and_unknown_pages_fail() {
 
     let (first, _) = session.active_page_for_test().await;
     let (second, second_handle) = context.open_page().await.expect("second page");
-    session.lock_pages().push(PageSlot {
+    session.registry().append_for_test(PageSlot {
         id: second.clone(),
         url: "https://other.example".to_owned(),
         handle: second_handle,
@@ -415,7 +416,7 @@ async fn url_refresh_targets_the_page_the_action_ran_on() {
     let other = Arc::new(MockPage::new());
     other.set_url("https://b.example/other");
     let b_id = PageId::new("ctx-single:page-b");
-    session.lock_pages().push(PageSlot {
+    session.registry().append_for_test(PageSlot {
         id: b_id.clone(),
         url: "https://b.example/other".to_owned(),
         handle: other,
@@ -724,5 +725,225 @@ async fn an_unreadable_page_still_honors_class_level_denies() {
             Err(SessionError::Action(ActionError::ApprovalDenied { .. }))
         ),
         "a deny default denies regardless of URL information: {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_cookie_approval_asks_about_the_cookies_it_writes() {
+    // The regression: a cookie write had no `Action` variant to carry, so
+    // the request went out as `reload` and a person approving "reload"
+    // authorized the write instead. The brief must name its own effect.
+    let session = session_with_policy(
+        Arc::new(MockContext::new()),
+        RuleSet::default_set().with_approval_timeout(Duration::from_millis(100)),
+    );
+    let cookie = rutter_core::cookie::Cookie {
+        name: "session".to_owned(),
+        value: "1".to_owned(),
+        domain: "shop.example".to_owned(),
+        path: None,
+        secure: false,
+        http_only: false,
+        same_site: None,
+        expires: None,
+    };
+
+    let error = session
+        .set_cookies(std::slice::from_ref(&cookie))
+        .await
+        .expect_err("the default set parks cookie writes");
+    assert!(
+        matches!(
+            error,
+            SessionError::Action(ActionError::ApprovalTimedOut { .. })
+        ),
+        "nobody answers in this test, so the write times out: {error:?}"
+    );
+
+    let brief = session
+        .backbone()
+        .replay(&SessionId::new("s-test"))
+        .iter()
+        .find_map(|envelope| match &envelope.event {
+            Event::ApprovalRequested { brief, .. } => Some(brief.clone()),
+            _ => None,
+        })
+        .expect("a human was asked");
+    assert_eq!(brief.class, rutter_policy::ActionClass::Cookies);
+    assert_eq!(
+        brief.effect,
+        ApprovalEffect::Cookies { count: 1 },
+        "the request says what a grant authorizes"
+    );
+    assert!(
+        !matches!(brief.effect, ApprovalEffect::Action { .. }),
+        "no unrelated action stands in for a cookie write"
+    );
+}
+
+#[tokio::test]
+async fn a_supervised_decision_leaves_an_audit_line() {
+    // The backbone is the live view and a closed session's ring is dropped
+    // with it; the audit is what answers "what was asked, and how did it
+    // end" after the fact (docs/policy.md).
+    let dir = tempfile::tempdir().expect("temp dir");
+    let session = Session::new(
+        SessionId::new("s-audit"),
+        Arc::new(MockContext::new()),
+        Arc::new(Backbone::new()),
+        SessionConfig::default(),
+        Arc::new(RuleSet::default_set().with_approval_timeout(Duration::from_millis(50))),
+        Arc::new(ApprovalBroker::new()),
+        Some(dir.path().join("s-audit.storage.json")),
+    );
+    let cookie = rutter_core::cookie::Cookie {
+        name: "session".to_owned(),
+        value: "1".to_owned(),
+        domain: "shop.example".to_owned(),
+        path: None,
+        secure: false,
+        http_only: false,
+        same_site: None,
+        expires: None,
+    };
+
+    session
+        .set_cookies(std::slice::from_ref(&cookie))
+        .await
+        .expect_err("nobody answers this one");
+
+    let written =
+        std::fs::read_to_string(dir.path().join("approvals.jsonl")).expect("the audit file exists");
+    let lines: Vec<&str> = written.lines().collect();
+    assert_eq!(lines.len(), 1, "one decision, one line");
+    let record: Value = serde_json::from_str(lines[0]).expect("one JSON object per line");
+    assert_eq!(record["session"], "s-audit");
+    assert_eq!(record["class"], "cookies");
+    assert_eq!(record["outcome"], "timed_out");
+    assert_eq!(record["effect"], "1 cookie write(s)");
+    assert_eq!(record["basis"], "rule 1");
+    assert!(
+        record["request_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("apr-")),
+        "the broker id is recorded: {record}"
+    );
+    assert!(
+        record["at"].as_str().is_some_and(|at| at.contains('T')),
+        "timestamps are RFC 3339: {record}"
+    );
+}
+
+#[tokio::test]
+async fn a_cancelled_wait_is_audited_and_resolved() {
+    // The case control flow alone cannot cover: the client went away, so the
+    // parking future was dropped. The card must still be retired and the
+    // trail must still say the decision ended.
+    let dir = tempfile::tempdir().expect("temp dir");
+    let session = Arc::new(Session::new(
+        SessionId::new("s-cancel"),
+        Arc::new(MockContext::new()),
+        Arc::new(Backbone::new()),
+        SessionConfig::default(),
+        Arc::new(RuleSet::default_set()),
+        Arc::new(ApprovalBroker::new()),
+        Some(dir.path().join("s-cancel.storage.json")),
+    ));
+    let cookie = rutter_core::cookie::Cookie {
+        name: "session".to_owned(),
+        value: "1".to_owned(),
+        domain: "shop.example".to_owned(),
+        path: None,
+        secure: false,
+        http_only: false,
+        same_site: None,
+        expires: None,
+    };
+
+    let parked = {
+        let session = Arc::clone(&session);
+        let cookie = cookie.clone();
+        tokio::spawn(async move { session.set_cookies(std::slice::from_ref(&cookie)).await })
+    };
+    // Let it reach the park, then cancel the caller mid-wait.
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    parked.abort();
+    let _ = parked.await;
+
+    let events = session.backbone().replay(&SessionId::new("s-cancel"));
+    assert!(
+        events.iter().any(|envelope| matches!(
+            envelope.event,
+            Event::ApprovalResolved { granted: false, .. }
+        )),
+        "the dashboard card is retired rather than left dangling"
+    );
+
+    let written = std::fs::read_to_string(dir.path().join("approvals.jsonl"))
+        .expect("the cancelled decision is still audited");
+    let record: Value =
+        serde_json::from_str(written.lines().next().expect("one line")).expect("valid JSON");
+    assert_eq!(record["outcome"], "cancelled");
+    assert_eq!(
+        record["class"], "cookies",
+        "the record says what was pending: {record}"
+    );
+}
+
+#[tokio::test]
+async fn watching_a_page_never_opens_one() {
+    // The dashboard promises observation without effect. This used to run
+    // through the same lookup an action uses, which opens a tab when the
+    // session has none — so asking to watch created the thing watched.
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+
+    assert!(
+        matches!(session.screencast().await, Err(SessionError::NoOpenPage)),
+        "the refusal must name the real cause, not an engine failure"
+    );
+    assert!(
+        context.pages().is_empty(),
+        "a refused observation opened a tab anyway"
+    );
+    assert!(
+        session.pages().await.is_empty(),
+        "the session gained a page it never had"
+    );
+}
+
+#[tokio::test]
+async fn an_action_during_recovery_leaves_no_untracked_page() {
+    // The race the registry gate exists for: recovery read the list out and
+    // wrote a rebuilt one back some time later. An action that opened a
+    // page in between was registered, then overwritten — so its tab stayed
+    // alive in the engine with nothing tracking it.
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+    let (page_id, _) = session.active_page_for_test().await;
+    assert_eq!(context.pages().len(), 1, "the seeded page is open");
+
+    // Stand in for the window recovery owns: read-out done, write-back not.
+    session.registry().begin_recovery();
+    let error = session
+        .execute(Action::Back, Origin::Agent)
+        .await
+        .expect_err("recovery owns the page list");
+    assert!(
+        matches!(
+            error,
+            SessionError::Engine(rutter_engine::error::EngineError::Terminated)
+        ),
+        "the caller is told to retry, not handed a dropped page: {error:?}"
+    );
+    assert_eq!(
+        context.pages().len(),
+        1,
+        "a refused action leaked a live tab into the engine"
+    );
+    assert_eq!(
+        session.pages().await[0].id,
+        page_id,
+        "the tracked page survived the refusal"
     );
 }

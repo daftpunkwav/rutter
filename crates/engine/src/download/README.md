@@ -3,8 +3,8 @@
 English | [中文](README.zh.md)
 
 Resolves a browser binary: explicit override → cache → Chrome for
-Testing stable manifest (TLS), then download, verify, extract, and
-install atomically.
+Testing stable manifest (TLS), then download, extract, and install
+atomically.
 
 | File | Role |
 |---|---|

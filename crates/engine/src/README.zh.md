@@ -16,5 +16,5 @@
 | `download/` | Chrome-for-Testing 解析与安装（见其 README） |
 | `supervisor/` | 心跳、重启、熔断器（见其 README） |
 
-这里的 trait 是本 crate 与 `session` 的全部契约；在后端 crate 里实
-现它们，绝不在本 crate 里调用。
+`session` 只通过这些 trait 驱动引擎；在后端 crate 里实现它们
+（本 crate 的 supervisor 是 crate 内唯一的调用方）。

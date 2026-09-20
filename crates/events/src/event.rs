@@ -4,12 +4,17 @@
 //! does. Screencast frames are not events on the backbone — they flow
 //! as binary WebSocket frames with their own latest-wins backpressure
 //! rule (docs/events.md, docs/dashboard.md).
+//!
+//! `policy` is a dependency for one reason: an approval event carries the
+//! brief policy built, because only policy knows the class, the judged
+//! URL, and the rule behind it. Everything else here speaks `core`.
 
 use serde::{Deserialize, Serialize};
 
 use rutter_core::action::{Action, Origin};
 use rutter_core::error::ActionError;
 use rutter_core::ids::PageId;
+use rutter_policy::ApprovalBrief;
 
 /// A structured fact published on the event backbone.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -75,14 +80,17 @@ pub enum Event {
         /// Why the action failed.
         error: ActionError,
     },
-    /// Policy parked an action until a human decides.
+    /// Policy parked an operation until a human decides.
     ApprovalRequested {
         /// Broker-minted identifier humans answer with.
         request_id: String,
-        /// Page the parked action targets.
+        /// Page the parked operation targets.
         page: PageId,
-        /// The parked action.
-        action: Action,
+        /// What a grant authorizes, the URL it was judged at, and the rule
+        /// that asked (docs/policy.md). The brief travels instead of a bare
+        /// action: an approval must describe its own effect, and the human
+        /// must see the target it applies to.
+        brief: Box<ApprovalBrief>,
     },
     /// A human answered (or the window timed out).
     ApprovalResolved {

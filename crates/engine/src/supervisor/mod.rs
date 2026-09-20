@@ -8,17 +8,26 @@
 //! Boundary: process lifecycle only. Session state restoration is a
 //! session-layer concern (docs/sessions.md) and is not attempted here; a
 //! restart yields a fresh, empty engine. While the breaker is open or a
-//! restart is in flight, [`Supervisor::engine`] reports
+//! replacement is in flight, [`Supervisor::engine`] reports
 //! [`EngineError::Terminated`] — callers fail their affected operations.
 //! The heartbeat keeps retrying after breaker windows drain, so a failed
-//! or dead engine recovers on its own, and rutter itself never crashes
-//! on engine death.
+//! or dead engine recovers on its own, and rutter itself never crashes on
+//! engine death.
+//!
+//! Two shapes matter here. The supervision state is one explicit
+//! [`Phase`] value rather than an `Option` slot plus a restart flag plus a
+//! timestamp history that callers had to read together, and the restart
+//! policy loop exists once — [`bring_up`] — which the initial start and
+//! every later replacement both go through. It used to exist twice, with
+//! the two copies free to drift.
 
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::MutexGuard;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
 
 use crate::config::LaunchMode;
@@ -46,21 +55,117 @@ pub trait EngineLauncher: Send + Sync {
 /// Interval between supervised health probes.
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 
-/// Owns the current engine instance and its restart bookkeeping.
+/// Where the supervised engine stands.
+///
+/// The restart record rides with the phase because it means something
+/// different in each one: attempts spent reaching the running instance, or
+/// attempts spent while no instance exists.
+enum Phase {
+    /// No engine: before the first launch, or after a shutdown.
+    Idle,
+    /// A live engine, reached after the recorded attempts.
+    Running {
+        /// The live instance.
+        engine: Arc<dyn Engine>,
+        /// Launch attempts still inside the breaker window.
+        history: RestartHistory,
+    },
+    /// No engine, and one is being launched under the replacement ticket.
+    Replacing {
+        /// Attempts spent on this replacement.
+        history: RestartHistory,
+    },
+    /// The breaker is open: too many replacements inside the window. The
+    /// heartbeat resumes once the window drains.
+    BreakerOpen {
+        /// Attempts still inside the window.
+        history: RestartHistory,
+    },
+}
+
+impl Phase {
+    /// The live engine, if this phase has one.
+    fn engine(self) -> Option<Arc<dyn Engine>> {
+        match self {
+            Self::Running { engine, .. } => Some(engine),
+            _ => None,
+        }
+    }
+
+    /// The restart record this phase carries.
+    fn history(&self) -> RestartHistory {
+        match self {
+            Self::Running { history, .. }
+            | Self::Replacing { history, .. }
+            | Self::BreakerOpen { history, .. } => history.clone(),
+            Self::Idle => RestartHistory::default(),
+        }
+    }
+}
+
+/// Owns the supervision state and the ticket that serializes replacements.
 struct Supervised {
-    engine: RwLock<Option<Arc<dyn Engine>>>,
-    history: Mutex<RestartHistory>,
-    /// Serializes restart cycles so concurrent failures relaunch once.
-    restarting: Mutex<()>,
+    /// Never held across an await. Launch, health, and shutdown each read a
+    /// value out first, so a slow browser can never park a reader.
+    phase: Mutex<Phase>,
+    /// The replacement ticket: held across a launch so concurrent failures
+    /// relaunch once.
+    replacing: AsyncMutex<()>,
+    /// Watched by the session layer, which learns of every replacement.
+    restarts: tokio::sync::watch::Sender<u64>,
 }
 
 impl Supervised {
-    /// Removes the current engine, leaving the slot empty for a
-    /// relaunch. The heartbeat call site has already confirmed the
-    /// instance is dead; dropping the last handle lets the child be
-    /// reaped before the relaunch loop starts.
-    async fn clear_engine(&self) {
-        *self.engine.write().await = None;
+    /// Reads the phase, recovering from poisoning: supervision continues
+    /// even if a holder panicked, because the value stays consistent.
+    fn lock(&self) -> MutexGuard<'_, Phase> {
+        self.phase
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Installs a phase.
+    fn set(&self, next: Phase) {
+        *self.lock() = next;
+    }
+
+    /// The live engine, if any.
+    fn engine(&self) -> Option<Arc<dyn Engine>> {
+        match &*self.lock() {
+            Phase::Running { engine, .. } => Some(Arc::clone(engine)),
+            _ => None,
+        }
+    }
+
+    /// The restart record the current phase carries.
+    fn history(&self) -> RestartHistory {
+        self.lock().history()
+    }
+
+    /// Discards a dead engine, keeping its restart record. Dropping the last
+    /// handle is what lets the child process be reaped before the relaunch.
+    fn mourn(&self) {
+        let mut phase = self.lock();
+        if matches!(&*phase, Phase::Running { .. }) {
+            let history = phase.history();
+            *phase = Phase::Replacing { history };
+        }
+    }
+
+    /// A healthy probe closes the breaker window. Without this, five
+    /// recoveries that each worked would open the breaker against an engine
+    /// that is running fine, and the next crash would be met with
+    /// abandonment instead of a relaunch.
+    fn note_healthy(&self) {
+        let mut phase = self.lock();
+        if let Phase::Running { history, .. } = &mut *phase {
+            *history = RestartHistory::default();
+        }
+    }
+
+    /// Takes the engine out for shutdown, leaving the idle phase behind.
+    fn take_engine(&self) -> Option<Arc<dyn Engine>> {
+        std::mem::replace(&mut *self.lock(), Phase::Idle).engine()
     }
 }
 
@@ -72,10 +177,7 @@ pub struct Supervisor {
     policy: RestartPolicy,
     heartbeat_interval: Duration,
     supervised: Arc<Supervised>,
-    heartbeat: Mutex<Option<JoinHandle<()>>>,
-    /// Bumped every time a dead engine is successfully replaced;
-    /// recovery consumers watch this (docs/sessions.md).
-    restarts: tokio::sync::watch::Sender<u64>,
+    heartbeat: AsyncMutex<Option<JoinHandle<()>>>,
 }
 
 impl Supervisor {
@@ -88,19 +190,18 @@ impl Supervisor {
             policy: RestartPolicy::new(5, Duration::from_secs(60)),
             heartbeat_interval: HEARTBEAT_INTERVAL,
             supervised: Arc::new(Supervised {
-                engine: RwLock::new(None),
-                history: Mutex::new(RestartHistory::default()),
-                restarting: Mutex::new(()),
+                phase: Mutex::new(Phase::Idle),
+                replacing: AsyncMutex::new(()),
+                restarts,
             }),
-            heartbeat: Mutex::new(None),
-            restarts,
+            heartbeat: AsyncMutex::new(None),
         }
     }
 
     /// Watcher for engine replacements; the count increments on every
     /// successful restart of a dead engine.
     pub fn restart_watcher(&self) -> tokio::sync::watch::Receiver<u64> {
-        self.restarts.subscribe()
+        self.supervised.restarts.subscribe()
     }
 
     /// Overrides the heartbeat cadence; tests use a short interval.
@@ -119,41 +220,34 @@ impl Supervisor {
     /// Performs the initial launch and starts the heartbeat loop.
     ///
     /// The heartbeat starts even when the initial launch exhausts the
-    /// breaker: once the window drains, the loop retries and the
-    /// supervisor recovers on its own. A repeated `start` is a no-op.
+    /// breaker: once the window drains the loop retries, so a failed launch
+    /// leaves a supervised engine in waiting rather than a permanently empty
+    /// slot. A repeated `start` is a no-op.
     pub async fn start(&self) -> Result<(), EngineError> {
-        let mut heartbeat_slot = self.heartbeat.lock().await;
-        if heartbeat_slot.is_some() {
+        let mut slot = self.heartbeat.lock().await;
+        if slot.is_some() {
             return Ok(());
         }
 
-        let result = self.launch_with_policy().await;
-        if let Ok(engine) = &result {
-            *self.supervised.engine.write().await = Some(Arc::clone(engine));
-        }
+        let outcome = bring_up(&self.supervised, &self.launcher, self.mode, &self.policy).await;
 
         let supervised = Arc::clone(&self.supervised);
         let launcher = Arc::clone(&self.launcher);
         let policy = self.policy.clone();
         let interval = self.heartbeat_interval;
         let mode = self.mode;
-        let restarts = self.restarts.clone();
-        *heartbeat_slot = Some(tokio::spawn(async move {
-            heartbeat_loop(supervised, launcher, mode, policy, interval, restarts).await;
+        *slot = Some(tokio::spawn(async move {
+            heartbeat_loop(supervised, launcher, mode, policy, interval).await;
         }));
-        result.map(|_| ())
+
+        outcome
     }
 
-    /// Returns the current engine, or `Terminated` while dead, restarting,
+    /// Returns the current engine, or `Terminated` while dead, replacing,
     /// or breaker-open. Callers treat this as an engine-level failure of
     /// the operation they were about to perform.
     pub async fn engine(&self) -> Result<Arc<dyn Engine>, EngineError> {
-        self.supervised
-            .engine
-            .read()
-            .await
-            .clone()
-            .ok_or(EngineError::Terminated)
+        self.supervised.engine().ok_or(EngineError::Terminated)
     }
 
     /// Stops the heartbeat, shuts the engine down, and clears it.
@@ -161,56 +255,72 @@ impl Supervisor {
         if let Some(handle) = self.heartbeat.lock().await.take() {
             handle.abort();
         }
-        // The engine is taken out first and the guard dropped before the
-        // shutdown runs: `Engine::shutdown` can wait out a full command
-        // budget, and holding the slot's write lock that long would park
-        // concurrent `engine()` readers instead of letting them fail
-        // fast with `Terminated`.
-        let engine = self.supervised.engine.write().await.take();
+        // The engine leaves the phase before the shutdown is awaited:
+        // `Engine::shutdown` can wait out a full command budget, and holding
+        // the state that long would park concurrent `engine()` readers
+        // instead of letting them fail fast with `Terminated`.
+        let engine = self.supervised.take_engine();
         if let Some(engine) = engine
             && let Err(error) = engine.shutdown().await
         {
             eprintln!("rutter: engine shutdown failed: {error}");
         }
     }
+}
 
-    /// Launch attempts under backoff and breaker; used for the initial
-    /// start and every restart. Breaker-open surfaces as `Terminated`.
-    async fn launch_with_policy(&self) -> Result<Arc<dyn Engine>, EngineError> {
-        let _guard = self.supervised.restarting.lock().await;
-        // Another restart cycle may have completed while we waited.
-        if let Some(engine) = self.supervised.engine.read().await.clone() {
-            return Ok(engine);
+/// Launches one engine under the restart policy and installs it.
+///
+/// This is the only restart path: the initial start and every heartbeat
+/// replacement call it. It holds the replacement ticket for its whole run,
+/// so concurrent failures converge on one relaunch, and it answers
+/// [`EngineError::Terminated`] only when the breaker is open — a launch that
+/// merely failed keeps retrying inside the policy budget.
+async fn bring_up(
+    supervised: &Arc<Supervised>,
+    launcher: &Arc<dyn EngineLauncher>,
+    mode: LaunchMode,
+    policy: &RestartPolicy,
+) -> Result<(), EngineError> {
+    let _ticket = supervised.replacing.lock().await;
+
+    // Another replacement may have completed while this call queued for the
+    // ticket; its engine is the answer either way.
+    if supervised.engine().is_some() {
+        return Ok(());
+    }
+
+    let mut history = supervised.history();
+    loop {
+        match policy.decide(&mut history, Instant::now()) {
+            RestartDecision::Open => {
+                supervised.set(Phase::BreakerOpen { history });
+                return Err(EngineError::Terminated);
+            }
+            RestartDecision::Allowed(delay) => tokio::time::sleep(delay).await,
         }
 
-        loop {
-            let decision = {
-                let mut history = self.supervised.history.lock().await;
-                self.policy.decide(&mut history, Instant::now())
-            };
-            match decision {
-                RestartDecision::Open => return Err(EngineError::Terminated),
-                RestartDecision::Allowed(delay) => tokio::time::sleep(delay).await,
+        // Recorded before the attempt runs, so a launch that never returns
+        // cannot slip past the breaker.
+        history.record(Instant::now());
+        supervised.set(Phase::Replacing {
+            history: history.clone(),
+        });
+        match launcher.launch(mode).await {
+            Ok(engine) => {
+                supervised.set(Phase::Running { engine, history });
+                return Ok(());
             }
-
-            {
-                let mut history = self.supervised.history.lock().await;
-                history.record(Instant::now());
-            }
-            match self.launcher.launch(self.mode).await {
-                Ok(engine) => return Ok(engine),
-                Err(error) => {
-                    eprintln!(
-                        "rutter: {} launch failed, retrying under policy: {error}",
-                        self.launcher.describe()
-                    );
-                }
+            Err(error) => {
+                eprintln!(
+                    "rutter: {} launch failed, retrying under policy: {error}",
+                    launcher.describe()
+                );
             }
         }
     }
 }
 
-/// Heartbeat: probe health, and on failure swap in a fresh engine.
+/// Heartbeat: probe health, and on failure bring up a replacement.
 /// Loop exit happens via task abort in [`Supervisor::shutdown`].
 async fn heartbeat_loop(
     supervised: Arc<Supervised>,
@@ -218,16 +328,16 @@ async fn heartbeat_loop(
     mode: LaunchMode,
     policy: RestartPolicy,
     interval: Duration,
-    restarts: tokio::sync::watch::Sender<u64>,
 ) {
     loop {
         tokio::time::sleep(interval).await;
 
-        let current = supervised.engine.read().await.clone();
-        let healthy = match current {
-            None => false,
-            Some(engine) => match engine.health().await {
-                Ok(HealthReport { healthy: true, .. }) => true,
+        if let Some(engine) = supervised.engine() {
+            match engine.health().await {
+                Ok(HealthReport { healthy: true, .. }) => {
+                    supervised.note_healthy();
+                    continue;
+                }
                 Ok(HealthReport {
                     healthy: false,
                     detail,
@@ -237,63 +347,26 @@ async fn heartbeat_loop(
                         "rutter: engine unhealthy, restarting ({})",
                         detail.unwrap_or_else(|| "no detail".to_owned())
                     );
-                    false
                 }
                 Err(error) => {
                     eprintln!("rutter: engine health probe failed: {error}");
-                    false
                 }
-            },
-        };
-        if healthy {
-            continue;
+            }
         }
-
-        let _guard = supervised.restarting.lock().await;
-        // A concurrent restart may have replaced the engine already.
-        if let Some(engine) = supervised.engine.read().await.clone()
-            && matches!(
-                engine.health().await,
-                Ok(HealthReport { healthy: true, .. })
-            )
+        // Either nothing is running — the breaker is draining, or the first
+        // launch failed — or the probe above just condemned the live one.
+        // Both cases take the same road.
+        supervised.mourn();
+        if bring_up(&supervised, &launcher, mode, &policy)
+            .await
+            .is_err()
         {
+            eprintln!(
+                "rutter: restart breaker open for {}; affected operations fail until the window drains",
+                launcher.describe()
+            );
             continue;
         }
-        supervised.clear_engine().await;
-
-        loop {
-            let decision = {
-                let mut history = supervised.history.lock().await;
-                policy.decide(&mut history, Instant::now())
-            };
-            match decision {
-                RestartDecision::Open => {
-                    eprintln!(
-                        "rutter: restart breaker open for {}; affected operations fail until the window drains",
-                        launcher.describe()
-                    );
-                    break;
-                }
-                RestartDecision::Allowed(delay) => tokio::time::sleep(delay).await,
-            }
-
-            {
-                let mut history = supervised.history.lock().await;
-                history.record(Instant::now());
-            }
-            match launcher.launch(mode).await {
-                Ok(engine) => {
-                    *supervised.engine.write().await = Some(engine);
-                    restarts.send_modify(|count| *count += 1);
-                    break;
-                }
-                Err(error) => {
-                    eprintln!(
-                        "rutter: {} restart failed, retrying under policy: {error}",
-                        launcher.describe()
-                    );
-                }
-            }
-        }
+        supervised.restarts.send_modify(|count| *count += 1);
     }
 }

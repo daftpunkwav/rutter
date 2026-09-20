@@ -1,6 +1,6 @@
 //! Supervisor lifecycle tests over a scripted launcher and engine:
-//! heartbeat replacement, backoff, breaker, failed-start recovery —
-//! all through the public `Supervisor` API.
+//! heartbeat replacement, backoff, breaker, half-open recovery, and
+//! failed-start recovery — all through the public `Supervisor` API.
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.
@@ -413,4 +413,68 @@ async fn engine_readers_fail_fast_while_shutdown_is_in_flight() {
         .await
         .expect("shutdown must finish after the gate opens")
         .expect("shutdown task");
+}
+
+#[tokio::test]
+async fn a_healthy_engine_forgets_the_restarts_that_reached_it() {
+    // The breaker counts launch attempts inside a sliding window. Without a
+    // half-open reset, a browser that crashed three times, came back each
+    // time, and then ran cleanly would still be one crash from abandonment:
+    // the supervisor would refuse to relaunch an engine it had just watched
+    // being healthy. The budget below is one attempt tighter than the number
+    // of attempts the crashes alone would have used.
+    let launcher = MockLauncher::new();
+    let supervisor = Supervisor::new(
+        Arc::clone(&launcher) as Arc<dyn EngineLauncher>,
+        LaunchMode::Headless,
+    )
+    // A long window on purpose: nothing may drain it but the health probe.
+    .with_heartbeat(Duration::from_millis(10))
+    .with_policy(RestartPolicy::with_backoff(
+        4,
+        Duration::from_secs(60),
+        Duration::from_millis(1),
+        Duration::from_millis(2),
+    ));
+    supervisor.start().await.expect("first launch");
+
+    for _ in 0..3 {
+        let before = supervisor
+            .engine()
+            .await
+            .expect("an engine is up")
+            .descriptor()
+            .version;
+        supervisor
+            .engine()
+            .await
+            .expect("an engine is up")
+            .shutdown()
+            .await
+            .expect("killing the mock engine");
+        wait_for_replacement(&supervisor, &before).await;
+    }
+
+    // Let the survivor prove itself across several heartbeats.
+    tokio::time::sleep(Duration::from_millis(80)).await;
+
+    let before = supervisor
+        .engine()
+        .await
+        .expect("the engine is healthy by now")
+        .descriptor()
+        .version;
+    supervisor
+        .engine()
+        .await
+        .expect("the engine is healthy by now")
+        .shutdown()
+        .await
+        .expect("killing the mock engine");
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        wait_for_replacement(&supervisor, &before),
+    )
+    .await
+    .expect("a healthy engine that crashes again must be relaunched, not abandoned");
 }

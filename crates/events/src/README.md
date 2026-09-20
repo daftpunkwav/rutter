@@ -10,5 +10,9 @@ English | [中文](README.zh.md)
 | `ring.rs` | Bounded per-session ring, oldest evicted, `history()` for replay |
 | `backbone.rs` | `Backbone`: publish + subscribe + replay, the only type others touch |
 
-Publishing never blocks; a `Lagged` subscriber resyncs through
-`replay` — both dashboard code paths rely on that pairing.
+Publishing never waits on consumers; a `Lagged` subscriber resyncs
+through
+`replay` — both dashboard code paths rely on that pairing. The counter
+and the rings share one guard, so numbering, recording, and fan-out form
+a single critical section: ring order and live order both equal
+allocation order.

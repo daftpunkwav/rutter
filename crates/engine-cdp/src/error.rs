@@ -14,6 +14,7 @@ use chromiumoxide::cdp::browser_protocol::input::{
 };
 use chromiumoxide::error::CdpError;
 
+use rutter_core::error::TransportCause;
 use rutter_engine::error::EngineError;
 use rutter_engine::input::MouseButton;
 
@@ -87,6 +88,26 @@ pub fn fold(error: CdpError) -> EngineError {
     }
 }
 
+/// Classifies one Chromium network error into the transport vocabulary.
+///
+/// This is the only place the `net::ERR_*` spellings are read. They belong
+/// to Chromium; a caller above this crate that matched on them would start
+/// answering `connection failed` for every DNS lookup the moment a
+/// different engine took over (docs/architecture.md).
+fn transport_cause(detail: &str) -> TransportCause {
+    if detail.contains("ERR_TIMED_OUT") || detail.contains("ERR_CONNECTION_TIMED_OUT") {
+        TransportCause::TimedOut
+    } else if detail.contains("ERR_NAME_NOT_RESOLVED") {
+        TransportCause::DnsFailed
+    } else if detail.contains("ERR_SSL") || detail.contains("ERR_CERT") {
+        TransportCause::TlsFailed
+    } else if detail.contains("ERR_ABORTED") {
+        TransportCause::Aborted
+    } else {
+        TransportCause::ConnectionFailed
+    }
+}
+
 /// Folds an error raised by a navigation, distinguishing transport
 /// failures (`net::ERR_*` from the browser's network stack) from bugs so
 /// callers get input feedback instead of an "internal error".
@@ -95,8 +116,10 @@ pub fn fold_navigation(error: CdpError, url: &str) -> EngineError {
     let transport = matches!(&error, CdpError::Chrome(_) | CdpError::ChromeMessage(_))
         && (detail.contains("net::ERR_") || detail.contains("invalid URL"));
     if transport {
+        let cause = transport_cause(&detail);
         EngineError::NavigationFailed {
             url: url.to_owned(),
+            cause,
             detail,
         }
     } else {
@@ -153,7 +176,31 @@ mod tests {
             CdpError::ChromeMessage("net::ERR_NAME_NOT_RESOLVED at https://x".to_owned()),
             "https://x",
         );
-        assert!(matches!(error, EngineError::NavigationFailed { .. }));
+        assert!(matches!(
+            error,
+            EngineError::NavigationFailed {
+                cause: TransportCause::DnsFailed,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn chromium_error_text_maps_onto_the_transport_vocabulary() {
+        // The classification session used to do by string lives here now:
+        // these spellings are Chromium's, and this is the only crate
+        // allowed to read them.
+        for (text, expected) in [
+            ("net::ERR_TIMED_OUT", TransportCause::TimedOut),
+            ("net::ERR_CONNECTION_TIMED_OUT", TransportCause::TimedOut),
+            ("net::ERR_NAME_NOT_RESOLVED at x", TransportCause::DnsFailed),
+            ("net::ERR_SSL_PROTOCOL_ERROR", TransportCause::TlsFailed),
+            ("net::ERR_CERT_AUTHORITY_INVALID", TransportCause::TlsFailed),
+            ("net::ERR_ABORTED", TransportCause::Aborted),
+            ("invalid URL", TransportCause::ConnectionFailed),
+        ] {
+            assert_eq!(transport_cause(text), expected, "{text}");
+        }
     }
 
     #[test]

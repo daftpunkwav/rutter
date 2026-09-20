@@ -3,7 +3,7 @@
 [English](README.md) | 中文
 
 解析浏览器二进制：显式覆盖 → 缓存 → Chrome for Testing stable
-manifest（TLS），随后下载、校验、解压并原子安装。
+manifest（TLS），随后下载、解压并原子安装。
 
 | 文件 | 职责 |
 |---|---|

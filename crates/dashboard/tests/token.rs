@@ -1,6 +1,7 @@
 //! Functional tests for the dashboard's public API: per-launch token
 //! generation properties. Endpoint security internals (host/token
-//! checks) have their unit tests beside the code in `src/auth.rs`.
+//! checks) and the access hand-off have their unit tests beside the code
+//! in `src/auth.rs` and `src/lib.rs`.
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.
@@ -45,6 +46,8 @@ fn server() -> DashboardServer {
             None,
         )),
         0,
+        // No hand-off path: these tests read the token, never the channel.
+        None,
     )
 }
 
@@ -65,4 +68,13 @@ fn two_servers_do_not_share_a_token() {
     let first = server().token();
     let second = server().token();
     assert_ne!(first, second, "tokens must be per-launch");
+}
+
+#[test]
+fn one_server_always_hands_out_the_same_token() {
+    // The accessor reads a value minted once at construction. Minting
+    // per call would hand a second reader a token the running server
+    // does not accept, and its dashboard would never open.
+    let server = server();
+    assert_eq!(server.token(), server.token(), "token() reads, not mints");
 }

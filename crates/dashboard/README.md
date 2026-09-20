@@ -13,7 +13,12 @@ actions (docs/architecture.md). It reads the event backbone (replay, then
 live), pulls screencast frames only while a viewer watches, and posts
 decisions to the same broker the sessions park on. Every endpoint goes
 through one gate: loopback `Host` check + token (query or HttpOnly
-cookie) — see `src/auth.rs`.
+cookie) — see `src/auth.rs`. The token reaches a human through
+`DashboardServer::hand_off`, which chooses the channel by what sits on
+stderr: a terminal gets the URL, a pipe — the supervised MCP client's
+case — gets a file that is owner-only on Unix, and only its path is
+printed
+(docs/dashboard.md §2).
 
 ## Consumers
 

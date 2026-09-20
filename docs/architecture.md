@@ -28,20 +28,24 @@ construction; the table is the layering contract.
 | Crate | Depends on | Sole responsibility |
 |---|---|---|
 | `rutter-core` | serde | Domain vocabulary: `Action`, `Snapshot`, `Reference`, errors |
-| `rutter-events` | core | Event types, broadcast bus, ring buffers, replay |
 | `rutter-engine` | core | `Engine`/`Page` traits, supervisor, engine downloader |
 | `rutter-engine-cdp` | engine, core | CDP implementation details (chromiumoxide) — nothing else |
 | `rutter-observe` | core | Injected serializer script + pure DOM→`Snapshot` builder |
 | `rutter-policy` | core | Rule set, verdict evaluation, approval broker |
+| `rutter-events` | core, policy | Event types, broadcast bus, ring buffers, replay |
 | `rutter-session` | core, events, engine, observe, policy | Orchestration: execution, contexts, storage state, recovery |
 | `rutter-mcp` | core, session | MCP host (rmcp) and the tool surface |
 | `rutter-dashboard` | core, events, policy, session | HTTP/WS server, embedded frontend, decision submission |
-| `rutter` (cli) | all of the above | Binary entry modes, composition root, config loading |
+| `rutter` (cli) | all of the above except `events` (transitive) | Binary entry modes, composition root, config loading |
 
 The seams and why they exist:
 
 - **`core` knows nothing above it.** It is pure vocabulary; changing an
   engine or a transport never touches it.
+- **`events` touches `policy` for one field.** An approval event carries
+  the brief policy built, because only policy knows the class, the
+  canonical URL it judged, and the rule that spoke. Nothing else in the
+  backbone speaks policy.
 - **`engine-cdp` is the only crate permitted to speak CDP.** Swapping
   or adding engines is confined to one crate plus a registration point
   in the CLI ([`EngineLauncher`](../crates/engine/src/supervisor/mod.rs)).
@@ -127,7 +131,8 @@ them without restating them.
   treats arbitrary page data as untrusted: it truncates, folds, and
   marks unknown instead of failing. No `unwrap`/`expect`/`panic`
   outside tests and process init (clippy denies them).
-- **Events never block work.** Publishing is fire-and-forget; semantic
+- **Events never wait on consumers.** Publishing is fire-and-forget;
+  semantic
   events survive for late joiners through bounded per-session rings,
   while screencast frames are droppable under load
   ([events](events.md)).
@@ -135,15 +140,16 @@ them without restating them.
   capped exponential backoff exist for engine launch/connect; a
   circuit breaker stops restart storms.
 
-Performance targets, measured by the corpus harness in
-`scripts/benchmark.sh`:
+Performance targets (design goals; no automated harness measures
+them — `scripts/benchmark.sh` reports the navigate+snapshot success
+rate only):
 
 | Metric | Target |
 |---|---|
 | rutter startup → MCP ready (engine lazy) | < 100 ms |
 | Snapshot round-trip, warm engine, p50 | < 150 ms |
 | Orchestration-layer RSS (engine excluded) | < 50 MB |
-| Concurrent contexts per engine process | ≥ 50 (capped) |
+| Concurrent contexts per engine process | capped by `max_sessions` (default 8) |
 | Dashboard frame latency (page change → pixel) | < 500 ms |
 
 ## Document map

@@ -21,7 +21,7 @@ pub enum RestartDecision {
 }
 
 /// Restart attempt timestamps inside a sliding window.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RestartHistory {
     attempts: Vec<Instant>,
 }

@@ -212,19 +212,3 @@ fn wheel_deltas_follow_directions() {
     assert_eq!(wheel_deltas(ScrollDirection::Right, 120), (120.0, 0.0));
     assert_eq!(wheel_deltas(ScrollDirection::Left, 120), (-120.0, 0.0));
 }
-
-#[test]
-fn transport_cause_reads_browser_error_texts() {
-    assert_eq!(
-        transport_cause("net::ERR_NAME_NOT_RESOLVED at x"),
-        TransportCause::DnsFailed
-    );
-    assert_eq!(
-        transport_cause("net::ERR_SSL_PROTOCOL_ERROR"),
-        TransportCause::TlsFailed
-    );
-    assert_eq!(
-        transport_cause("unrelated"),
-        TransportCause::ConnectionFailed
-    );
-}

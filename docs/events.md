@@ -23,7 +23,9 @@ Every fact travels as an
 ```
 
 - `seq` is a process-global monotonic counter — consumers sort and
-  deduplicate by it.
+  deduplicate by it. Numbering, recording in the ring, and bus fan-out
+  happen under one lock, so ring order and live order both equal
+  allocation order and a watermark filter cannot drop an unseen event.
 - `recorded_at` is RFC 3339 UTC
   ([glossary](glossary.md#serialization-conventions)); clock trouble
   degrades to the epoch string rather than failing a publish.
@@ -46,7 +48,7 @@ variant is produced by the session or manager layer as labeled.
 | `ActionRequested` | `page`, `origin`, `action` | an action was requested, before execution starts |
 | `ActionCompleted` | `page`, `origin`, `action` | an action finished successfully |
 | `ActionFailed` | `page`, `origin`, `action`, `error` | an action failed; `error` carries the [error taxonomy](tool-catalog.md#2-result-conventions) |
-| `ApprovalRequested` | `request_id`, `page`, `action` | [policy](policy.md#4-approvals) parked an action until a human decides |
+| `ApprovalRequested` | `request_id`, `page`, `brief` | [policy](policy.md#4-approvals) parked an action until a human decides |
 | `ApprovalResolved` | `request_id`, `granted` | a human answered, or the window timed out |
 
 Actions and errors embed as [serialized
@@ -61,8 +63,8 @@ frames with their own latest-wins backpressure rule
 ## 3. Delivery semantics
 
 [`Backbone::publish`](../crates/events/src/backbone.rs) is
-fire-and-forget: it never blocks and never fails, so publishing can
-never stall action execution. Two channels with different loss rules:
+fire-and-forget: it never waits on consumers and never fails. Two
+channels with different loss rules:
 
 - **Live bus.** A tokio broadcast channel (capacity 1024). Publishing
   succeeds even with no subscribers; a subscriber that falls further

@@ -3,10 +3,14 @@
 //!
 //! Responsibilities:
 //! - Serve the static frontend (embedded, no build step) on
-//!   127.0.0.1 only, gated by a per-launch random token printed to the
-//!   terminal; the first visit exchanges the query token for an
-//!   HttpOnly session cookie, and `Host` headers are validated against
-//!   DNS rebinding (docs/dashboard.md).
+//!   127.0.0.1 only, gated by a per-launch random token; the first
+//!   visit exchanges the query token for an HttpOnly session cookie,
+//!   and `Host` headers are validated against DNS rebinding
+//!   (docs/dashboard.md).
+//! - Hand that token's URL to a human through a channel chosen by who
+//!   owns stderr: a terminal gets the URL, a piped stderr (the MCP
+//!   client's case) gets an owner-only file and only its path is
+//!   printed. See [`DashboardServer::hand_off`].
 //! - Stream events over one WebSocket: replay first, then live; the
 //!   client submits approval decisions through the same socket.
 //!
@@ -26,6 +30,8 @@ mod auth;
 mod ws;
 
 use std::collections::HashMap;
+use std::io::{IsTerminal, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::Router;
@@ -62,51 +68,45 @@ pub struct DashboardServer {
     manager: Arc<SessionManager>,
     broker: Arc<ApprovalBroker>,
     port: u16,
+    /// Minted once, in [`DashboardServer::new`]: every reader must be
+    /// handed the value the server actually accepts.
+    token: String,
+    /// Where the access URL lands when stderr is not a terminal.
+    access_file: Option<PathBuf>,
 }
 
 impl DashboardServer {
-    /// Binds the dashboard to a port; the access token is generated
-    /// here and printed once by [`DashboardServer::token`]. Approval
-    /// decisions always go through the manager's broker — the one the
-    /// sessions park on — so it is derived here, never passed in.
-    pub fn new(manager: Arc<SessionManager>, port: u16) -> Self {
+    /// Binds the dashboard to a port. Approval decisions always go
+    /// through the manager's broker — the one the sessions park on — so
+    /// it is derived here, never passed in. `access_file` is the private
+    /// hand-off path for the access URL; it is required whenever stderr
+    /// has no terminal (see [`Self::hand_off`]).
+    pub fn new(manager: Arc<SessionManager>, port: u16, access_file: Option<PathBuf>) -> Self {
         Self {
             broker: manager.broker(),
+            token: generate_token(),
             manager,
             port,
+            access_file,
         }
     }
 
-    /// The per-launch access token (docs/dashboard.md). The
-    /// `RUTTER_DASHBOARD_TOKEN` override exists for automation; without
-    /// it the token hashes the launch time and process id with a
-    /// randomly keyed hasher seeded from OS entropy, so its value is
-    /// unpredictable from launch circumstances alone.
+    /// The per-launch access token (docs/dashboard.md).
     pub fn token(&self) -> String {
-        if let Ok(token) = std::env::var("RUTTER_DASHBOARD_TOKEN")
-            && !token.is_empty()
-        {
-            return token;
-        }
-        use std::collections::hash_map::RandomState;
-        use std::hash::{BuildHasher, Hash, Hasher};
-        let mut hasher = RandomState::new().build_hasher();
-        std::time::SystemTime::now().hash(&mut hasher);
-        std::process::id().hash(&mut hasher);
-        format!("{:016x}", hasher.finish())
+        self.token.clone()
     }
 
     /// Serves until the process exits.
     pub async fn run(self) -> Result<(), String> {
-        let token = self.token();
+        let hand_off = self.hand_off()?;
         eprintln!(
-            "rutter: dashboard on http://127.0.0.1:{}/?token={token}",
+            "rutter: dashboard on http://127.0.0.1:{} — {hand_off}",
             self.port
         );
         let state = Dashboard {
             manager: self.manager,
             broker: self.broker,
-            token: token.clone(),
+            token: self.token,
         };
 
         let app = Router::new()
@@ -115,6 +115,7 @@ impl DashboardServer {
             .route("/i18n/en.json", get(i18n))
             .route("/ws", get(ws_upgrade))
             .route("/api/decisions", post(decide))
+            .route("/api/pending", get(pending))
             .fallback(not_found)
             .with_state(state);
 
@@ -125,6 +126,85 @@ impl DashboardServer {
             .await
             .map_err(|error| format!("dashboard server failed: {error}"))
     }
+
+    /// Puts the access URL where a human will find it, choosing the
+    /// channel by who sits on the other end of stderr.
+    ///
+    /// A terminal means a person typed the command, so the URL goes out
+    /// as it is. A pipe means a process did — and over the MCP transport
+    /// that process is the very client rutter exists to supervise, so
+    /// the token never travels that way: it lands in an owner-only file
+    /// and the printed line names the path instead.
+    ///
+    /// This is defence in depth, not isolation. A supervised process
+    /// running as the same user can still read that file; a deployment
+    /// needing a channel the agent cannot observe has to run the
+    /// dashboard outside the agent's account (docs/dashboard.md §2).
+    fn hand_off(&self) -> Result<String, String> {
+        let url = format!("http://127.0.0.1:{}/?token={}", self.port, self.token);
+        if std::io::stderr().is_terminal() {
+            return Ok(format!("open {url}"));
+        }
+        let Some(path) = self.access_file.as_ref() else {
+            return Err(
+                "stderr is no terminal and no access hand-off path was configured".to_owned(),
+            );
+        };
+        write_private(path, &url)?;
+        Ok(format!(
+            "access URL in {}; open it from a terminal you control",
+            path.display()
+        ))
+    }
+}
+
+/// The per-launch token: launch time and process id hashed with a
+/// randomly keyed hasher seeded from OS entropy, so the value is not
+/// predictable from launch circumstances alone. `RUTTER_DASHBOARD_TOKEN`
+/// overrides it for automation — but that override travels in the
+/// environment of the process being supervised, so it belongs to a
+/// trusted launcher rather than to a human-only channel.
+fn generate_token() -> String {
+    if let Ok(token) = std::env::var("RUTTER_DASHBOARD_TOKEN")
+        && !token.is_empty()
+    {
+        return token;
+    }
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hash, Hasher};
+    let mut hasher = RandomState::new().build_hasher();
+    std::time::SystemTime::now().hash(&mut hasher);
+    std::process::id().hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+/// Writes the access URL so that only its owner can read it on Unix,
+/// replacing any earlier copy: the mode applies at creation, so a stale
+/// file's permissions must never be inherited. Windows has no in-tree
+/// permission bits, and the file keeps its directory's ACL there.
+fn write_private(path: &Path, contents: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
+    }
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("cannot replace {}: {error}", path.display())),
+    }
+    let mut options = std::fs::File::options();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(path)
+        .map_err(|error| format!("cannot write {}: {error}", path.display()))?;
+    file.write_all(contents.as_bytes())
+        .and_then(|()| file.write_all(b"\n"))
+        .map_err(|error| format!("cannot write {}: {error}", path.display()))
 }
 
 async fn index(
@@ -225,6 +305,23 @@ async fn decide(
     }
 }
 
+/// How many approvals are parked right now, for operators and monitoring.
+/// The number is visible without a browser: a decision waiting on nobody is
+/// the failure mode worth detecting.
+async fn pending(
+    State(state): State<Dashboard>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<String, StatusCode> {
+    if !auth::access_allowed(&state, &headers, &query) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(format!(
+        "{{\"pending\":{}}}\n",
+        state.broker.pending_count()
+    ))
+}
+
 async fn not_found() -> StatusCode {
     StatusCode::NOT_FOUND
 }
@@ -245,6 +342,7 @@ mod tests {
                 None,
             )),
             0,
+            None,
         );
         let token = server.token();
         assert_eq!(token.len(), 16, "64-bit hex token: {token}");
@@ -253,6 +351,35 @@ mod tests {
             auth::cookie_safe(&token),
             "generated tokens travel in cookies"
         );
+    }
+
+    #[test]
+    fn the_access_file_holds_one_url_and_replaces_an_earlier_one() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("nested").join("access.url");
+        write_private(&path, "first").expect("first write");
+        write_private(&path, "second").expect("rewrite over the old copy");
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read back"),
+            "second\n",
+            "one launch's URL per file, never two appended"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_access_file_is_owner_readable_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("access.url");
+        write_private(&path, "secret").expect("write");
+
+        let mode = std::fs::metadata(&path)
+            .expect("metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600, "the access token stays owner-only");
     }
 
     /// Launcher stub satisfying the manager constructor; the dashboard

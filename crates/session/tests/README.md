@@ -12,6 +12,7 @@ the scripted engine in `common/` — no real browser.
 | `manager_flow.rs` | Session cap (`max_sessions`), close semantics, session-handle stability |
 | `common/mod.rs` | Scripted launcher → engine → context → page doubles |
 
-Private-behavior unit tests (page-cap races, slot bookkeeping) stay
+Private-behavior unit tests (the concurrent URL-refresh race, slot
+bookkeeping) stay
 beside the code in `src/` — Rust's `tests/` directories cannot reach
 crate internals.

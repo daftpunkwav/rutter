@@ -16,5 +16,5 @@ English | [中文](README.zh.md)
 | `download/` | Chrome-for-Testing resolution and install (see its README) |
 | `supervisor/` | Heartbeat, restarts, breaker (see its README) |
 
-Traits here are the crate's whole contract with `session`; implement
-them in a backend crate, never call one from here.
+`session` drives engines only through these traits; implement them in
+a backend crate (the supervisor here is the one in-crate caller).

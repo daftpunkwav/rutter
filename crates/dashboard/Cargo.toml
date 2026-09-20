@@ -23,7 +23,9 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 
 # Tests stub the manager's launcher; engine types reach production code
-# only through rutter-session's re-exports.
+# only through rutter-session's re-exports. The access hand-off test
+# needs a directory it owns.
 [dev-dependencies]
 async-trait = { workspace = true }
 rutter-engine = { workspace = true }
+tempfile = { workspace = true }

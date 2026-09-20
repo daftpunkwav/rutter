@@ -19,7 +19,9 @@
 }
 ```
 
-- `seq` 是进程级全局单调计数器——消费者以它排序与去重。
+- `seq` 是进程级全局单调计数器——消费者以它排序与去重。编号、写入
+  ring、总线扇出在同一次加锁内完成，所以 ring 顺序与实流顺序都等于
+  分配顺序，按水位去重不会丢掉未见过的事件。
 - `recorded_at` 是 RFC 3339 UTC 字符串
   （[术语表](glossary.zh.md#序列化约定)）；时钟故障降级为 epoch
   字符串，而不是让发布失败。
@@ -42,7 +44,7 @@
 | `ActionRequested` | `page`, `origin`, `action` | 动作被请求，尚未开始执行 |
 | `ActionCompleted` | `page`, `origin`, `action` | 动作成功完成 |
 | `ActionFailed` | `page`, `origin`, `action`, `error` | 动作失败；`error` 携带[错误分类](tool-catalog.zh.md#2-结果约定) |
-| `ApprovalRequested` | `request_id`, `page`, `action` | [策略](policy.zh.md#4-审批)将动作搁置等待人工决定 |
+| `ApprovalRequested` | `request_id`, `page`, `brief` | [策略](policy.zh.md#4-审批)将动作搁置等待人工决定 |
 | `ApprovalResolved` | `request_id`, `granted` | 人类已答复，或窗口超时 |
 
 动作与错误以[序列化词汇](glossary.zh.md#序列化约定)（`"type"`
@@ -55,8 +57,7 @@ Screencast 帧**不是**事件。它们以二进制 WebSocket 帧旅行，有自
 ## 3. 投递语义
 
 [`Backbone::publish`](../crates/events/src/backbone.rs) 是
-fire-and-forget：永不阻塞、永不失败，因此发布不可能拖延动作执行。
-两条通道，两种丢失规则：
+fire-and-forget：不等待消费者、永不失败。两条通道，两种丢失规则：
 
 - **实时 bus。** tokio broadcast channel（容量 1024）。无订阅者时
   发布也成功；落后太多的订阅者会读到 `Lagged` 错误，必须经 replay

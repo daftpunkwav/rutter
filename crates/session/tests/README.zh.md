@@ -12,5 +12,5 @@
 | `manager_flow.rs` | 会话上限（`max_sessions`）、close 语义、会话句柄稳定性 |
 | `common/mod.rs` | 脚本化 launcher → engine → context → page 替身 |
 
-私有行为单元测试（页面上限竞态、槽位记账）放在 `src/` 里紧挨代码
-——Rust 的 `tests/` 目录够不到 crate 内部。
+私有行为单元测试（并发 URL 刷新竞态、槽位记账）放在 `src/` 里紧挨
+代码——Rust 的 `tests/` 目录够不到 crate 内部。

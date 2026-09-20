@@ -26,15 +26,19 @@ pub(crate) mod mock;
 pub mod session;
 pub mod storage;
 
-// The element resolver and the polling loop are the executor's
-// mechanics; the orchestration surface above never sees them.
+// The element resolver, the polling loop, and the page registry are the
+// executor's mechanics; the orchestration surface above never sees them.
+// Only the registry's client-facing view (`PageInfo`) escapes.
+mod audit;
+mod pages;
 mod resolve;
 mod wait;
 
 pub use config::SessionConfig;
 pub use error::SessionError;
 pub use manager::SessionManager;
-pub use session::{PageInfo, Session};
+pub use pages::PageInfo;
+pub use session::Session;
 pub use storage::StorageState;
 
 // Engine types this crate's own API exposes (the manager constructor,

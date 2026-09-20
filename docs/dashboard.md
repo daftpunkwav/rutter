@@ -20,16 +20,32 @@ binary at compile time (`include_str!`); UI strings come from the
 | `/app.js`, `/i18n/en.json` | Application script and string catalog |
 | `/ws` | The WebSocket (replay + live events, decisions, screencast) |
 | `/api/decisions` | `POST` approval decisions from simple automation clients |
+| `/api/pending` | `GET` how many approvals are parked right now |
 
 ## 2. Access control
 
 Every endpoint, including the WebSocket upgrade, passes the same gate
 ([`auth.rs`](../crates/dashboard/src/auth.rs)):
 
-- **Per-launch token.** A 64-bit hex token is generated at startup —
-  hashing launch time and process id with a randomly keyed hasher —
-  and printed to the terminal as `?token=…`. `RUTTER_DASHBOARD_TOKEN`
-  overrides it for automation.
+- **Per-launch token.** A 64-bit hex token is minted once, when the
+  dashboard is built — hashing launch time and process id with a
+  randomly keyed hasher. `RUTTER_DASHBOARD_TOKEN` overrides it for
+  automation; that override is visible to whoever launches rutter, so
+  it belongs to a trusted launcher, not to a human-only channel.
+- **Handing the URL over.** stderr decides the channel by what sits on
+  it. A terminal gets `…/?token=…`. A pipe — an MCP client launching
+  `rutter serve` — gets the listening address and the hand-off file
+  path, never the URL or token, because that client
+  is the process rutter exists to supervise; the URL goes to
+  `<cache-dir>/dashboard-access.url`, created owner-only on Unix. With
+  neither a terminal nor that path available the dashboard refuses to
+  start rather than fall back to printing the token.
+- **What this does not buy.** rutter and its client share one machine
+  and one user account, and a process in that account can read anything
+  rutter writes under its own cache. The hand-off removes the
+  *automatic* leak into an inherited channel; it is not a human-only
+  oracle. A deployment that must deny an agent the ability to approve
+  its own actions runs the dashboard outside the agent's account.
 - **Token-for-cookie exchange.** The first visit with `?token=` sets
   an `HttpOnly`, `SameSite=Strict` session cookie; later requests
   authenticate through the cookie alone.
@@ -72,7 +88,10 @@ same token gate. An unknown or already-resolved `request_id` answers
 ## 5. Screencast
 
 Screencast is **on-demand**: streaming starts when a viewer asks and
-stops when it leaves. Frames flow one way — CDP
+stops when it leaves. It is also **read-only**: a session with no open
+page answers `no open page to observe` rather than opening one, because
+creating a tab is an action and the dashboard performs none
+(docs/architecture.md). Frames flow one way — CDP
 `Page.startScreencast` (JPEG, width ≤ 1024, per-frame ack) through a
 bounded channel of 4, dropping frames over a full channel. A stalled
 viewer loses frames, not memory, and the capture can never block

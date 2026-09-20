@@ -124,15 +124,58 @@
     return base;
   }
 
+  function effectText(effect) {
+    // The brief names its own effect. An action shows its type and
+    // element; a cookie write shows the write, because the action
+    // vocabulary has no variant for it and a stand-in action would put
+    // a different promise in front of the human than the one they keep.
+    if (!effect || !effect.kind) { return t('effectUnknown'); }
+    if (effect.kind === 'cookies') {
+      return t('effectCookies').replace('{count}', String(effect.count));
+    }
+    var action = effect.action || {};
+    if (action.type === 'navigate') { return t('effectNavigate') + ' ' + (action.url || ''); }
+    if (action.reference) { return t('effectOn') + ' ' + action.type + ' ' + action.reference; }
+    return t('effectRun') + ' ' + (action.type || t('effectUnknown'));
+  }
+
+  function basisText(basis) {
+    if (!basis || !basis.kind) { return ''; }
+    if (basis.kind === 'rule') {
+      var rule = t('basisRule').replace('{index}', String(basis.index));
+      return basis.url_pattern ? rule + ' (' + basis.url_pattern + ')' : rule;
+    }
+    if (basis.kind === 'missing_url') { return t('basisMissingUrl'); }
+    return t('basisDefault');
+  }
+
+  function approvalLine(label, value) {
+    var node = document.createElement('div');
+    // Text nodes only: the judged URL and the reference both come from
+    // page-controlled data, so this must never parse as markup.
+    node.textContent = label + ': ' + value;
+    return node;
+  }
+
   function showApproval(session, event) {
     // Reconnect replays re-deliver requests already on screen; drop the
     // stale card first or duplicate ids pile up on the approval list.
     hideApproval(event.request_id);
+    var brief = event.brief || {};
     var node = document.createElement('div');
     node.className = 'approval';
     node.id = event.request_id;
-    node.textContent = '[' + event.request_id + '] ' + session + ': ' +
-      (event.action ? event.action.type : 'action');
+
+    var heading = document.createElement('div');
+    heading.textContent = '[' + event.request_id + '] ' + session;
+    node.appendChild(heading);
+    node.appendChild(approvalLine(t('labelClass'), brief.class || '?'));
+    node.appendChild(approvalLine(t('labelEffect'), effectText(brief.effect)));
+    node.appendChild(
+      approvalLine(t('labelTarget'), brief.judged_url || t('targetUnknown'))
+    );
+    node.appendChild(approvalLine(t('labelBasis'), basisText(brief.basis)));
+
     var grant = document.createElement('button');
     grant.textContent = t('grant');
     grant.onclick = function () { decide(event.request_id, true); };

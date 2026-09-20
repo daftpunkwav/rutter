@@ -10,5 +10,6 @@
 | `ring.rs` | 有界的每会话 ring buffer（环形缓冲），最旧的先淘汰，`history()` 供重放 |
 | `backbone.rs` | `Backbone`：publish + subscribe + replay，他人唯一接触的类型 |
 
-发布绝不阻塞；`Lagged` 订阅者通过 `replay` 重同步——dashboard 的两
-条代码路径都依赖这一配对。
+发布不等待消费者；`Lagged` 订阅者通过 `replay` 重同步——dashboard 的两
+条代码路径都依赖这一配对。计数器与 rings 共用一把锁，因此编号、写入、
+扇出是一个不可分割的临界区：ring 顺序与实流顺序都等于分配顺序。

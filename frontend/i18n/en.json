@@ -7,5 +7,18 @@
   "live": "live view",
   "start": "start",
   "stop": "stop",
-  "reconnecting": "connection lost; reconnecting..."
+  "reconnecting": "connection lost; reconnecting...",
+  "labelClass": "class",
+  "labelEffect": "effect",
+  "labelTarget": "target",
+  "labelBasis": "because",
+  "effectUnknown": "an unlisted operation",
+  "effectCookies": "write {count} cookie(s) into the session",
+  "effectNavigate": "navigate to",
+  "effectOn": "act on",
+  "effectRun": "run",
+  "targetUnknown": "unknown; the URL could not be read",
+  "basisRule": "rule {index} of the policy",
+  "basisDefault": "the policy's default verdict",
+  "basisMissingUrl": "no usable URL, so it fails closed"
 }

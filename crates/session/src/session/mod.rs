@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rutter_core::action::{Action, Origin};
 use rutter_core::cookie::Cookie;
@@ -21,31 +21,16 @@ use rutter_engine::context::ContextHandle;
 use rutter_engine::error::EngineError;
 use rutter_engine::page::{PageHandle, ScreencastStream, Screenshot};
 use rutter_events::{Backbone, Event};
-use rutter_policy::{ActionClass, ApprovalBroker, ApprovalOutcome, RuleSet, Verdict};
+use rutter_policy::{
+    ApprovalBrief, ApprovalBroker, ApprovalEffect, ApprovalOutcome, Review, RuleSet,
+};
 
 use crate::actions::{Executor, PageOps};
+use crate::audit::{self, ApprovalAudit};
 use crate::config::SessionConfig;
 use crate::error::SessionError;
+use crate::pages::{PageInfo, PageRegistry, PageSlot};
 use crate::storage::StorageState;
-
-/// One open page as reported by `tabs_list`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PageInfo {
-    /// Stable page identifier.
-    pub id: PageId,
-    /// Last known URL.
-    pub url: String,
-    /// Whether this page is the session's active page.
-    pub active: bool,
-}
-
-/// One tracked page with its last known URL.
-struct PageSlot {
-    id: PageId,
-    url: String,
-    handle: Arc<dyn PageHandle>,
-    active: bool,
-}
 
 /// The client-visible state of one session.
 pub struct Session {
@@ -57,9 +42,14 @@ pub struct Session {
     /// Swappable so recovery can install a fresh context after an
     /// engine restart (docs/sessions.md).
     context: tokio::sync::RwLock<Arc<dyn ContextHandle>>,
-    pages: Mutex<Vec<PageSlot>>,
+    /// The tracked pages and their active flag, behind the registry's own
+    /// lock (docs/sessions.md).
+    pages: PageRegistry,
     /// Where the storage state persists; `None` disables persistence.
     state_path: Option<PathBuf>,
+    /// The approval audit trail; a session with no state directory writes
+    /// nothing (docs/policy.md).
+    audit: ApprovalAudit,
     last_storage: Mutex<StorageState>,
     /// Whether the persistence file currently reflects `last_storage`;
     /// a failed write forces a rewrite on the next capture even when
@@ -85,7 +75,8 @@ impl Session {
             policy,
             broker,
             context: tokio::sync::RwLock::new(context),
-            pages: Mutex::new(Vec::new()),
+            pages: PageRegistry::new(),
+            audit: ApprovalAudit::beside_storage(state_path.as_deref()),
             state_path,
             last_storage: Mutex::new(StorageState::default()),
             last_persist_ok: Mutex::new(false),
@@ -108,119 +99,113 @@ impl Session {
         Arc::clone(&self.broker)
     }
 
-    /// Enforces the policy for one operation judged at `url`: `Allow`
-    /// passes, `Deny` fails with `ApprovalDenied`, and
-    /// `RequireApproval` publishes the request and parks until a human
-    /// answers or the window closes (docs/policy.md). The URL is
-    /// canonicalized before matching, and `None` — an unreadable page
-    /// or a navigation target that is not a URL — fails closed: the
-    /// verdict comes from [`rutter_policy::RuleSet::evaluate_without_url`]
-    /// rather than from a placeholder match.
-    async fn enforce_policy(
+    /// Reviews one operation against the rule set and, when the answer is
+    /// to ask a human, publishes the request and parks until someone
+    /// answers or the window closes (docs/policy.md).
+    ///
+    /// Policy owns the whole judgment: `raw_url` is canonicalized inside
+    /// [`RuleSet::review`], so no caller can reach a verdict while skipping
+    /// that step, and a URL that will not canonicalize — not a URL, or one
+    /// hiding credentials behind a `user@host` decoy — fails closed.
+    ///
+    /// What the human is shown is the brief policy built, never a stand-in
+    /// for it. Cookie writes had no `Action` variant to carry, so they used
+    /// to ride on `reload` and a person approving a reload was authorizing
+    /// something else.
+    async fn enforce(
         &self,
-        class: ActionClass,
-        url: Option<&str>,
+        effect: ApprovalEffect,
+        raw_url: Option<&str>,
         page_id: &PageId,
-        action: &Action,
     ) -> Result<(), SessionError> {
-        let verdict = match url.and_then(rutter_policy::canonical_url) {
-            Some(url) => self.policy.evaluate(class, &url),
-            None => self.policy.evaluate_without_url(class),
-        };
-        match verdict {
-            Verdict::Allow => return Ok(()),
-            Verdict::Deny => {
-                return Err(SessionError::Action(ActionError::ApprovalDenied {
-                    reference: action_reference(action),
-                }));
-            }
-            Verdict::RequireApproval => {}
+        match self.policy.review(effect.clone(), raw_url) {
+            Review::Allowed => Ok(()),
+            Review::Denied => Err(approval_denied(&effect)),
+            Review::NeedsApproval(brief) => self.park(brief, &effect, page_id).await,
         }
+    }
 
-        let denied = || {
-            SessionError::Action(ActionError::ApprovalDenied {
-                reference: action_reference(action),
-            })
-        };
-
+    /// Publishes one parked request and waits for the human behind it:
+    /// granted proceeds, denied and timed out fail with the agent-facing
+    /// error, and either way the resolution lands on the backbone so the
+    /// dashboard can retire the card.
+    async fn park(
+        &self,
+        brief: Box<ApprovalBrief>,
+        effect: &ApprovalEffect,
+        page_id: &PageId,
+    ) -> Result<(), SessionError> {
         let (request_id, receiver) = self.broker.open();
+        let mut ticket = ParkTicket {
+            session: self,
+            request_id: request_id.as_str().to_owned(),
+            page_id: page_id.clone(),
+            brief,
+            started: Instant::now(),
+            outcome: None,
+        };
         self.backbone.publish(
             self.id.clone(),
             Event::ApprovalRequested {
-                request_id: request_id.as_str().to_owned(),
+                request_id: ticket.request_id.clone(),
                 page: page_id.clone(),
-                action: action.clone(),
+                brief: Box::clone(&ticket.brief),
             },
         );
-        let outcome = self
-            .broker
-            .wait(&request_id, receiver, self.policy.approval_timeout())
-            .await;
-        let granted = outcome == ApprovalOutcome::Granted;
-        self.backbone.publish(
-            self.id.clone(),
-            Event::ApprovalResolved {
-                request_id: request_id.as_str().to_owned(),
-                granted,
-            },
+        ticket.settle(
+            self.broker
+                .wait(&request_id, receiver, self.policy.approval_timeout())
+                .await,
         );
-        match outcome {
-            ApprovalOutcome::Granted => Ok(()),
-            ApprovalOutcome::Denied => Err(denied()),
-            ApprovalOutcome::TimedOut => Err(SessionError::Action(ActionError::ApprovalTimedOut {
+        match ticket.outcome {
+            Some(ApprovalOutcome::Granted) => Ok(()),
+            Some(ApprovalOutcome::Denied) => Err(approval_denied(effect)),
+            // No broker answer means the window closed, or the sender went
+            // away with the manager; either way the agent sees a timeout.
+            _ => Err(SessionError::Action(ActionError::ApprovalTimedOut {
                 waited: self.policy.approval_timeout(),
             })),
         }
     }
 
-    /// The active page, opening the first page when none exists yet.
-    async fn active_page(&self) -> Result<Arc<dyn PageHandle>, EngineError> {
-        {
-            let pages = self.lock_pages();
-            if let Some(slot) = pages.iter().find(|slot| slot.active) {
-                return Ok(Arc::clone(&slot.handle));
-            }
+    /// The page an operation runs on, opening the session's first page
+    /// when it has none. The id and the handle come back together so a
+    /// caller cannot observe the two at different moments.
+    ///
+    /// While recovery owns the list this fails with `Terminated`: the
+    /// engine was just replaced and is being rebuilt, and opening a page
+    /// into a list that is about to be written back would leave a live tab
+    /// no one tracks (docs/sessions.md).
+    async fn ensure_page(&self) -> Result<(PageId, Arc<dyn PageHandle>), SessionError> {
+        if let Some(found) = self.pages.active() {
+            return Ok(found);
+        }
+        if !self.pages.accepts_new_page() {
+            return Err(SessionError::Engine(EngineError::Terminated));
         }
         let context = self.context.read().await.clone();
-        let (page_id, handle) = context.open_page().await?;
-        // Decide under the lock without awaiting: either register this
-        // page as the active one, or note that a racing caller already
-        // opened one (its page wins; this call's page is closed after
-        // the lock is released — guards never cross an await).
-        let raced = {
-            let mut pages = self.lock_pages();
-            let existing = pages
-                .iter()
-                .find(|slot| slot.active)
-                .map(|slot| Arc::clone(&slot.handle));
-            if existing.is_none() {
-                pages.push(PageSlot {
-                    id: page_id.clone(),
-                    url: String::new(),
-                    handle: Arc::clone(&handle),
-                    active: true,
-                });
-            }
-            existing
-        };
-        if let Some(existing) = raced {
-            let _ = context.close_page(page_id).await;
-            return Ok(existing);
+        let (page_id, handle) = context.open_page().await.map_err(engine_error)?;
+        if self.pages.admit_active(PageSlot {
+            id: page_id.clone(),
+            url: String::new(),
+            handle: Arc::clone(&handle),
+            active: true,
+        }) {
+            self.backbone.publish(
+                self.id.clone(),
+                Event::PageOpened {
+                    page: page_id.clone(),
+                },
+            );
+            return Ok((page_id, handle));
         }
-        self.backbone
-            .publish(self.id.clone(), Event::PageOpened { page: page_id });
-        Ok(handle)
-    }
-
-    /// The id of the active page slot. Callers guarantee an active slot
-    /// exists ([`Self::active_page`] ran first), so an empty id here is
-    /// only a harmless event payload placeholder.
-    fn active_page_id(&self) -> PageId {
-        let pages = self.lock_pages();
-        match pages.iter().find(|slot| slot.active) {
-            Some(slot) => slot.id.clone(),
-            None => PageId::new(String::new()),
-        }
+        // A concurrent caller won the race, or recovery took the list over
+        // while this page was opening. The loser closes what it opened: it
+        // is untracked, and nothing else will close it.
+        let _ = context.close_page(page_id).await;
+        self.pages
+            .active()
+            .ok_or(SessionError::Engine(EngineError::Terminated))
     }
 
     /// Executes one action with the given origin and returns the fresh
@@ -229,8 +214,7 @@ impl Session {
     /// the storage state are refreshed (docs/sessions.md: persist on
     /// change).
     pub async fn execute(&self, action: Action, origin: Origin) -> Result<Snapshot, SessionError> {
-        let page = self.active_page().await.map_err(engine_error)?;
-        let page_id = self.active_page_id();
+        let (page_id, page) = self.ensure_page().await?;
 
         // Supervision gate (docs/policy.md): agent-origin actions are
         // judged at the URL the action leads to — a navigation at its
@@ -245,11 +229,12 @@ impl Session {
                 Action::Navigate { url } => Some(url.clone()),
                 _ => ops.url().await,
             };
-            self.enforce_policy(
-                rutter_policy::class_of(&action),
+            self.enforce(
+                ApprovalEffect::Action {
+                    action: action.clone(),
+                },
                 policy_url.as_deref(),
                 &page_id,
-                &action,
             )
             .await?;
         }
@@ -299,10 +284,7 @@ impl Session {
         // not be overwritten with this page's.
         let url = match ops.url().await {
             Some(url) => {
-                self.lock_pages()
-                    .iter_mut()
-                    .filter(|slot| slot.id == page_id)
-                    .for_each(|slot| slot.url = url.clone());
+                self.pages.set_url(&page_id, &url);
                 url
             }
             // The page would not answer: keep the last known URL
@@ -317,7 +299,7 @@ impl Session {
     /// Renders the active page as a snapshot; no events, no auto-wait,
     /// no URL refresh.
     pub async fn snapshot(&self) -> Result<Snapshot, SessionError> {
-        let page = self.active_page().await.map_err(engine_error)?;
+        let (_, page) = self.ensure_page().await?;
         PageOps {
             page: page.as_ref(),
             config: &self.config,
@@ -327,9 +309,15 @@ impl Session {
     }
 
     /// Starts a live screencast of the active page; the stream is
-    /// observation only — dropping it stops the capture (docs/dashboard.md: on-demand, dashboard never executes actions).
+    /// observation only — dropping it stops the capture (docs/dashboard.md:
+    /// on-demand, dashboard never executes actions).
+    ///
+    /// This path reads the registry instead of going through
+    /// [`Self::ensure_page`] on purpose: a viewer asking to watch must not
+    /// cause a tab to open, so a session with no page answers
+    /// [`SessionError::NoOpenPage`] rather than mutating first.
     pub async fn screencast(&self) -> Result<ScreencastStream, SessionError> {
-        let page = self.active_page().await.map_err(engine_error)?;
+        let (_, page) = self.pages.active().ok_or(SessionError::NoOpenPage)?;
         page.start_screencast().await.map_err(SessionError::Engine)
     }
 
@@ -337,7 +325,7 @@ impl Session {
     /// `ActionError::Internal` so the agent sees the action taxonomy, not
     /// a raw engine failure.
     pub async fn screenshot(&self) -> Result<Screenshot, SessionError> {
-        let page = self.active_page().await.map_err(engine_error)?;
+        let (_, page) = self.ensure_page().await?;
         page.capture_screenshot().await.map_err(|error| {
             SessionError::Action(ActionError::Internal {
                 detail: error.to_string(),
@@ -347,7 +335,7 @@ impl Session {
 
     /// Polls the active page until `needle` appears in its text.
     pub async fn wait_for(&self, needle: &str, budget: Duration) -> Result<Snapshot, SessionError> {
-        let page = self.active_page().await.map_err(engine_error)?;
+        let (_, page) = self.ensure_page().await?;
         PageOps {
             page: page.as_ref(),
             config: &self.config,
@@ -358,31 +346,17 @@ impl Session {
 
     /// Lists the session's pages with their last known URLs.
     pub async fn pages(&self) -> Vec<PageInfo> {
-        self.lock_pages()
-            .iter()
-            .map(|slot| PageInfo {
-                id: slot.id.clone(),
-                url: slot.url.clone(),
-                active: slot.active,
-            })
-            .collect()
+        self.pages.list()
     }
 
     /// Makes another page active and returns its snapshot. No event is
     /// published; the page switch is visible to consumers only through
     /// the next action's events.
     pub async fn select_page(&self, page_id: PageId) -> Result<Snapshot, SessionError> {
-        let handle = {
-            let mut pages = self.lock_pages();
-            let Some(slot) = pages.iter_mut().find(|slot| slot.id == page_id) else {
-                return Err(unknown_page(&page_id));
-            };
-            let handle = Arc::clone(&slot.handle);
-            pages
-                .iter_mut()
-                .for_each(|slot| slot.active = slot.id == page_id);
-            handle
-        };
+        let handle = self
+            .pages
+            .activate(&page_id)
+            .ok_or_else(|| unknown_page(&page_id))?;
         PageOps {
             page: handle.as_ref(),
             config: &self.config,
@@ -396,7 +370,7 @@ impl Session {
     /// error: closing it would otherwise report success and publish a
     /// `PageClosed` event for a page that never existed.
     pub async fn close_page(&self, page_id: PageId) -> Result<String, SessionError> {
-        if !self.lock_pages().iter().any(|slot| slot.id == page_id) {
+        if !self.pages.contains(&page_id) {
             return Err(unknown_page(&page_id));
         }
         let context = self.context.read().await.clone();
@@ -404,13 +378,9 @@ impl Session {
             .close_page(page_id.clone())
             .await
             .map_err(engine_error)?;
-        {
-            let mut pages = self.lock_pages();
-            pages.retain(|slot| slot.id != page_id);
-            if !pages.is_empty() && !pages.iter().any(|slot| slot.active) {
-                pages[0].active = true;
-            }
-        }
+        // Only after the engine agreed: a page still open in the browser
+        // must stay tracked, or it becomes an uncounted live tab.
+        self.pages.remove(&page_id);
         self.backbone.publish(
             self.id.clone(),
             Event::PageClosed {
@@ -421,23 +391,24 @@ impl Session {
     }
 
     /// Sets cookies on the session's context, subject to the policy's
-    /// `cookies` class rules (approval-required by default). Policy
-    /// events carry `Reload` as the closest action payload since cookie
-    /// changes have no `Action` variant.
+    /// `cookies` class rules (approval-required by default). The approval
+    /// a human sees describes a cookie write: there is no `Action` variant
+    /// for it, and an unrelated action standing in would authorize
+    /// something other than what was shown (docs/policy.md).
     pub async fn set_cookies(&self, cookies: &[Cookie]) -> Result<(), SessionError> {
-        let page = self.active_page().await.map_err(engine_error)?;
-        let page_id = self.active_page_id();
+        let (page_id, page) = self.ensure_page().await?;
         let url = PageOps {
             page: page.as_ref(),
             config: &self.config,
         }
         .url()
         .await;
-        self.enforce_policy(
-            ActionClass::Cookies,
+        self.enforce(
+            ApprovalEffect::Cookies {
+                count: cookies.len(),
+            },
             url.as_deref(),
             &page_id,
-            &Action::Reload,
         )
         .await?;
         let context = self.context.read().await.clone();
@@ -447,29 +418,19 @@ impl Session {
         Ok(())
     }
 
-    /// The open pages as `(url, handle)` pairs, the shape
-    /// `StorageState` capture and restore consume.
-    fn page_pairs(&self) -> Vec<(String, Arc<dyn PageHandle>)> {
-        self.lock_pages()
-            .iter()
-            .map(|slot| (slot.url.clone(), Arc::clone(&slot.handle)))
-            .collect()
-    }
-
     /// Captures the session's storage state (cookies plus localStorage
     /// of every open page). A read-only probe: nothing is persisted and
     /// the in-memory `last_storage` copy is not touched, so a capture
     /// never influences what the next persist-on-change run writes.
     pub async fn capture_storage(&self) -> StorageState {
         let context = self.context.read().await.clone();
-        StorageState::capture(context.as_ref(), &self.page_pairs()).await
+        StorageState::capture(context.as_ref(), &self.pages.pairs()).await
     }
 
     /// Saves the current storage state to the session's persistence
     /// file (explicit save; docs/sessions.md).
     pub async fn save_storage(&self) -> Result<(), SessionError> {
-        let page = self.active_page().await.map_err(engine_error)?;
-        let page_id = self.active_page_id();
+        let (page_id, page) = self.ensure_page().await?;
         let url = PageOps {
             page: page.as_ref(),
             config: &self.config,
@@ -495,7 +456,7 @@ impl Session {
             }
         };
         let context = self.context.read().await.clone();
-        let pairs = self.page_pairs();
+        let pairs = self.pages.pairs();
         state.restore(context.as_ref(), &pairs).await;
         *self.lock_last_storage() = state;
         Ok(())
@@ -504,8 +465,14 @@ impl Session {
     /// Rebuilds the session on a fresh context after an engine restart:
     /// replays cookies and localStorage, re-opens the tracked pages at
     /// their URLs, and publishes `EngineRestarted` (docs/sessions.md).
+    ///
+    /// The registry is gated for the whole rebuild. Without the gate a
+    /// concurrent action could open a page between the read-out and the
+    /// write-back, get itself registered as active, and then be dropped by
+    /// the write-back — leaving a live tab the new engine kept, `tabs_list`
+    /// never showed, and the page cap never counted.
     pub(crate) async fn recover(&self, context: Arc<dyn ContextHandle>) {
-        let saved = std::mem::take(&mut *self.lock_pages());
+        let saved = self.pages.begin_recovery();
         let state = self.lock_last_storage().clone();
 
         let shared = Arc::clone(&context);
@@ -549,10 +516,7 @@ impl Session {
             self.backbone
                 .publish(self.id.clone(), Event::PageOpened { page: id });
         }
-        if !restored.is_empty() && !restored.iter().any(|slot| slot.active) {
-            restored[0].active = true;
-        }
-        *self.lock_pages() = restored;
+        self.pages.finish_recovery(restored);
 
         self.backbone
             .publish(self.id.clone(), Event::EngineRestarted);
@@ -562,10 +526,8 @@ impl Session {
     /// an unreadable page instead of degrading tracking, and policy
     /// judgments never consume it — they fail closed on `None` instead.
     fn last_known_url(&self, page_id: &PageId) -> String {
-        self.lock_pages()
-            .iter()
-            .find(|slot| slot.id == *page_id)
-            .map(|slot| slot.url.clone())
+        self.pages
+            .url_of(page_id)
             .unwrap_or_else(|| "about:blank".to_owned())
     }
 
@@ -601,28 +563,26 @@ impl Session {
 
     /// Closes the session's browser context (every page inside it goes
     /// with it); failures are tolerated so a session always closes. The
-    /// manager removes the session before closing it, so no concurrent
-    /// recovery re-opens pages in between: close and recovery serialize
-    /// on the manager's running lock.
+    /// registry is emptied after the context is gone, so no lookup can
+    /// hand out a handle into a dead context.
     pub async fn close(&self) {
         let context = self.context.read().await.clone();
         let _ = context.close().await;
-        self.lock_pages().clear();
+        self.pages.clear();
+    }
+
+    /// The page registry, for tests that seed tracked pages without going
+    /// through an action.
+    #[cfg(test)]
+    pub(crate) fn registry(&self) -> &PageRegistry {
+        &self.pages
     }
 
     /// Opens (or returns) the active page; exposed for tests that need
     /// to seed tracked pages without going through an action.
     #[cfg(test)]
     pub(crate) async fn active_page_for_test(&self) -> (PageId, Arc<dyn PageHandle>) {
-        let handle = self.active_page().await.expect("test page opens");
-        let page_id = self.active_page_id();
-        (page_id, handle)
-    }
-
-    fn lock_pages(&self) -> std::sync::MutexGuard<'_, Vec<PageSlot>> {
-        self.pages
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.ensure_page().await.expect("test page opens")
     }
 
     fn lock_last_storage(&self) -> std::sync::MutexGuard<'_, StorageState> {
@@ -638,8 +598,8 @@ impl Session {
     }
 }
 
-/// The reference an approval denial names; actions without a target
-/// element use an empty reference.
+/// The reference an operation names in an agent-facing error; actions
+/// without a target element use an empty reference.
 fn action_reference(action: &Action) -> rutter_core::reference::Reference {
     match action {
         Action::Click { reference }
@@ -654,6 +614,74 @@ fn action_reference(action: &Action) -> rutter_core::reference::Reference {
     }
 }
 
+/// One parked approval, from the question to its resolution.
+///
+/// The `Drop` half is the point. Publishing the resolution and writing the
+/// audit line from ordinary control flow would skip both whenever this
+/// future is cancelled — which is exactly what happens when the MCP client
+/// that asked goes away. The dashboard would then keep a card nothing can
+/// retire, and the trail would be silent about a supervision decision that
+/// did end. Dropping the ticket settles it either way.
+struct ParkTicket<'a> {
+    session: &'a Session,
+    request_id: String,
+    page_id: PageId,
+    brief: Box<ApprovalBrief>,
+    started: Instant,
+    outcome: Option<ApprovalOutcome>,
+}
+
+impl ParkTicket<'_> {
+    /// Records the answer the broker delivered.
+    fn settle(&mut self, outcome: ApprovalOutcome) {
+        self.outcome = Some(outcome);
+    }
+
+    /// The audit label for whatever state the ticket ended in.
+    fn label(&self) -> &'static str {
+        match self.outcome {
+            Some(ApprovalOutcome::Granted) => audit::GRANTED,
+            Some(ApprovalOutcome::Denied) => audit::DENIED,
+            Some(ApprovalOutcome::TimedOut) => audit::TIMED_OUT,
+            // Cancelled mid-park: nobody granted it and nobody timed out
+            // waiting either.
+            None => audit::CANCELLED,
+        }
+    }
+}
+
+impl Drop for ParkTicket<'_> {
+    fn drop(&mut self) {
+        let granted = self.outcome == Some(ApprovalOutcome::Granted);
+        self.session.backbone.publish(
+            self.session.id.clone(),
+            Event::ApprovalResolved {
+                request_id: self.request_id.clone(),
+                granted,
+            },
+        );
+        self.session.audit.record(
+            &self.session.id,
+            &self.page_id,
+            &self.request_id,
+            &self.brief,
+            self.label(),
+            self.started.elapsed(),
+        );
+    }
+}
+
+/// The refusal an agent sees when policy denied its operation outright.
+/// The reference names the element where one exists; an operation without
+/// a target element keeps the empty reference the action path uses.
+fn approval_denied(effect: &ApprovalEffect) -> SessionError {
+    let reference = match effect {
+        ApprovalEffect::Action { action } => action_reference(action),
+        ApprovalEffect::Cookies { .. } => rutter_core::reference::Reference::new(""),
+    };
+    SessionError::Action(ActionError::ApprovalDenied { reference })
+}
+
 /// Maps engine failures onto the action taxonomy for event payloads.
 pub(crate) fn as_action_error(session: &SessionId, error: &SessionError) -> ActionError {
     match error {
@@ -662,9 +690,9 @@ pub(crate) fn as_action_error(session: &SessionId, error: &SessionError) -> Acti
             EngineError::Terminated => ActionError::EngineTerminated {
                 session: session.clone(),
             },
-            EngineError::NavigationFailed { url, detail } => ActionError::NavigationFailed {
+            EngineError::NavigationFailed { url, cause, .. } => ActionError::NavigationFailed {
                 url: url.clone(),
-                cause: crate::actions::transport_cause(detail),
+                cause: cause.clone(),
             },
             EngineError::Timeout { elapsed, .. } => ActionError::TimedOut {
                 phase: rutter_core::error::WaitPhase::Act,
@@ -681,6 +709,12 @@ pub(crate) fn as_action_error(session: &SessionId, error: &SessionError) -> Acti
                 detail: detail.clone(),
             }
         }
+        // The observation-only refusal: no action path reaches it, since
+        // actions open a page when they need one.
+        SessionError::NoOpenPage => ActionError::NotInteractable {
+            reference: rutter_core::reference::Reference::new(""),
+            reason: "the session has no open page to observe".to_owned(),
+        },
     }
 }
 

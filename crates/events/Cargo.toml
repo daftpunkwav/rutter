@@ -14,6 +14,10 @@ workspace = true
 
 [dependencies]
 rutter-core = { workspace = true }
+# `ApprovalRequested` carries the brief policy builds: an approval event
+# that could not say what it authorized was an approval nobody could read
+# (docs/policy.md).
+rutter-policy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }

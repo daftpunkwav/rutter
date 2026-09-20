@@ -12,7 +12,11 @@
 （docs/architecture.md）。它读取事件骨干（先重放，后实时），只在有观看者时
 拉取 screencast 帧，并把决定提交给会话驻留等待的同一个 broker。每个
 端点都经过同一道门：环回 `Host` 检查 + token（query 或 HttpOnly
-cookie）——见 `src/auth.rs`。
+cookie）——见 `src/auth.rs`。token 本身由 `DashboardServer::hand_off`
+交接，信道由 stderr 的另一端是谁决定：终端拿到 URL，管道（被监管的
+MCP client 的情形）拿到一个 Unix 上仅属主可读的文件，打印行只出现
+路径
+（docs/dashboard.zh.md §2）。
 
 ## 消费者
 

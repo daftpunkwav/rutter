@@ -9,7 +9,7 @@
 use std::time::{Duration, Instant};
 
 use rutter_core::action::{Action, ScrollDirection};
-use rutter_core::error::{ActionError, TransportCause, WaitPhase};
+use rutter_core::error::{ActionError, WaitPhase};
 use rutter_core::ids::{PageId, SessionId};
 use rutter_core::reference::Reference;
 use rutter_core::snapshot::Snapshot;
@@ -373,22 +373,6 @@ fn expired(reference: &str) -> SessionError {
     SessionError::Action(ActionError::ReferenceExpired {
         reference: Reference::new(reference),
     })
-}
-
-/// Navigation failures map onto the transport taxonomy by detail text;
-/// everything else stays an honest `ConnectionFailed`.
-pub(crate) fn transport_cause(detail: &str) -> TransportCause {
-    if detail.contains("ERR_TIMED_OUT") || detail.contains("ERR_CONNECTION_TIMED_OUT") {
-        TransportCause::TimedOut
-    } else if detail.contains("ERR_NAME_NOT_RESOLVED") {
-        TransportCause::DnsFailed
-    } else if detail.contains("ERR_SSL") || detail.contains("ERR_CERT") {
-        TransportCause::TlsFailed
-    } else if detail.contains("ERR_ABORTED") {
-        TransportCause::Aborted
-    } else {
-        TransportCause::ConnectionFailed
-    }
 }
 
 #[cfg(test)]

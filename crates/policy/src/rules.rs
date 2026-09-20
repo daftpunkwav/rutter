@@ -2,7 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::class::{ActionClass, class_of};
+use crate::brief::{ApprovalBrief, ApprovalEffect, VerdictBasis};
+use crate::canonical::canonical_url;
+use crate::class::ActionClass;
 use crate::pattern::Pattern;
 
 /// The decision for an action against a URL.
@@ -28,6 +30,23 @@ impl Verdict {
             _ => None,
         }
     }
+}
+
+/// What the rule set says about one operation, and what a human needs in
+/// the case where a human has to be asked.
+///
+/// The brief rides on the verdict instead of sitting next to it: the only
+/// moment it is worth building is the one where someone is about to be
+/// asked, and a caller cannot forget to attach it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Review {
+    /// Run it; no supervision overhead.
+    Allowed,
+    /// Refuse it; nobody is asked.
+    Denied,
+    /// Park it until a human answers, carrying the material they answer
+    /// from.
+    NeedsApproval(Box<ApprovalBrief>),
 }
 
 /// One rule: an optional action class and an optional URL pattern, both
@@ -95,7 +114,44 @@ impl RuleSet {
     /// Evaluates one action class against a URL: the first matching rule
     /// wins (rules keep document order), then the default.
     pub fn evaluate(&self, class: ActionClass, url: &str) -> Verdict {
-        for rule in &self.rules {
+        self.judge(class, url).0
+    }
+
+    /// Reviews one operation for supervision. This is the entry point a
+    /// caller reaches a verdict through: it canonicalizes the judgment URL
+    /// itself, so no caller can reach a verdict while skipping
+    /// canonicalization, and it hands back the brief a human decides from
+    /// whenever the answer is to ask one (docs/policy.md).
+    ///
+    /// A URL that will not canonicalize — not a URL at all, or one hiding
+    /// credentials behind a `user@host` decoy — counts as no URL at all,
+    /// which fails closed rather than matching a placeholder.
+    pub fn review(&self, effect: ApprovalEffect, raw_url: Option<&str>) -> Review {
+        let judged_url = raw_url.and_then(canonical_url);
+        let class = effect.class();
+        let (verdict, basis) = match &judged_url {
+            Some(url) => self.judge(class, url),
+            None => match self.judge(class, "") {
+                (Verdict::Allow, _) => (Verdict::RequireApproval, VerdictBasis::MissingUrl),
+                (verdict, basis) => (verdict, basis),
+            },
+        };
+        match verdict {
+            Verdict::Allow => Review::Allowed,
+            Verdict::Deny => Review::Denied,
+            Verdict::RequireApproval => Review::NeedsApproval(Box::new(ApprovalBrief {
+                class,
+                judged_url,
+                basis,
+                effect,
+            })),
+        }
+    }
+
+    /// The verdict plus which rule reached it. `evaluate` is the
+    /// projection that drops the explanation.
+    fn judge(&self, class: ActionClass, url: &str) -> (Verdict, VerdictBasis) {
+        for (position, rule) in self.rules.iter().enumerate() {
             let class_matches = rule
                 .action_class
                 .as_deref()
@@ -107,28 +163,19 @@ impl RuleSet {
                 .map(|pattern| pattern.matches(url))
                 .unwrap_or(true);
             if class_matches && url_matches {
-                return rule.verdict;
+                return (
+                    rule.verdict,
+                    VerdictBasis::Rule {
+                        index: position + 1,
+                        url_pattern: rule
+                            .url_pattern
+                            .as_ref()
+                            .map(|pattern| pattern.as_str().to_owned()),
+                    },
+                );
             }
         }
-        self.default_verdict
-    }
-
-    /// Convenience for actions: classifies then evaluates.
-    pub fn evaluate_action(&self, action: &rutter_core::action::Action, url: &str) -> Verdict {
-        self.evaluate(class_of(action), url)
-    }
-
-    /// Evaluates one action class when no usable URL is known: the page
-    /// URL is unreadable, a navigation target is not a URL at all, or
-    /// the target embeds credentials. URL-scoped rules cannot match,
-    /// class-only rules still do, and a bare `Allow` upgrades to
-    /// `RequireApproval`, so missing URL information never passes an
-    /// action unsupervised (docs/policy.md).
-    pub fn evaluate_without_url(&self, class: ActionClass) -> Verdict {
-        match self.evaluate(class, "") {
-            Verdict::Allow => Verdict::RequireApproval,
-            verdict => verdict,
-        }
+        (self.default_verdict, VerdictBasis::SetDefault)
     }
 }
 
@@ -190,24 +237,50 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_action_classifies_before_matching() {
+    fn review_classifies_the_effect_it_was_given() {
         let rules = RuleSet::default_set();
-        let action = Action::Click {
-            reference: Reference::new("e1"),
-        };
-        assert_eq!(
-            rules.evaluate_action(&action, "https://x.example/"),
-            Verdict::Allow
+        let pointer = rules.review(
+            ApprovalEffect::Action {
+                action: Action::Click {
+                    reference: Reference::new("e1"),
+                },
+            },
+            Some("https://x.example/"),
         );
+        assert_eq!(pointer, Review::Allowed, "a pointer is not gated here");
+
+        let parked = rules.review(
+            ApprovalEffect::Cookies { count: 2 },
+            Some("https://x.example/"),
+        );
+        match parked {
+            Review::NeedsApproval(brief) => {
+                assert_eq!(brief.class, ActionClass::Cookies);
+                assert_eq!(brief.effect, ApprovalEffect::Cookies { count: 2 });
+            }
+            other => panic!("cookies must be parked, got {other:?}"),
+        }
     }
 
     #[test]
     fn a_missing_url_upgrades_allow_to_approval() {
         let rules = RuleSet::new(vec![], Verdict::Allow);
-        assert_eq!(
-            rules.evaluate_without_url(ActionClass::Pointer),
-            Verdict::RequireApproval
+        let review = rules.review(
+            ApprovalEffect::Action {
+                action: Action::Back,
+            },
+            Some("not a url at all"),
         );
+        match review {
+            Review::NeedsApproval(brief) => {
+                assert_eq!(brief.basis, VerdictBasis::MissingUrl);
+                assert_eq!(
+                    brief.judged_url, None,
+                    "an unparseable URL is judged as no URL, never as a placeholder"
+                );
+            }
+            other => panic!("a bare allow fails closed, got {other:?}"),
+        }
     }
 
     #[test]
@@ -220,15 +293,21 @@ mod tests {
             }],
             Verdict::Allow,
         );
+        let cookies = rules.review(ApprovalEffect::Cookies { count: 1 }, None);
         assert_eq!(
-            rules.evaluate_without_url(ActionClass::Cookies),
-            Verdict::Deny,
+            cookies,
+            Review::Denied,
             "a class-only deny does not need URL information"
         );
-        assert_eq!(
-            rules.evaluate_without_url(ActionClass::Navigation),
-            Verdict::RequireApproval
-        );
+        assert!(matches!(
+            rules.review(
+                ApprovalEffect::Action {
+                    action: Action::Back
+                },
+                None
+            ),
+            Review::NeedsApproval(_)
+        ));
     }
 
     #[test]
@@ -242,8 +321,13 @@ mod tests {
             Verdict::Allow,
         );
         assert_eq!(
-            rules.evaluate_without_url(ActionClass::Pointer),
-            Verdict::Deny,
+            rules.review(
+                ApprovalEffect::Action {
+                    action: Action::Back
+                },
+                None
+            ),
+            Review::Denied,
             "a 'match everything' pattern matches the empty judgment URL"
         );
     }
@@ -258,10 +342,80 @@ mod tests {
             }],
             Verdict::Allow,
         );
-        assert_eq!(
-            rules.evaluate_without_url(ActionClass::Navigation),
-            Verdict::RequireApproval,
+        assert!(
+            matches!(
+                rules.review(
+                    ApprovalEffect::Action {
+                        action: Action::Back
+                    },
+                    None
+                ),
+                Review::NeedsApproval(_)
+            ),
             "the old about:blank degradation let a deny rule 'match' a placeholder; without a URL the verdict must be the fail-closed upgrade instead"
         );
+    }
+
+    #[test]
+    fn the_brief_names_the_rule_and_the_canonical_url() {
+        let rules = RuleSet::new(
+            vec![
+                PolicyRule {
+                    action_class: Some("scroll".to_owned()),
+                    url_pattern: None,
+                    verdict: Verdict::Deny,
+                },
+                PolicyRule {
+                    action_class: Some("navigation".to_owned()),
+                    url_pattern: Some(Pattern::new("https://*.bank.example/*")),
+                    verdict: Verdict::RequireApproval,
+                },
+            ],
+            Verdict::Allow,
+        );
+        let review = rules.review(
+            ApprovalEffect::Action {
+                action: Action::Navigate {
+                    url: "https://PAY.bank.example/confirm".to_owned(),
+                },
+            },
+            // The raw target, as an agent supplied it: the brief must
+            // carry what was judged, not what was typed.
+            Some("https://PAY.bank.example/confirm"),
+        );
+        match review {
+            Review::NeedsApproval(brief) => {
+                assert_eq!(
+                    brief.basis,
+                    VerdictBasis::Rule {
+                        index: 2,
+                        url_pattern: Some("https://*.bank.example/*".to_owned()),
+                    },
+                    "the human sees which rule stopped the action"
+                );
+                assert_eq!(
+                    brief.judged_url.as_deref(),
+                    Some("https://pay.bank.example/confirm"),
+                    "the judged URL is the canonical form"
+                );
+            }
+            other => panic!("the second rule parks the navigation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_cookie_write_is_never_borrowed_from_another_action() {
+        // The regression this guards: cookie approvals rode on
+        // `Action::Reload`, so a human approving "reload" authorized a
+        // cookie write. The effect must say what it is.
+        let rules = RuleSet::default_set();
+        let Review::NeedsApproval(brief) = rules.review(
+            ApprovalEffect::Cookies { count: 3 },
+            Some("https://x.example/"),
+        ) else {
+            panic!("cookies require a human");
+        };
+        assert_eq!(brief.effect, ApprovalEffect::Cookies { count: 3 });
+        assert!(!matches!(brief.effect, ApprovalEffect::Action { .. }));
     }
 }

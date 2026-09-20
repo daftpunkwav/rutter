@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use rutter_core::ids::SessionId;
 use time::OffsetDateTime;
@@ -18,6 +17,40 @@ use crate::ring::RingBuffer;
 /// Default per-session history size.
 pub const DEFAULT_RING_CAPACITY: usize = 1000;
 
+/// The numbered history: a server-wide counter and the per-session rings
+/// it indexes.
+///
+/// They live in one guard because numbering, recording, and fan-out are a
+/// single decision. A counter taken before the ring insert lets two
+/// publishers interleave so the ring reads `[newer, older]`, which breaks
+/// replay's "oldest first" contract and makes a consumer that tracks the
+/// highest sequence it has seen drop the older envelope as a duplicate.
+#[derive(Debug)]
+struct History {
+    next_seq: u64,
+    ring_capacity: usize,
+    rings: HashMap<SessionId, RingBuffer>,
+}
+
+impl History {
+    /// Numbers one event and records it in its session ring, returning the
+    /// envelope for fan-out. The ring evicts its oldest entry past capacity.
+    fn record(&mut self, session: SessionId, event: Event) -> Envelope {
+        let envelope = Envelope {
+            seq: self.next_seq,
+            recorded_at: now_rfc3339(),
+            session,
+            event,
+        };
+        self.next_seq += 1;
+        self.rings
+            .entry(envelope.session.clone())
+            .or_insert_with(|| RingBuffer::new(self.ring_capacity))
+            .push(envelope.clone());
+        envelope
+    }
+}
+
 /// Publishes events to live subscribers and per-session history.
 ///
 /// `publish` never blocks and never fails (docs/events.md): the envelope
@@ -26,9 +59,7 @@ pub const DEFAULT_RING_CAPACITY: usize = 1000;
 #[derive(Debug)]
 pub struct Backbone {
     bus: EventBus,
-    rings: Mutex<HashMap<SessionId, RingBuffer>>,
-    ring_capacity: usize,
-    seq: AtomicU64,
+    history: Mutex<History>,
 }
 
 impl Backbone {
@@ -41,26 +72,23 @@ impl Backbone {
     pub fn with_ring_capacity(capacity: usize) -> Self {
         Self {
             bus: EventBus::new(),
-            rings: Mutex::new(HashMap::new()),
-            ring_capacity: capacity.max(1),
-            seq: AtomicU64::new(0),
+            history: Mutex::new(History {
+                next_seq: 0,
+                ring_capacity: capacity.max(1),
+                rings: HashMap::new(),
+            }),
         }
     }
 
     /// Records and fans out one event; fire-and-forget.
     pub fn publish(&self, session: SessionId, event: Event) {
-        let envelope = Envelope {
-            seq: self.seq.fetch_add(1, Ordering::Relaxed),
-            recorded_at: now_rfc3339(),
-            session,
-            event,
-        };
-
-        self.lock_rings()
-            .entry(envelope.session.clone())
-            .or_insert_with(|| RingBuffer::new(self.ring_capacity))
-            .push(envelope.clone());
-        self.bus.publish(envelope);
+        let mut history = self.lock_history();
+        // Fan-out stays inside the guard for the same reason numbering and
+        // recording share it: sending after the drop would let a
+        // later-numbered envelope reach live subscribers first.
+        // `EventBus::publish` never blocks, so this cannot widen the
+        // critical section beyond the ring insert.
+        self.bus.publish(history.record(session, event));
     }
 
     /// Subscribes to live envelopes.
@@ -70,7 +98,8 @@ impl Backbone {
 
     /// History of one session, oldest first; empty for unknown sessions.
     pub fn replay(&self, session: &SessionId) -> Vec<Envelope> {
-        self.lock_rings()
+        self.lock_history()
+            .rings
             .get(session)
             .map(RingBuffer::history)
             .unwrap_or_default()
@@ -81,7 +110,7 @@ impl Backbone {
     /// unread in the map forever and a serve process that churns through
     /// session ids would grow the map without bound.
     pub fn forget(&self, session: &SessionId) {
-        self.lock_rings().remove(session);
+        self.lock_history().rings.remove(session);
     }
 }
 
@@ -92,10 +121,10 @@ impl Default for Backbone {
 }
 
 impl Backbone {
-    /// Locks the ring map, recovering from poisoning: the rings stay
-    /// usable even if a publisher panicked mid-publish.
-    fn lock_rings(&self) -> MutexGuard<'_, HashMap<SessionId, RingBuffer>> {
-        self.rings
+    /// Locks the numbered history, recovering from poisoning: the rings
+    /// stay usable even if a publisher panicked mid-publish.
+    fn lock_history(&self) -> MutexGuard<'_, History> {
+        self.history
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -156,6 +185,50 @@ mod tests {
         let s1 = backbone.replay(&SessionId::new("s1"))[0].seq;
         let s2 = backbone.replay(&SessionId::new("s2"))[0].seq;
         assert!(s2 > s1);
+    }
+
+    #[test]
+    fn concurrent_publishes_keep_ring_and_bus_in_allocation_order() {
+        // Numbering, recording, and fan-out share one critical section.
+        // Taking the counter outside it lets two publishers interleave so
+        // the ring and the live stream disagree about order — and a
+        // consumer that tracks the highest sequence it has seen then drops
+        // the older envelope as a duplicate.
+        const THREADS: usize = 8;
+        const PER_THREAD: usize = 50;
+        const TOTAL: u64 = (THREADS * PER_THREAD) as u64;
+
+        let backbone = std::sync::Arc::new(Backbone::new());
+        let session = SessionId::new("contended");
+        let mut receiver = backbone.subscribe();
+        let writers: Vec<_> = (0..THREADS)
+            .map(|_| {
+                let backbone = std::sync::Arc::clone(&backbone);
+                let session = session.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..PER_THREAD {
+                        backbone.publish(session.clone(), Event::SessionStarted);
+                    }
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().expect("publisher thread");
+        }
+
+        let expected: Vec<u64> = (0..TOTAL).collect();
+        let ring: Vec<u64> = backbone
+            .replay(&session)
+            .iter()
+            .map(|envelope| envelope.seq)
+            .collect();
+        assert_eq!(ring, expected, "the ring records in allocation order");
+
+        let mut live: Vec<u64> = Vec::new();
+        while let Ok(envelope) = receiver.try_recv() {
+            live.push(envelope.seq);
+        }
+        assert_eq!(live, expected, "the bus fans out in the same order");
     }
 
     #[test]

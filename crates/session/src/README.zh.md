@@ -7,9 +7,11 @@
 | `lib.rs` | 公开导出；本 crate 是 engine/observe/policy/events 的交汇点 |
 | `manager.rs` | `SessionManager`：惰性启动引擎、会话上限、恢复任务 |
 | `session/` | `Session`：Page（页面）、execute、screencast、close（见其 README） |
+| `pages.rs` | `PageRegistry`：被跟踪的槽位、「恰好一个活动页」不变量、恢复门 |
 | `actions/` | `Executor`/`PageOps`：每次调用一个 Action（动作）、自动等待（见其 README） |
 | `resolve.rs` | 经 observe 脚本做 Reference（引用）解析 |
 | `storage.rs` | 存储状态（cookies + localStorage），原子且仅限属主的持久化 |
+| `audit.rs` | 仅追加的审批轨迹：每个受监管的决定一行 JSON |
 | `wait.rs` | `poll_until`，带 600 s 预算钳制（时钟溢出防护） |
 | `config.rs` | `SessionConfig` 默认值由 docs/tool-catalog.md §3 钉死（`wait_for` 预算默认值在 MCP 工具层，§4） |
 | `error.rs` | `SessionError`，衔接引擎错误与动作错误 |

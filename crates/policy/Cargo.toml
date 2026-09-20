@@ -19,3 +19,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
 url = { workspace = true }
+
+# The brief wire test asserts the JSON the dashboard consumes.
+[dev-dependencies]
+serde_json = { workspace = true }

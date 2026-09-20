@@ -83,6 +83,16 @@ engine's lifecycle:
   callers with `Terminated` until the window drains. The heartbeat
   keeps retrying after the drain, so a failed or dead engine recovers
   on its own.
+- **A healthy probe closes the window.** Surviving a heartbeat wipes the
+  attempt history. Without that reset, three crashes that each recovered
+  would leave an engine one crash away from permanent abandonment even
+  after running cleanly for an hour — the breaker would be counting the
+  journey, not the trouble.
+- **One state, one restart path.** Supervision state is a single
+  `Phase` value (`Idle`, `Running`, `Replacing`, `BreakerOpen`) carrying
+  its own restart history, rather than a slot, a flag, and a history that
+  readers had to reconcile. The policy-driven launch exists once
+  (`bring_up`), used by the initial start and by every later replacement.
 - **Restart serialization.** A mutex guards restart cycles so
   concurrent failures relaunch once.
 - **Restart notification.** Every successful replacement bumps a

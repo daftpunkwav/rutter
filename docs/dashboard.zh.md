@@ -18,15 +18,27 @@ UI 字符串来自 `frontend/i18n/en.json` 目录。
 | `/app.js`, `/i18n/en.json` | 应用脚本与字符串目录 |
 | `/ws` | WebSocket（replay + 实时事件、决策、screencast） |
 | `/api/decisions` | `POST` 审批决定，供简单自动化 client 使用 |
+| `/api/pending` | `GET` 当前有多少审批正被搁置 |
 
 ## 2. 访问控制
 
 每个端点（包括 WebSocket 升级）都经过同一个门
 （[`auth.rs`](../crates/dashboard/src/auth.rs)）：
 
-- **每次启动一个令牌。** 启动时生成 64 位十六进制令牌——以随机
-  种子的哈希器混合启动时间与进程 id——并作为 `?token=…` 打印到
-  终端。`RUTTER_DASHBOARD_TOKEN` 可为自动化覆盖。
+- **每次启动一个令牌。** 令牌在 dashboard 构造时生成一次，为 64 位
+  十六进制——以随机种子的哈希器混合启动时间与进程 id。
+  `RUTTER_DASHBOARD_TOKEN` 可为自动化覆盖；该覆盖对启动 rutter 的
+  一方可见，所以它属于可信启动器，不属于人类专用信道。
+- **URL 的交接。** 信道由 stderr 的另一端是谁决定。终端照常拿到
+  `…/?token=…`；管道（MCP client 拉起 `rutter serve`）只拿到监听
+  地址与交接文件路径，拿不到 URL 或令牌——那个 client 正是 rutter
+  要监管的进程——URL 写入
+  `<cache-dir>/dashboard-access.url`，Unix 上以仅属主可读创建。既无
+  终端又无该路径时，dashboard 拒绝启动，而不是退回打印令牌。
+- **这换到什么、换不到什么。** rutter 与 client 同机同用户，该用户
+  账户下的进程能读到 rutter 自己缓存里的任何文件。交接消除的是
+  *自动*泄漏进被继承的信道，它不是人类专属的判据。必须阻止 agent
+  自批的部署，要把 dashboard 跑在 agent 账户之外。
 - **令牌换 cookie。** 首次带 `?token=` 访问会设置 `HttpOnly`、
   `SameSite=Strict` 的会话 cookie；之后的请求仅凭 cookie 认证。
 - **`Host` 校验**防范 DNS rebinding。
@@ -65,7 +77,10 @@ screencast 图像。
 
 ## 5. Screencast
 
-Screencast **按需开启**：观看者请求时开始，离开时停止。帧单向
+Screencast **按需开启**：观看者请求时开始，离开时停止。它同时是
+**只读的**：没有已打开页面的 session 回答 `no open page to observe`，
+而不是去开一个——开 tab 是动作，而 dashboard 不执行任何动作
+（docs/architecture.zh.md）。帧单向
 流动——CDP `Page.startScreencast`（JPEG，宽度 ≤ 1024，逐帧 ack）
 经容量 4 的有界 channel，channel 满时丢帧。卡顿的观看者丢帧而不
 丢内存，截取也永远无法阻塞动作执行。CDP 在导航时停止 screencast；

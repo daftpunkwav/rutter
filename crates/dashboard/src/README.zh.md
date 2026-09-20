@@ -4,7 +4,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `lib.rs` | `DashboardServer`：绑定、路由、静态处理器、内嵌资源、HTTP 决定端点 |
+| `lib.rs` | `DashboardServer`：绑定、路由、静态处理器、内嵌资源、HTTP 决定端点、token 交接 |
 | `auth.rs` | 端点门禁：环回 `Host` 检查、token（query/HttpOnly cookie）、常数时间比较 |
 | `ws.rs` | WebSocket 循环：重放 → 实时、Lagged 重同步、screencast 转发、决定消息 |
 

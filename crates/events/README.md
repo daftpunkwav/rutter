@@ -8,8 +8,10 @@ bounded per-session ring for replay.
 
 ## Boundary
 
-Depends on `core` only. Publishing is fire-and-forget and never blocks
-action execution (docs/events.md). Backpressure: the bus may drop
+Depends on `core`, plus `policy` for the one field an approval event
+carries — the brief only policy can build (docs/policy.md). Publishing
+is fire-and-forget: it never waits on consumers and never fails
+(docs/events.md). Backpressure: the bus may drop
 envelopes from slow subscribers (they resync from the rings), but
 semantic events are never dropped from the rings; screencast frames
 are not events at all — they flow as binary dashboard frames.
