@@ -67,7 +67,7 @@ dirs = "6"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 insta = "1"
 proptest = "1"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde = { version = "1", features = ["derive"] }
 # Needed by name: rmcp::schemars::JsonSchema derive expands to
 # `schemars::` paths, so rutter-mcp must declare the crate itself.
@@ -77,6 +77,8 @@ tempfile = "3"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+# Dashboard tests drive the real WebSocket loop over loopback.
+tokio-tungstenite = { version = "0.29", default-features = false }
 toml = "0.8"
 url = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
