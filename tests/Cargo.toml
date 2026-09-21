@@ -32,6 +32,10 @@ path = "approval_e2e.rs"
 name = "http_e2e"
 path = "http_e2e.rs"
 
+[[test]]
+name = "open_e2e"
+path = "open_e2e.rs"
+
 [lints]
 workspace = true
 

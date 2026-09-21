@@ -159,3 +159,112 @@ async fn close_page_accepts_an_already_vanished_target() -> Result<(), Box<dyn s
     engine.shutdown().await?;
     Ok(())
 }
+
+/// History walks and reload: back/forward resolve with the effective
+/// URL, an out-of-range walk fails with a message, reload succeeds.
+#[tokio::test]
+#[ignore = "requires a downloaded engine binary"]
+async fn history_navigation_and_reload() -> Result<(), Box<dyn std::error::Error>> {
+    let executable = resolve_executable().await?;
+    let launcher = CdpLauncher::new(executable, EngineBackend::ChromiumHeadlessShell);
+    let engine = launcher.launch(LaunchMode::Headless).await?;
+
+    let context = engine.create_context(ContextConfig::default()).await?;
+    let (_page_id, page) = context.open_page().await?;
+
+    let first = page.navigate("data:text/html,<title>one</title>").await?;
+    let second = page.navigate("data:text/html,<title>two</title>").await?;
+    assert_ne!(first, second);
+
+    let back = page.go_back().await?;
+    assert!(
+        back.starts_with("data:text/html,<title>one"),
+        "back: {back}"
+    );
+    let forward = page.go_forward().await?;
+    assert!(
+        forward.starts_with("data:text/html,<title>two"),
+        "forward: {forward}"
+    );
+
+    // At the newest entry there is nothing to walk forward to.
+    let error = page.go_forward().await.expect_err("no entry ahead");
+    assert!(
+        error.to_string().contains("no history entry"),
+        "unexpected error: {error}"
+    );
+
+    page.reload().await.expect("reload succeeds");
+
+    engine.shutdown().await?;
+    Ok(())
+}
+
+/// The context's bookkeeping surface: id, per-page lookup, closing an
+/// unknown page (a no-op), and the empty cookie fast path.
+#[tokio::test]
+#[ignore = "requires a downloaded engine binary"]
+async fn context_exposes_ids_pages_and_cookie_edges() -> Result<(), Box<dyn std::error::Error>> {
+    use rutter_core::cookie::{Cookie, SameSite};
+    use rutter_core::ids::PageId;
+    use rutter_engine::page::PageHandle;
+
+    let executable = resolve_executable().await?;
+    let launcher = CdpLauncher::new(executable, EngineBackend::ChromiumHeadlessShell);
+    let engine = launcher.launch(LaunchMode::Headless).await?;
+
+    let context = engine.create_context(ContextConfig::default()).await?;
+    assert!(!context.id().as_str().is_empty());
+
+    let (page_id, page) = context.open_page().await?;
+    assert!(
+        context.page(page_id.clone()).is_some(),
+        "the page lookup finds what open_page registered"
+    );
+    assert!(
+        context.page(PageId::new("ctx:page-999")).is_none(),
+        "an unknown page is not found"
+    );
+
+    // Closing a page the map never held is a success, not an error.
+    context
+        .close_page(PageId::new("ctx:page-999"))
+        .await
+        .expect("closing an unknown page is a no-op");
+
+    // An empty cookie batch is a fast path: no browser round-trip.
+    context
+        .set_cookies(&[])
+        .await
+        .expect("empty set is a no-op");
+
+    // A cookie round-trips with its policy fields intact.
+    let cookie = Cookie {
+        name: "session".to_owned(),
+        value: "42".to_owned(),
+        domain: "example.com".to_owned(),
+        path: Some("/".to_owned()),
+        secure: false,
+        http_only: true,
+        same_site: Some(SameSite::Lax),
+        expires: None,
+    };
+    context.set_cookies(std::slice::from_ref(&cookie)).await?;
+    let stored = context.cookies().await?;
+    let found = stored
+        .iter()
+        .find(|found| found.name == "session")
+        .expect("the cookie is stored on the context");
+    assert_eq!(found.value, "42");
+    assert_eq!(found.domain, "example.com");
+    assert!(found.http_only);
+    assert_eq!(
+        found.same_site,
+        Some(SameSite::Lax),
+        "the SameSite policy maps there and back"
+    );
+
+    drop(page);
+    engine.shutdown().await?;
+    Ok(())
+}
