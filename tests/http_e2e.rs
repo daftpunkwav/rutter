@@ -96,7 +96,10 @@ async fn connect() -> Server {
 
 /// Polls the /mcp endpoint until the server accepts requests.
 async fn wait_for_http(port: u16) {
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    // Generous on purpose: readiness only, never behavior — an
+    // instrumented (coverage) build of the binary cold-starts far
+    // slower than a normal debug build.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         let reachable = tokio::net::TcpStream::connect(("127.0.0.1", port)).await;
         if reachable.is_ok() {
@@ -104,7 +107,7 @@ async fn wait_for_http(port: u16) {
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "http server did not bind within 5 s"
+            "http server did not bind within 30 s"
         );
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }

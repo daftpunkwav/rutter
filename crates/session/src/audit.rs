@@ -166,3 +166,159 @@ fn now_rfc3339() -> String {
         .format(&Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
 }
+
+#[cfg(test)]
+mod tests {
+    //! The audit's write paths: every verdict basis as it lands on disk,
+    //! the no-op audit a session without a state directory gets, and the
+    //! loud failure a blocked append reports instead of absorbing.
+
+    use super::*;
+    use rutter_policy::{ActionClass, ApprovalEffect};
+
+    fn brief(basis: VerdictBasis) -> ApprovalBrief {
+        ApprovalBrief {
+            class: ActionClass::Cookies,
+            judged_url: Some("https://shop.example/".to_owned()),
+            basis,
+            effect: ApprovalEffect::Cookies { count: 2 },
+        }
+    }
+
+    fn read_single_line(path: &Path) -> serde_json::Value {
+        let text = std::fs::read_to_string(path).expect("the audit file exists");
+        let line = text.lines().next().expect("one line");
+        serde_json::from_str(line).expect("valid JSON")
+    }
+
+    #[test]
+    fn bases_land_on_disk_in_human_quotable_form() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("approvals.jsonl");
+        let audit = ApprovalAudit::new(Some(path.clone()));
+
+        let cases: Vec<(VerdictBasis, &str)> = vec![
+            (
+                VerdictBasis::Rule {
+                    index: 3,
+                    url_pattern: Some("https://shop.example/*".to_owned()),
+                },
+                "rule 3 (https://shop.example/*)",
+            ),
+            (
+                VerdictBasis::Rule {
+                    index: 2,
+                    url_pattern: None,
+                },
+                "rule 2",
+            ),
+            (VerdictBasis::SetDefault, "set_default"),
+            (VerdictBasis::MissingUrl, "missing_url"),
+        ];
+
+        for (basis, _) in &cases {
+            audit.record(
+                &SessionId::new("s1"),
+                &PageId::new("p1"),
+                "apr-9",
+                &brief(basis.clone()),
+                DENIED,
+                std::time::Duration::from_millis(12),
+            );
+        }
+
+        let text = std::fs::read_to_string(path).expect("the audit file exists");
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 4, "one decision, one line");
+        for (line, (_, expected)) in lines.iter().zip(&cases) {
+            let record: serde_json::Value = serde_json::from_str(line).expect("valid JSON");
+            assert_eq!(record["basis"], *expected);
+            assert_eq!(record["outcome"], "denied");
+            assert_eq!(record["waited_ms"], 12);
+            assert_eq!(record["judged_url"], "https://shop.example/");
+            assert_eq!(record["effect"], "2 cookie write(s)");
+        }
+    }
+
+    #[test]
+    fn a_rule_basis_with_an_action_effect_uses_the_debug_form() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("approvals.jsonl");
+        let audit = ApprovalAudit::new(Some(path.clone()));
+        let brief = ApprovalBrief {
+            class: ActionClass::Navigation,
+            judged_url: None,
+            basis: VerdictBasis::SetDefault,
+            effect: ApprovalEffect::Action {
+                action: rutter_core::action::Action::Navigate {
+                    url: "https://shop.example/".to_owned(),
+                },
+            },
+        };
+        audit.record(
+            &SessionId::new("s1"),
+            &PageId::new("p1"),
+            "apr-1",
+            &brief,
+            TIMED_OUT,
+            std::time::Duration::ZERO,
+        );
+        let record = read_single_line(&path);
+        assert!(
+            record["effect"]
+                .as_str()
+                .is_some_and(|effect| effect.contains("Navigate")),
+            "the action's debug form is the audit summary: {record}"
+        );
+        assert_eq!(record["judged_url"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn a_missing_state_directory_disables_the_trail() {
+        let audit = ApprovalAudit::new(None);
+        // Must simply not write anywhere; the call contract is infallible.
+        audit.record(
+            &SessionId::new("s1"),
+            &PageId::new("p1"),
+            "apr-1",
+            &brief(VerdictBasis::SetDefault),
+            CANCELLED,
+            std::time::Duration::ZERO,
+        );
+    }
+
+    #[test]
+    fn the_first_record_creates_the_directory_tree() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("nested/deeper/approvals.jsonl");
+        let audit = ApprovalAudit::new(Some(path.clone()));
+        audit.record(
+            &SessionId::new("s1"),
+            &PageId::new("p1"),
+            "apr-1",
+            &brief(VerdictBasis::SetDefault),
+            GRANTED,
+            std::time::Duration::ZERO,
+        );
+        assert!(path.exists(), "append creates the tree on first use");
+    }
+
+    #[test]
+    fn a_blocked_append_is_reported_not_absorbed() {
+        // The parent exists but is a file: create_dir_all fails. The
+        // record call must not panic; the error goes to stderr (asserted
+        // by inspection, the contract here is "never silently skip").
+        let dir = tempfile::tempdir().expect("tempdir");
+        let blocker = dir.path().join("a-file");
+        std::fs::write(&blocker, "not a directory").expect("blocker file");
+        let audit = ApprovalAudit::new(Some(blocker.join("approvals.jsonl")));
+        audit.record(
+            &SessionId::new("s1"),
+            &PageId::new("p1"),
+            "apr-1",
+            &brief(VerdictBasis::SetDefault),
+            GRANTED,
+            std::time::Duration::ZERO,
+        );
+    }
+}

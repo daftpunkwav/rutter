@@ -300,3 +300,169 @@ impl ContextHandle for MockContext {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! The mock's own contract: every script marker dispatches where the
+    //! session layer expects it, queued answers cycle or fall back as
+    //! documented, and the context tracks closes so tests can observe
+    //! them. A mock that lies here would invalidate every test built on it.
+
+    use super::*;
+
+    #[tokio::test]
+    async fn navigation_updates_the_reported_url() {
+        let page = MockPage::new();
+        assert_eq!(
+            page.navigate("https://a.example").await.unwrap(),
+            "https://a.example"
+        );
+        page.reload().await.expect("reload");
+        assert_eq!(page.go_back().await.unwrap(), "https://a.example");
+        assert_eq!(page.go_forward().await.unwrap(), "https://a.example");
+        // `location.href` reads the same stored URL.
+        let href = page.evaluate("location.href").await.expect("evaluate");
+        assert_eq!(href, json!("https://a.example"));
+    }
+
+    #[tokio::test]
+    async fn resolver_answers_queue_default_and_cycle() {
+        let page = MockPage::new();
+        page.push_resolve_answer(json!({"missing": true}));
+        page.push_resolve_answer(mock_box(true, false, 0.0, 0.0, 1.0, 1.0));
+        let first = page.evaluate("var REF = 'e1';").await.expect("evaluate");
+        assert_eq!(
+            first,
+            json!({"missing": true}),
+            "the queue is consumed in order"
+        );
+        let second = page.evaluate("var REF = 'e1';").await.expect("evaluate");
+        assert_eq!(second["hidden"], json!(true));
+
+        // With nothing queued the documented default (a ready box) answers.
+        let fallback = page.evaluate("var REF = 'e1';").await.expect("evaluate");
+        assert_eq!(fallback["hidden"], json!(false));
+        assert_eq!(fallback["disabled"], json!(false));
+
+        // A custom default replaces the ready box.
+        page.set_default_answer(missing_answer());
+        let custom = page.evaluate("var REF = 'e1';").await.expect("evaluate");
+        assert_eq!(custom, json!({"missing": true}));
+
+        // Cycling loops the queue instead of draining it.
+        let cycling = MockPage::new();
+        cycling.set_cycle(true);
+        cycling.push_resolve_answer(json!({"n": 1}));
+        cycling.push_resolve_answer(json!({"n": 2}));
+        assert_eq!(
+            cycling.evaluate("var REF = 'e1';").await.unwrap(),
+            json!({"n": 1})
+        );
+        assert_eq!(
+            cycling.evaluate("var REF = 'e1';").await.unwrap(),
+            json!({"n": 2})
+        );
+        assert_eq!(
+            cycling.evaluate("var REF = 'e1';").await.unwrap(),
+            json!({"n": 1}),
+            "the queue loops"
+        );
+    }
+
+    #[tokio::test]
+    async fn every_observe_marker_dispatches_to_its_answer() {
+        let page = MockPage::new();
+        // The select script matches before the resolver script: it
+        // carries both `var REF = ` and `var VALUES = `.
+        let select = page
+            .evaluate("var REF = 'e1'; var VALUES = ['a'];")
+            .await
+            .expect("evaluate");
+        assert_eq!(select["matched"], json!(1));
+        let wait = page.evaluate("var NEEDLE = 'x';").await.expect("evaluate");
+        assert_eq!(wait["found"], json!(false));
+        page.set_found(true);
+        let wait = page.evaluate("var NEEDLE = 'x';").await.expect("evaluate");
+        assert_eq!(wait["found"], json!(true));
+        let serializer = page.evaluate("var MAX_NODES = 1;").await.expect("evaluate");
+        assert_eq!(serializer["version"], json!(1));
+        let viewport = page
+            .evaluate("({ x: innerWidth / 2 })")
+            .await
+            .expect("evaluate");
+        assert_eq!(viewport, json!({"x": 400.0, "y": 300.0}));
+        let storage = page.evaluate("dump localStorage").await.expect("evaluate");
+        assert_eq!(storage["unavailable"], json!(true));
+        let unknown = page.evaluate("something else").await.expect("evaluate");
+        assert_eq!(unknown, Value::Null);
+    }
+
+    #[tokio::test]
+    async fn inputs_are_recorded_in_dispatch_order() {
+        let page = MockPage::new();
+        page.dispatch_input(InputEvent::InsertText {
+            text: "hi".to_owned(),
+        })
+        .await
+        .expect("dispatch");
+        page.dispatch_input(InputEvent::KeyPressed {
+            key: "Enter".to_owned(),
+        })
+        .await
+        .expect("dispatch");
+        let inputs = page.inputs();
+        assert_eq!(inputs.len(), 2);
+        assert!(matches!(inputs[0], InputEvent::InsertText { .. }));
+        assert!(matches!(inputs[1], InputEvent::KeyPressed { .. }));
+    }
+
+    #[tokio::test]
+    async fn capture_and_screencast_answer_minimally() {
+        let page = MockPage::new();
+        let shot = page.capture_screenshot().await.expect("capture");
+        assert_eq!(shot.format, ImageFormat::Png);
+        assert_eq!(shot.data.len(), 1024);
+        let mut cast = page.start_screencast().await.expect("screencast");
+        // The stream closes immediately: the mock never produces frames.
+        assert!(cast.next_frame().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn the_context_tracks_pages_cookies_and_closes() {
+        let context = MockContext::new();
+        assert_eq!(context.id(), ContextId::new("ctx-mock"));
+        let (first, _) = context.open_page().await.expect("first page");
+        let (second, second_handle) = context.open_page().await.expect("second page");
+        assert_eq!(context.pages().len(), 2);
+        assert!(
+            context.page(second.clone()).is_some(),
+            "handles are reachable by id"
+        );
+        assert!(context.page_mock(second).is_some());
+
+        let cookies = vec![Cookie {
+            name: "s".to_owned(),
+            value: "1".to_owned(),
+            domain: "example.com".to_owned(),
+            path: None,
+            secure: false,
+            http_only: false,
+            same_site: None,
+            expires: None,
+        }];
+        context.set_cookies(&cookies).await.expect("set cookies");
+        assert_eq!(context.set_cookie_calls(), vec![cookies.clone()]);
+        assert!(context.cookies().await.expect("cookies").is_empty());
+
+        context.close_page(first).await.expect("close page");
+        assert_eq!(context.pages().len(), 1);
+
+        context.close().await.expect("close");
+        assert!(
+            matches!(context.open_page().await, Err(EngineError::Terminated)),
+            "a closed context refuses new pages"
+        );
+        assert!(context.pages().is_empty());
+        let _ = second_handle;
+    }
+}

@@ -321,3 +321,329 @@ fn spawn_recovery(inner: &Arc<Inner>, mut watcher: tokio::sync::watch::Receiver<
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    //! The recovery task's branches, driven by hand through a watch
+    //! channel: no engine yet, no sessions to rebuild, the happy rebuild
+    //! (cookies replayed, pages restored, event published), and the
+    //! context-creation failure. The default 10 s heartbeat stays out of
+    //! these tests — the watcher is the same signal the supervisor sends.
+
+    use super::*;
+    use crate::mock::MockContext;
+    use rutter_core::cookie::Cookie;
+    use rutter_engine::descriptor::{EngineBackend, EngineCapabilities, EngineDescriptor};
+    use rutter_engine::health::HealthReport;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// An engine whose contexts are observable and whose `create_context`
+    /// can be made to fail on demand.
+    struct RecoveryEngine {
+        fail_contexts: AtomicBool,
+        contexts: Mutex<Vec<Arc<MockContext>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl rutter_engine::engine::Engine for RecoveryEngine {
+        fn descriptor(&self) -> EngineDescriptor {
+            EngineDescriptor {
+                backend: EngineBackend::ChromiumHeadlessShell,
+                version: "recovery".to_owned(),
+                capabilities: EngineCapabilities {
+                    headless: true,
+                    headed: false,
+                    screencast: false,
+                    per_context_isolation: true,
+                },
+            }
+        }
+
+        async fn create_context(
+            &self,
+            _config: rutter_engine::config::ContextConfig,
+        ) -> Result<Arc<dyn rutter_engine::context::ContextHandle>, EngineError> {
+            if self.fail_contexts.load(Ordering::SeqCst) {
+                return Err(EngineError::Terminated);
+            }
+            let context = Arc::new(MockContext::new());
+            self.contexts
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(Arc::clone(&context));
+            Ok(context)
+        }
+
+        async fn health(&self) -> Result<HealthReport, EngineError> {
+            Ok(HealthReport {
+                healthy: true,
+                backend_version: Some("recovery".to_owned()),
+                detail: None,
+            })
+        }
+
+        async fn shutdown(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+    }
+
+    struct RecoveryLauncher {
+        engines: Mutex<Vec<Arc<RecoveryEngine>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl EngineLauncher for RecoveryLauncher {
+        fn describe(&self) -> String {
+            "recovery".to_owned()
+        }
+
+        async fn launch(
+            &self,
+            _mode: LaunchMode,
+        ) -> Result<Arc<dyn rutter_engine::engine::Engine>, EngineError> {
+            let engine = Arc::new(RecoveryEngine {
+                fail_contexts: AtomicBool::new(false),
+                contexts: Mutex::new(Vec::new()),
+            });
+            self.engines
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(Arc::clone(&engine));
+            Ok(engine)
+        }
+    }
+
+    fn test_inner(launcher: Arc<RecoveryLauncher>) -> Arc<Inner> {
+        Arc::new(Inner {
+            launcher,
+            mode: LaunchMode::Headless,
+            config: SessionConfig::default(),
+            policy: Arc::new(RuleSet::default_set()),
+            broker: Arc::new(ApprovalBroker::new()),
+            state_dir: None,
+            engine: tokio::sync::RwLock::new(None),
+            starting: tokio::sync::Mutex::new(()),
+            sessions: tokio::sync::Mutex::new(HashMap::new()),
+        })
+    }
+
+    /// A started `Running` over a recovery launcher, plus the typed
+    /// engine the supervisor launched.
+    async fn start_test_running(
+        launcher: Arc<RecoveryLauncher>,
+    ) -> (Arc<Running>, Arc<RecoveryEngine>) {
+        let supervisor = Arc::new(Supervisor::new(
+            Arc::clone(&launcher) as Arc<dyn EngineLauncher>,
+            LaunchMode::Headless,
+        ));
+        supervisor.start().await.expect("supervisor starts");
+        let engine = launcher
+            .engines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .first()
+            .cloned()
+            .expect("the supervisor launched one engine");
+        let running = Arc::new(Running {
+            supervisor,
+            backbone: Arc::new(Backbone::new()),
+        });
+        (running, engine)
+    }
+
+    /// One session with a tracked page, in the manager's map.
+    async fn seeded_session(running: &Running, inner: &Arc<Inner>) -> Arc<Session> {
+        let session = Arc::new(Session::new(
+            SessionId::new("s1"),
+            Arc::new(MockContext::new()),
+            Arc::clone(&running.backbone),
+            SessionConfig::default(),
+            Arc::clone(&inner.policy),
+            Arc::clone(&inner.broker),
+            None,
+        ));
+        session
+            .execute(
+                rutter_core::action::Action::Navigate {
+                    url: "https://a.example".to_owned(),
+                },
+                rutter_core::action::Origin::Human,
+            )
+            .await
+            .expect("navigate seeds the tracked url");
+        inner
+            .sessions
+            .lock()
+            .await
+            .insert(SessionId::new("s1"), Arc::clone(&session));
+        session
+    }
+
+    async fn wait_for_event(
+        backbone: &Backbone,
+        session: &SessionId,
+        pred: impl Fn(&Event) -> bool,
+    ) {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if backbone
+                    .replay(session)
+                    .iter()
+                    .any(|envelope| pred(&envelope.event))
+                {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the event lands on the backbone");
+    }
+
+    #[tokio::test]
+    async fn a_restart_bump_with_no_engine_yet_is_ignored() {
+        let launcher = Arc::new(RecoveryLauncher {
+            engines: Mutex::new(Vec::new()),
+        });
+        let inner = test_inner(Arc::clone(&launcher));
+        let (tx, rx) = tokio::sync::watch::channel(0_u64);
+        spawn_recovery(&inner, rx);
+        // The task must establish its baseline before the bump lands.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tx.send_modify(|count| *count += 1);
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(
+            launcher
+                .engines
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .is_empty(),
+            "no engine exists, so nothing may be rebuilt"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_restart_bump_with_no_sessions_recovers_nothing() {
+        let launcher = Arc::new(RecoveryLauncher {
+            engines: Mutex::new(Vec::new()),
+        });
+        let inner = test_inner(Arc::clone(&launcher));
+        let (running, engine) = start_test_running(Arc::clone(&launcher)).await;
+        *inner.engine.write().await = Some(Arc::clone(&running));
+        let (tx, rx) = tokio::sync::watch::channel(0_u64);
+        spawn_recovery(&inner, rx);
+        // The task must establish its baseline before the bump lands.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tx.send_modify(|count| *count += 1);
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(
+            engine
+                .contexts
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .is_empty(),
+            "no sessions, so no recovery context is created"
+        );
+        running.supervisor.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_restart_rebuilds_sessions_with_cookies_and_pages() {
+        let launcher = Arc::new(RecoveryLauncher {
+            engines: Mutex::new(Vec::new()),
+        });
+        let inner = test_inner(Arc::clone(&launcher));
+        let (running, engine) = start_test_running(Arc::clone(&launcher)).await;
+        *inner.engine.write().await = Some(Arc::clone(&running));
+        let session = seeded_session(&running, &inner).await;
+
+        // A remembered cookie: recovery must replay it into the fresh
+        // context (the in-memory copy is what survives a dead engine).
+        *session.lock_last_storage() = crate::storage::StorageState {
+            cookies: vec![Cookie {
+                name: "session".to_owned(),
+                value: "42".to_owned(),
+                domain: "a.example".to_owned(),
+                path: None,
+                secure: false,
+                http_only: false,
+                same_site: None,
+                expires: None,
+            }],
+            origins: Vec::new(),
+        };
+
+        let (tx, rx) = tokio::sync::watch::channel(0_u64);
+        spawn_recovery(&inner, rx);
+        // Let the task establish its baseline; a bump that lands before
+        // the first poll would be mistaken for it.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tx.send_modify(|count| *count += 1);
+
+        wait_for_event(&running.backbone, &SessionId::new("s1"), |event| {
+            matches!(event, Event::EngineRestarted)
+        })
+        .await;
+
+        let contexts = engine
+            .contexts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        assert_eq!(contexts.len(), 1, "recovery created one fresh context");
+        let calls = contexts[0].set_cookie_calls();
+        assert!(
+            calls
+                .iter()
+                .flatten()
+                .any(|cookie| cookie.name == "session"),
+            "the remembered cookie is replayed into the fresh context: {calls:?}"
+        );
+
+        let pages = session.pages().await;
+        assert_eq!(pages.len(), 1, "the tracked page is restored");
+        assert_eq!(pages[0].url, "https://a.example");
+        assert!(pages[0].active, "exactly one restored page is active");
+        wait_for_event(&running.backbone, &SessionId::new("s1"), |event| {
+            matches!(event, Event::PageOpened { .. })
+        })
+        .await;
+
+        running.supervisor.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_recovery_context_failure_leaves_the_session_as_it_was() {
+        let launcher = Arc::new(RecoveryLauncher {
+            engines: Mutex::new(Vec::new()),
+        });
+        let inner = test_inner(Arc::clone(&launcher));
+        let (running, engine) = start_test_running(Arc::clone(&launcher)).await;
+        *inner.engine.write().await = Some(Arc::clone(&running));
+        let session = seeded_session(&running, &inner).await;
+
+        engine.fail_contexts.store(true, Ordering::SeqCst);
+        let (tx, rx) = tokio::sync::watch::channel(0_u64);
+        spawn_recovery(&inner, rx);
+        // The task must establish its baseline before the bump lands.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tx.send_modify(|count| *count += 1);
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+        assert!(
+            running
+                .backbone
+                .replay(&SessionId::new("s1"))
+                .iter()
+                .all(|envelope| !matches!(envelope.event, Event::EngineRestarted)),
+            "no restart event when the rebuild context failed"
+        );
+        assert_eq!(
+            session.pages().await.len(),
+            1,
+            "the old tracking survives the failed rebuild"
+        );
+        running.supervisor.shutdown().await;
+    }
+}

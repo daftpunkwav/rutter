@@ -585,7 +585,7 @@ impl Session {
         self.ensure_page().await.expect("test page opens")
     }
 
-    fn lock_last_storage(&self) -> std::sync::MutexGuard<'_, StorageState> {
+    pub(crate) fn lock_last_storage(&self) -> std::sync::MutexGuard<'_, StorageState> {
         self.last_storage
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -729,5 +729,7 @@ fn unknown_page(page_id: &PageId) -> SessionError {
     })
 }
 
+#[cfg(test)]
+mod flow_tests;
 #[cfg(test)]
 mod tests;

@@ -265,3 +265,128 @@ impl Default for PageRegistry {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Registry mechanics, one behavior per test: the gate recovery holds,
+    //! the single-active invariant, and the promotion rules on removal and
+    //! rebuild. The doubles are the crate's own mock handles.
+
+    use super::*;
+    use crate::mock::MockPage;
+
+    fn slot(id: &str, url: &str, active: bool) -> PageSlot {
+        PageSlot {
+            id: PageId::new(id),
+            url: url.to_owned(),
+            handle: Arc::new(MockPage::new()),
+            active,
+        }
+    }
+
+    #[test]
+    fn a_fresh_registry_has_no_active_page() {
+        let registry = PageRegistry::new();
+        assert!(registry.active().is_none());
+        assert!(registry.accepts_new_page());
+        assert!(registry.list().is_empty());
+        assert!(registry.pairs().is_empty());
+    }
+
+    #[test]
+    fn active_lookup_refuses_while_recovery_owns_the_list() {
+        let registry = PageRegistry::new();
+        registry.admit_active(slot("p1", "https://a.example", true));
+        let saved = registry.begin_recovery();
+        assert_eq!(saved.len(), 1, "the read-out carries the tracked urls");
+        assert!(saved[0].active);
+        assert!(
+            registry.active().is_none(),
+            "lookups stop answering during the rebuild"
+        );
+        assert!(
+            !registry.accepts_new_page(),
+            "new registrations are refused during the rebuild"
+        );
+        registry.finish_recovery(vec![]);
+        assert!(
+            registry.active().is_none(),
+            "an empty rebuild leaves no active page, like a fresh session"
+        );
+        assert!(registry.accepts_new_page());
+    }
+
+    #[test]
+    fn admit_active_refuses_a_second_active_slot() {
+        let registry = PageRegistry::new();
+        assert!(registry.admit_active(slot("p1", "https://a.example", false)));
+        assert!(
+            !registry.admit_active(slot("p2", "https://b.example", false)),
+            "two racing opens end with one admitted page"
+        );
+        assert_eq!(registry.list().len(), 1);
+    }
+
+    #[test]
+    fn finish_recovery_promotes_the_first_slot_when_none_is_active() {
+        let registry = PageRegistry::new();
+        registry.admit_active(slot("p1", "https://a.example", true));
+        registry.begin_recovery();
+        let mut rebuilt = slot("p2", "https://b.example", false);
+        rebuilt.active = false;
+        registry.finish_recovery(vec![rebuilt]);
+        let listed = registry.list();
+        assert!(listed[0].active, "exactly one page ends up active");
+    }
+
+    #[test]
+    fn removal_promotes_the_first_remaining_page() {
+        let registry = PageRegistry::new();
+        registry.admit_active(slot("p1", "https://a.example", true));
+        registry.append_for_test(slot("p2", "https://b.example", false));
+        let removed = registry.remove(&PageId::new("p1"));
+        assert!(removed.is_some());
+        let listed = registry.list();
+        assert_eq!(listed.len(), 1);
+        assert!(listed[0].active, "the survivor takes the active flag");
+        assert!(registry.remove(&PageId::new("nope")).is_none());
+    }
+
+    #[test]
+    fn urls_are_tracked_per_id_and_reported_as_pairs() {
+        let registry = PageRegistry::new();
+        registry.admit_active(slot("p1", "https://a.example", true));
+        registry.set_url(&PageId::new("p1"), "https://a.example/next");
+        assert_eq!(
+            registry.url_of(&PageId::new("p1")).as_deref(),
+            Some("https://a.example/next")
+        );
+        assert!(registry.url_of(&PageId::new("nope")).is_none());
+        assert!(registry.contains(&PageId::new("p1")));
+        assert!(!registry.contains(&PageId::new("nope")));
+        let pairs = registry.pairs();
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].0, "https://a.example/next");
+    }
+
+    #[test]
+    fn activate_unknown_ids_change_nothing() {
+        let registry = PageRegistry::new();
+        registry.admit_active(slot("p1", "https://a.example", true));
+        assert!(registry.activate(&PageId::new("nope")).is_none());
+        let handle = registry.activate(&PageId::new("p1"));
+        assert!(handle.is_some());
+        assert!(registry.list()[0].active);
+    }
+
+    #[test]
+    fn clear_forgets_every_page_and_the_gate_with_it() {
+        let registry = PageRegistry::new();
+        registry.admit_active(slot("p1", "https://a.example", true));
+        registry.begin_recovery();
+        registry.clear();
+        assert!(registry.list().is_empty());
+        assert!(registry.accepts_new_page());
+        assert!(registry.active().is_none());
+    }
+}

@@ -128,7 +128,10 @@ async fn park_button(client: &rmcp::service::RunningService<rmcp::RoleClient, ()
 
 /// Waits until the dashboard serves the token (poll on a plain GET).
 async fn wait_for_dashboard(port: u16) {
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    // Generous on purpose: this wait only gates readiness, never
+    // behavior, and an instrumented (coverage) build of the binary
+    // cold-starts far slower than a normal debug build.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
         let probe = tokio::net::TcpStream::connect(("127.0.0.1", port)).await;
         if probe.is_ok() {
@@ -136,7 +139,7 @@ async fn wait_for_dashboard(port: u16) {
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "dashboard did not bind within 5 s"
+            "dashboard did not bind within 30 s"
         );
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
