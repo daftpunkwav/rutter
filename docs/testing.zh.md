@@ -70,7 +70,7 @@ bash scripts/check_encoding.sh  # 跟踪的文本文件：UTF-8、LF、无 BOM
 另有 `cargo-deny`（`deny.toml`：安全通告、许可证、禁用项）和一个
 以缓存引擎运行 `rutter-engine-cdp` 集成套件的集成任务（其余
 `#[ignore]` 套件为本地运行）。发布归档由 cargo-dist 生成
-（`cargo dist build`，配置在根 `Cargo.toml` 的 `[dist]` 段）；仓库
+（`cargo dist build`，配置在根 `Cargo.toml` 的 `[workspace.metadata.dist]` 段）；仓库
 中没有入库的 release workflow。语料基准是手动运行，不是 CI 门槛；
 `scripts/benchmark.sh` 报告 ≥ 90 % 的 navigate+snapshot 成功率
 门槛。

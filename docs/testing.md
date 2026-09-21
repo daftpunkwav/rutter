@@ -75,7 +75,7 @@ Plus `cargo-deny` (`deny.toml`: advisories, licenses, bans) and an
 integration job that runs the `rutter-engine-cdp` integration suite
 with a cached engine (the other `#[ignore]`d suites are local runs).
 Release archives are cut by cargo-dist (`cargo dist build`, configured
-in the `[dist]` section of the root `Cargo.toml`); no release workflow
+in the `[workspace.metadata.dist]` section of the root `Cargo.toml`); no release workflow
 is checked in. The corpus harnesses are manual runs, not CI gates;
 `scripts/benchmark.sh` reports a ≥ 90 % navigate+snapshot success
 bar.

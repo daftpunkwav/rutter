@@ -31,8 +31,10 @@ publish = false
 # Packaging via cargo-dist: `cargo dist build`
 # produces the rutter binary archives; tagging a release triggers the
 # publish workflow. The engine is not bundled — rutter downloads the
-# Chrome for Testing binary into its cache on first use.
-[dist]
+# Chrome for Testing binary into its cache on first use. The metadata
+# table name is what cargo-dist reads; a bare `[dist]` would draw an
+# "unused manifest key" warning from cargo on every build.
+[workspace.metadata.dist]
 cargo-dist-version = "0.28.0"
 ci = ["github"]
 installers = ["shell", "powershell"]

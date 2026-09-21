@@ -103,7 +103,7 @@ cargo install --path crates/cli
 
 Release archives for Windows (msvc), macOS (x64/arm64), and Linux
 (x64) are cut by cargo-dist (`cargo dist build`, configured in the
-`[dist]` section of the root [`Cargo.toml`](Cargo.toml)). The
+`[workspace.metadata.dist]` section of the root [`Cargo.toml`](Cargo.toml)). The
 browser engine itself is not bundled — rutter downloads Chrome for
 Testing into its cache on first use (or point `--engine-executable`
 at an existing binary).

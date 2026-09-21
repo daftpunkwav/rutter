@@ -94,7 +94,7 @@ cargo install --path crates/cli
 
 Windows（msvc）、macOS（x64/arm64）与 Linux（x64）的发行档案由
 cargo-dist 生成（`cargo dist build`，配置在根
-[`Cargo.toml`](Cargo.toml) 的 `[dist]` 段）。浏
+[`Cargo.toml`](Cargo.toml) 的 `[workspace.metadata.dist]` 段）。浏
 览器引擎本身不打包——rutter 在首次使用时把 Chrome for Testing 下载
 进缓存（或用 `--engine-executable` 指向已有二进制）。
 
