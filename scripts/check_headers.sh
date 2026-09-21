@@ -6,7 +6,8 @@
 # shebang followed by a comment header; JS files open with a comment.
 
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+
+root=$(git rev-parse --show-toplevel)
 
 failures=()
 
@@ -15,9 +16,9 @@ failures=()
 check() {
   local file=$1 prefix=$2 skip_shebang=$3 first
   if [[ $skip_shebang == yes ]]; then
-    first=$(awk 'NR == 1 && /^#!/ { if ((getline line) <= 0) exit; print line; exit } NR == 1 { print; exit }' "$file")
+    first=$(awk 'NR == 1 && /^#!/ { if ((getline line) <= 0) exit; print line; exit } NR == 1 { print; exit }' "$root/$file")
   else
-    first=$(head -n 1 "$file")
+    first=$(head -n 1 "$root/$file")
   fi
   if [[ $first != "$prefix"* ]]; then
     failures+=("$file")
@@ -31,7 +32,7 @@ while IFS= read -r file; do
     *.py) check "$file" '#' yes ;;
     *.js | *.mjs | *.cjs) check "$file" '/' no ;;
   esac
-done < <(git ls-files -- '*.rs' '*.sh' '*.py' '*.js' '*.mjs' '*.cjs')
+done < <(git -C "$root" ls-files -- '*.rs' '*.sh' '*.py' '*.js' '*.mjs' '*.cjs')
 
 if [[ ${#failures[@]} -gt 0 ]]; then
   printf 'header gate: missing header comment in:\n' >&2

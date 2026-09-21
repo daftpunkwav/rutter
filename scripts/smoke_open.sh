@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 #
-# M0 acceptance helper: runs `rutter open` against a fixed corpus of
-# real sites and reports a pass/fail summary (docs/testing.md).
+# Acceptance smoke helper: runs `rutter open` against a fixed corpus
+# of real sites and reports a pass/fail summary (docs/testing.md).
 # Manual and network-dependent by design; never part of CI gates.
 
 set -uo pipefail
-cd "$(git rev-parse --show-toplevel)"
+
+root=$(git rev-parse --show-toplevel)
+manifest=$root/Cargo.toml
 
 sites=(
   "https://example.com"
@@ -24,7 +26,7 @@ passed=0
 failed=0
 
 for site in "${sites[@]}"; do
-  if cargo run -q -p rutter -- open "$site" >/dev/null 2>&1; then
+  if cargo run -q --manifest-path "$manifest" -p rutter -- open "$site" >/dev/null 2>&1; then
     printf 'PASS %s\n' "$site"
     passed=$((passed + 1))
   else

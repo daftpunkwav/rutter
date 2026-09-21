@@ -23,7 +23,9 @@
 | [`docs/testing.md`](docs/testing.md) | 测试层级、契约钉定、运行方式 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 工作规则与本地门禁 |
 
-每个源码目录都带有说明自身职责、边界与文件清单的 `README.md` —— 从
+每个源码目录都带有说明自身职责、边界与文件清单的 `README.md`（两个
+共享测试助手目录 `tests/common/` 与 `crates/session/tests/common/`
+由各自的父级测试 README 覆盖）—— 从
 [`crates/README.md`](crates/README.md) 开始。每个 README 与每篇
 `docs/` 文档都有中文镜像：`README.md` 旁是 `README.zh.md`，
 `docs/` 下 `<name>.md` 旁是 `<name>.zh.md`；两种语言同步更新。
@@ -91,8 +93,8 @@ cargo install --path crates/cli
 ```
 
 Windows（msvc）、macOS（x64/arm64）与 Linux（x64）的发行档案由
-cargo-dist 附在 GitHub releases 上；见
-[`.github/workflows/release.yml`](.github/workflows/release.yml)。浏
+cargo-dist 生成（`cargo dist build`，配置在根
+[`Cargo.toml`](Cargo.toml) 的 `[dist]` 段）。浏
 览器引擎本身不打包——rutter 在首次使用时把 Chrome for Testing 下载
 进缓存（或用 `--engine-executable` 指向已有二进制）。
 
@@ -135,7 +137,7 @@ cargo fmt --all -- --check
 
 ```sh
 bash scripts/check_headers.sh   # 每个源文件以头注开头
-bash scripts/check_encoding.sh  # 代码与注释保持英文
+bash scripts/check_encoding.sh  # 跟踪的文本文件：UTF-8、LF、无 BOM
 ```
 
 引擎集成测试需要真实二进制，默认 `#[ignore]`；显式运行（复用
@@ -151,11 +153,12 @@ cargo test -p rutter-engine-cdp --test screencast -- --ignored
 
 `scripts/smoke_open.sh` 用 `rutter open` 驱动 10 个真实站点并打印通
 过/失败摘要；`scripts/benchmark.sh` 运行 20 站点 navigate+snapshot
-基准，成功率为 90%。
+基准，以 90% 的成功率为通过门槛。
 
 ## 政策
 
 - 提交遵循 Conventional Commits，英文，祈使语气。
-- 代码、注释与提交信息仅用英文（编码门禁强制执行）；文档以英文
-  `README.md` 交付，并附中文 `README.zh.md` 镜像。
+- 代码注释用中文或英文撰写均可；文档以英文 `README.md` 交付，
+  并附中文 `README.zh.md` 镜像，两种语言同步更新。
+- 安全问题请私下报告——见 [`SECURITY.md`](SECURITY.md)。
 - 许可证：Apache-2.0（见 [`LICENSE`](LICENSE)）。

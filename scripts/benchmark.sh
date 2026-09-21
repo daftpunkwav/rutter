@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 #
-# M2 acceptance benchmark: runs `rutter open` (navigate + snapshot
+# Acceptance benchmark: runs `rutter open` (navigate + snapshot
 # round-trip) against a 20-site corpus and reports the success rate
 # (docs/testing.md benchmark level). Manual and
 # network-dependent by design; never part of CI gates.
 
 set -uo pipefail
-cd "$(git rev-parse --show-toplevel)"
+
+root=$(git rev-parse --show-toplevel)
+manifest=$root/Cargo.toml
 
 sites=(
   "https://example.com"
@@ -36,7 +38,7 @@ failed=0
 failed_sites=()
 
 for site in "${sites[@]}"; do
-  if cargo run -q -p rutter -- open "$site" >/dev/null 2>&1; then
+  if cargo run -q --manifest-path "$manifest" -p rutter -- open "$site" >/dev/null 2>&1; then
     printf 'PASS %s\n' "$site"
     passed=$((passed + 1))
   else

@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 | File | Role |
 |---|---|
-| `lib.rs` | Library root: every module below is wired and exported here |
+| `lib.rs` | Library root: every module below is declared here; `config`, `entry`, and `error` are the public surface |
 | `main.rs` | clap definitions and process entry (a thin shell over `rutter_cli`) |
 | `entry.rs` | `EntryMode` enum: browse / serve / open |
 | `config.rs` | `Settings::resolve`: flags + environment → runtime settings |

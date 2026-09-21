@@ -16,5 +16,5 @@ the scripts through an engine and hand the JSON back here.
 ## Contract
 
 The rendered text is specified by `docs/snapshot-format.md` (line
-format, ref minting, budgets, the `… truncated` marker). The spec is
+format, ref minting, budgets). The spec is
 the contract; this crate implements it.

@@ -26,7 +26,9 @@ for sensitive operations.
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Working rules and local gates |
 
 Every source directory carries a `README.md` stating its
-responsibility, boundary, and file map — start at
+responsibility, boundary, and file map (the two shared test-helper
+directories, `tests/common/` and `crates/session/tests/common/`, are
+covered by their parent test READMEs) — start at
 [`crates/README.md`](crates/README.md). Each README and each
 `docs/` document has a Chinese mirror: `README.zh.md` beside its
 `README.md`, and `<name>.zh.md` beside `<name>.md` under `docs/`;
@@ -100,8 +102,8 @@ cargo install --path crates/cli
 ```
 
 Release archives for Windows (msvc), macOS (x64/arm64), and Linux
-(x64) are attached to GitHub releases by cargo-dist; see
-[`.github/workflows/release.yml`](.github/workflows/release.yml). The
+(x64) are cut by cargo-dist (`cargo dist build`, configured in the
+`[dist]` section of the root [`Cargo.toml`](Cargo.toml)). The
 browser engine itself is not bundled — rutter downloads Chrome for
 Testing into its cache on first use (or point `--engine-executable`
 at an existing binary).
@@ -145,7 +147,7 @@ Quality gates, identical to CI:
 
 ```sh
 bash scripts/check_headers.sh   # every source file opens with a header
-bash scripts/check_encoding.sh  # code and comments stay English-only
+bash scripts/check_encoding.sh  # tracked text files: UTF-8, LF, no BOM
 ```
 
 Engine integration tests need a real binary and are `#[ignore]`d by
@@ -167,7 +169,9 @@ navigate+snapshot benchmark with a 90 % success bar.
 ## Policies
 
 - Commits follow Conventional Commits, English, imperative mood.
-- Code, comments, and commit messages are English-only (enforced by
-  the encoding gate); documentation ships as English `README.md` with
-  Chinese `README.zh.md` mirrors.
+- Code comments may be written in Chinese or English; documentation
+  ships as English `README.md` with Chinese `README.zh.md` mirrors,
+  updated together.
+- Security issues are reported privately — see
+  [`SECURITY.md`](SECURITY.md).
 - License: Apache-2.0 (see [`LICENSE`](LICENSE)).

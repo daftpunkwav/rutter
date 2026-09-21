@@ -2,8 +2,9 @@
 
 English | [中文](README.zh.md)
 
-The `rutter` binary and the composition root: the only place that
-depends on every workspace crate. Three entry modes — browse (headed
+The `rutter` binary and the composition root: it depends on every
+workspace crate except `events`, which arrives through `session` and
+`dashboard`. Three entry modes — browse (headed
 window, no MCP), serve (MCP over stdio or `--http`, optional
 `--dashboard` and `--policy`), and open (one-shot snapshot) — all
 resolve flags and the environment into a `Settings` and wire the

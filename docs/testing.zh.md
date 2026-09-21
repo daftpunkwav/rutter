@@ -11,9 +11,9 @@
 | Unit | 纯 crate（core、observe、policy、events）及代码旁的私有路径 | 普通 `#[test]` |
 | Golden | fixture DOM 树上的快照构建器输出 | `insta` |
 | Property | 裁剪/折叠不变量；序列化器永不 panic | `proptest` |
-| Integration | 真实 headless shell：启动、导航、动作、恢复 | 各 crate `tests/`，默认 `#[ignore]` |
+| Integration | 真实 headless shell：启动、导航、动作 | 各 crate `tests/`，默认 `#[ignore]` |
 | E2E | 完整 MCP client → rutter → 引擎往返（mcp、approval、http 传输） | 工作区 `tests/` 包 |
-| Benchmark | 20 站点固定语料：click 命中率、快照 token | `scripts/` 中的基准 |
+| Benchmark | 20 站点固定语料：navigate+snapshot 成功率 | `scripts/` 中的基准 |
 
 ## 2. 契约由哪些测试钉住
 
@@ -64,10 +64,13 @@ cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all
 bash scripts/check_headers.sh   # 每个源文件以真实的头注释开头
-bash scripts/check_encoding.sh  # 代码与注释保持英文
+bash scripts/check_encoding.sh  # 跟踪的文本文件：UTF-8、LF、无 BOM
 ```
 
 另有 `cargo-deny`（`deny.toml`：安全通告、许可证、禁用项）和一个
-以缓存引擎运行 `#[ignore]` 套件的集成任务。发布归档由 cargo-dist
-在 tag 上裁切（`.github/workflows/release.yml`）。基准门槛
-（语料上 click 命中率 ≥ 90 %）把关发布。
+以缓存引擎运行 `rutter-engine-cdp` 集成套件的集成任务（其余
+`#[ignore]` 套件为本地运行）。发布归档由 cargo-dist 生成
+（`cargo dist build`，配置在根 `Cargo.toml` 的 `[dist]` 段）；仓库
+中没有入库的 release workflow。语料基准是手动运行，不是 CI 门槛；
+`scripts/benchmark.sh` 报告 ≥ 90 % 的 navigate+snapshot 成功率
+门槛。

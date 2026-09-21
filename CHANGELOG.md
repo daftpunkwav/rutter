@@ -7,6 +7,8 @@ and the project adheres to
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-21
+
 ### Security
 
 - Dashboard access token derives from an OS-entropy source and is
@@ -62,9 +64,7 @@ and the project adheres to
 - Internal renames for accuracy (session `tabs_*` APIs are now
   `pages`/`select_page`/`close_page`); MCP tool names unchanged.
 - Oversized modules split (dashboard auth/ws, MCP params; module tests
-  into sibling files) and every source directory gained a README.
-
-## [0.1.0] - 2026-09-18
+  into sibling files) and source directories gained READMEs.
 
 ### Added
 
@@ -72,7 +72,7 @@ and the project adheres to
   `rutter-observe`, and the `rutter` CLI crate.
 - Quality-gate scripts (header gate, encoding gate), a CI workflow, and
   supply-chain configuration for cargo-deny.
-- Snapshot specification (`docs/SNAPSHOT_SPEC.md`) and a snapshot
+- Snapshot specification (`docs/snapshot-format.md`) and a snapshot
   builder with depth budget, sibling folding, viewport-first culling,
   and a hard character budget.
 - Engine binary downloader for Chrome for Testing products (manifest,
@@ -82,8 +82,9 @@ and the project adheres to
 - CDP engine backend on chromiumoxide with an `#[ignore]`d integration
   suite, wired into `rutter open` (snapshot to stdout) and browse mode.
 - MCP server over stdio (`rutter serve`) on rmcp: the full TOOL_SPEC
-  tool surface — navigate, history, snapshot, screenshot, click, hover,
-  type, press_key, select_option, scroll, wait_for, tabs, cookies,
+  tool surface — navigate, back, forward, reload, snapshot, screenshot,
+  click, hover, type, press_key, select_option, scroll, wait_for,
+  tabs_list, tabs_select, tabs_close, set_cookies,
   close_session — with three-phase auto-wait and snapshot-after-action
   semantics.
 - Typed event backbone (bus, per-session ring buffers, replay) and

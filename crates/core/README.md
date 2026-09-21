@@ -16,8 +16,9 @@ change (docs/architecture.md).
 ## Key types
 
 - `Action` + `Origin` — what an agent asked for, and who asked.
-  Serialized with the event convention (`"type"` tag, snake_case)
-  because they ride in events.
+  `Action` serializes with the event convention (`"type"` tag,
+  snake_case) because it rides in events; `Origin` serializes as a
+  plain snake_case string.
 - `Snapshot` / `SnapshotNode` — the YAML-rendered accessibility view
   (format contract: `docs/snapshot-format.md`).
 - `Reference` — stable per-page element handle minted by the

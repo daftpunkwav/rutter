@@ -15,8 +15,8 @@
 ## 关键类型
 
 - `Action` + `Origin`（来源）——agent 请求了什么，以及是谁请求的。
-  按事件约定序列化（`"type"` 标签、snake_case），因为它们随事件传
-  播。
+  `Action` 按事件约定序列化（`"type"` 标签、snake_case），因为它随
+  事件传播；`Origin` 序列化为裸 snake_case 字符串。
 - `Snapshot` / `SnapshotNode`——以 YAML 渲染的无障碍视图（格式契
   约：`docs/snapshot-format.md`）。
 - `Reference`——由序列化器铸造的稳定单页元素句柄，导航后失效。

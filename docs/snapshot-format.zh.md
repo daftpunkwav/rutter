@@ -32,13 +32,14 @@ injected serializer (page)       rutter-observe
 ```
 
 - `version` —— 序列化器格式版本，当前为 `1`。
-- `truncated` —— 序列化器触发了自身的节点守卫（50 000 节点），
-  省略了部分合成 DOM。
+- `truncated` —— 序列化器触发了某道守卫并省略了部分合成 DOM：
+  节点守卫（50 000 节点）、深度守卫（200）、ref 存储创建失败，或
+  单节点内部访问失败。
 - `viewport` / `scroll` —— 页面视口与滚动位置的 CSS 像素。预算只
   消费 `viewport`：节点矩形是视口相对的（§3），滚动偏移不参与
-  分类，`scroll` 由仪表盘的 screencast 取景消费。viewport 缺失或
-  格式错误时，转换器视其为无界（不执行视口优先折叠），依赖其余
-  预算。
+  分类，而 `scroll` 目前没有任何消费者——它只是信息性字段。
+  viewport 缺失或格式错误时，转换器视其为无界（不执行视口优先
+  折叠），依赖其余预算。
 - `root` —— 文档根节点（role `root`）。
 
 序列化器遍历合成 DOM，包括开放的 shadow root 与 slot 分配。不可见
@@ -67,13 +68,14 @@ injected serializer (page)       rutter-observe
 一切。
 
 跳过的元素：`script`、`style`、`noscript`、`template`、`head`、
-`meta`、`link`、`title`、`br`、SVG 内部（`svg` 元素报告为单节点，
-无子节点）。
+`meta`、`link`、`title`、`br`、`base`、`datalist`、SVG 内部
+（`svg` 元素报告为单节点，无子节点）。
 
 ## 4. 引用铸造（v1）
 
-- 序列化器在 `window` 上维护每页存储（`__rutterRefStore`：一个
-  `WeakMap<Element, string>` 加整数计数器）。可操作元素第一次被
+- 序列化器在 `window` 上维护每页存储（`__rutterRefStore`：铸造
+  ref 的 `WeakMap<Element, string>`、解析 ref 的反向
+  `Map<string, WeakRef<Element>>`，加整数计数器）。可操作元素第一次被
   观察到时获得 `e<N>`，并在同一页面的后续快照中保持不变。
 - v1 可操作 role：`button`、`link`、`textbox`、`searchbox`、
   `checkbox`、`radio`、`combobox`、`listbox`、`option`、`menuitem`、
@@ -103,8 +105,8 @@ injected serializer (page)       rutter-observe
 
 1. **深度预算。** 深于根下 48 层的节点被裁剪（裁剪点不渲染
    `- generic × N more` 摘要行；子节点直接缺席）。
-2. **兄弟折叠。** ≥ 8 个连续同 role 且无名的兄弟折叠为一个摘要
-   节点（保留 role，置 `× N`）。短于 8 的序列原样通过。
+2. **兄弟折叠。** ≥ 8 个连续同 role、无名称且无 ref 的兄弟折叠为
+   一个摘要节点（保留 role，置 `× N`）。短于 8 的序列原样通过。
 3. **视口优先裁剪。** 节点矩形是视口相对的；任何整体落在 y 轴
    `[-200 px, 视口高 + 200 px]` 带外、且渲染尺寸超过 400 字符的
    子树，无论剩余预算如何，都替换为其根的摘要节点（`× N` 计入

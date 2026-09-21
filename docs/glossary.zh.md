@@ -4,8 +4,8 @@
 
 规范的领域词汇。一个概念一个词——代码、文档、UI 使用这些准确的
 术语，且不存在同义词。
-[`crates/core/src/ids.rs`](../crates/core/src/ids.rs) 承载前五个
-术语的类型层版本。
+[`crates/core/src/ids.rs`](../crates/core/src/ids.rs) 承载 Context、
+Page、Session 三个术语的类型层版本。
 
 | 术语 | 含义 |
 |---|---|
@@ -43,8 +43,9 @@
 [`error.rs`](../crates/core/src/error.rs)）：
 
 - 标签枚举以 `"type"` 标签和 `snake_case` 名称序列化：`Event`
-  （`"action_failed"`）、`Action`（`"click"`）、`ActionError`
-  （`"reference_expired"`）、`Verdict`、`Origin` 与
-  `ScrollDirection`。
+  （`"action_failed"`）、`Action`（`"click"`）与 `ActionError`
+  （`"reference_expired"`）。无标签枚举序列化为裸 `snake_case`
+  字符串：`Verdict`（`"allow"`）、`Origin`（`"agent"`）与
+  `ScrollDirection`（`"up"`）。
 - 时间戳是 RFC 3339 UTC 字符串；不存在依赖 locale 的格式。
-- 一切都是 UTF-8 JSON；仪表盘布局不假定文字从左到右。
+- 一切以 UTF-8 JSON 旅行。

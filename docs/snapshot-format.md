@@ -35,14 +35,15 @@ JSON with `observe::snapshot_from_response()`.
 ```
 
 - `version` — serializer format version, currently `1`.
-- `truncated` — the serializer hit its own node guard (50 000 nodes)
-  and omitted part of the composed DOM.
+- `truncated` — the serializer hit one of its guards and omitted part
+  of the composed DOM: the node guard (50 000 nodes), the depth guard
+  (200), ref-store creation, or a per-node internal access failure.
 - `viewport` / `scroll` — CSS pixels of the page's viewport and scroll
   position. The budget consumes only `viewport`: node rects are
   viewport-relative (§3), so scroll offsets play no part in
-  classification and `scroll` is consumed by the dashboard's screencast
-  framing. If the viewport is absent or malformed the converter treats
-  it as unbounded (no viewport-first folding) and relies on the
+  classification, and nothing consumes `scroll` — the field is
+  informational. If the viewport is absent or malformed the converter
+  treats it as unbounded (no viewport-first folding) and relies on the
   remaining budgets.
 - `root` — one node for the document root (role `root`).
 
@@ -75,15 +76,17 @@ converter never fails on hostile page data — the
 applies to everything a page reports.
 
 Skipped elements: `script`, `style`, `noscript`, `template`, `head`,
-`meta`, `link`, `title`, `br`, SVG internals (an `svg` element is
-reported as a single node without children).
+`meta`, `link`, `title`, `br`, `base`, `datalist`, SVG internals (an
+`svg` element is reported as a single node without children).
 
 ## 4. Reference minting (v1)
 
 - The serializer keeps a per-page store on `window`
-  (`__rutterRefStore`: a `WeakMap<Element, string>` plus an integer
-  counter). An actionable element receives `e<N>` the first time it is
-  observed and keeps it for later snapshots of the same page.
+  (`__rutterRefStore`: a `WeakMap<Element, string>` that mints refs,
+  a reverse `Map<string, WeakRef<Element>>` that resolves them, and an
+  integer counter). An actionable element receives `e<N>` the first
+  time it is observed and keeps it for later snapshots of the same
+  page.
 - Actionable roles v1: `button`, `link`, `textbox`, `searchbox`,
   `checkbox`, `radio`, `combobox`, `listbox`, `option`, `menuitem`,
   `tab`, `slider`, `spinbutton`, `switch`, `treeitem`.
@@ -115,8 +118,8 @@ order; every budget-induced change sets `Snapshot::truncated = true`.
    cut (summary line `- generic × N more` at the cut point is not
    rendered; the children are simply absent).
 2. **Sibling folding.** A run of ≥ 8 consecutive same-role siblings
-   with no name is folded into one summary node (role kept, `× N`
-   set). Runs shorter than 8 pass through unchanged.
+   with no name and no ref is folded into one summary node (role kept,
+   `× N` set). Runs shorter than 8 pass through unchanged.
 3. **Viewport-first culling.** Node rects are viewport-relative; any
    subtree entirely outside the band
    `[-200 px, viewport height + 200 px]` on the y axis whose rendered

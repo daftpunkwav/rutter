@@ -9,6 +9,7 @@
 coverage/
 dist/
 node_modules/
+.playwright-mcp/
 
 # Environment and secrets
 .env

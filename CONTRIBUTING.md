@@ -6,11 +6,14 @@ starting from the architecture map.
 
 ## Ground rules
 
-- **English is the working language.** Code, comments, commit
-  messages, issues, and PRs are English-only; the encoding gate
-  (`scripts/check_encoding.sh`) enforces this. Documentation ships as
-  English `README.md` files with Chinese `README.zh.md` mirrors —
-  update the two together, and keep prose out of code comments.
+- **Chinese and English are both acceptable; neither is ever
+  forbidden.** The existing code base's comments are English, and new
+  comments may just as well be written in Chinese — clarity is the
+  only bar. Commit messages follow Conventional Commits in English
+  (see `AGENTS.md`), and documentation ships as English `README.md`
+  files with Chinese `README.zh.md` mirrors — update the two
+  together. The encoding gate (`scripts/check_encoding.sh`) checks
+  byte hygiene only: valid UTF-8, LF endings, no BOM.
 - **Scope is fixed.** The non-goals in
   [`docs/architecture.md`](docs/architecture.md) are enforced at
   review: no rendering engine, no stealth/anti-fingerprinting, no

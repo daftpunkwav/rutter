@@ -2,7 +2,8 @@
 
 [English](README.md) | 中文
 
-`rutter` 二进制与组合根：唯一依赖全部 workspace crate 的地方。三种
+`rutter` 二进制与组合根：它依赖除 `events` 外的全部 workspace
+crate（`events` 经 `session` 与 `dashboard` 间接到达）。三种
 入口模式——browse（有头窗口，无 MCP）、serve（stdio 或 `--http` 上的
 MCP，可选 `--dashboard` 与 `--policy`）、open（一次性 Snapshot（快
 照））——都把旗标与环境解析为 `Settings`，并把 launcher、manager、

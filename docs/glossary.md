@@ -5,7 +5,8 @@ English | [中文](glossary.zh.md)
 The normative domain vocabulary. One concept, one term — code, docs,
 and UI use these exact terms, and no synonyms exist for them. The
 identifiers in [`crates/core/src/ids.rs`](../crates/core/src/ids.rs)
-carry the type-level versions of the first five entries.
+carry the type-level versions of the Context, Page, and Session
+entries.
 
 | Term | Meaning |
 |---|---|
@@ -44,8 +45,9 @@ convention, so consumers name everything the same way
 [`error.rs`](../crates/core/src/error.rs)):
 
 - Tagged enums serialize with a `"type"` tag and `snake_case` names:
-  `Event` (`"action_failed"`), `Action` (`"click"`), `ActionError`
-  (`"reference_expired"`), `Verdict`, `Origin`, and `ScrollDirection`.
+  `Event` (`"action_failed"`), `Action` (`"click"`), and `ActionError`
+  (`"reference_expired"`). Untagged enums serialize as bare
+  `snake_case` strings: `Verdict` (`"allow"`), `Origin` (`"agent"`),
+  and `ScrollDirection` (`"up"`).
 - Timestamps are RFC 3339 UTC strings; no locale-dependent formatting.
-- Everything is UTF-8 JSON; the dashboard layout does not assume
-  left-to-right text.
+- Everything travels as UTF-8 JSON.

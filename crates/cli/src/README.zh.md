@@ -4,7 +4,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `lib.rs` | 库根：以下每个模块都在此组装并导出 |
+| `lib.rs` | 库根：以下每个模块都在此声明；`config`、`entry`、`error` 是公开表面 |
 | `main.rs` | clap 定义与进程入口（`rutter_cli` 之上的一层薄壳） |
 | `entry.rs` | `EntryMode` 枚举：browse / serve / open |
 | `config.rs` | `Settings::resolve`：旗标 + 环境 → 运行时设置 |

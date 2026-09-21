@@ -12,9 +12,9 @@ run the suites.
 | Unit | Pure crates (core, observe, policy, events) and private paths beside the code | plain `#[test]` |
 | Golden | Snapshot builder output on fixture DOM trees | `insta` |
 | Property | Culling/folding invariants; serializer never panics | `proptest` |
-| Integration | Real headless shell: launch, navigate, act, recover | per-crate `tests/`, `#[ignore]`d by default |
+| Integration | Real headless shell: launch, navigate, act | per-crate `tests/`, `#[ignore]`d by default |
 | E2E | Full MCP client → rutter → engine round-trips (mcp, approval, http transports) | workspace `tests/` package |
-| Benchmark | 20-site fixed corpus: click hit rate, snapshot tokens | harness in `scripts/` |
+| Benchmark | 20-site fixed corpus: navigate+snapshot success rate | harness in `scripts/` |
 
 ## 2. What pins which contract
 
@@ -68,11 +68,14 @@ cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all
 bash scripts/check_headers.sh   # every source file opens with a truthful header
-bash scripts/check_encoding.sh  # code and comments stay English-only
+bash scripts/check_encoding.sh  # tracked text files: UTF-8, LF, no BOM
 ```
 
 Plus `cargo-deny` (`deny.toml`: advisories, licenses, bans) and an
-integration job that runs the `#[ignore]`d suites with a cached
-engine. Release archives are cut by cargo-dist on tags
-(`.github/workflows/release.yml`). The benchmark bar (≥ 90 % click
-hit rate on the corpus) gates releases.
+integration job that runs the `rutter-engine-cdp` integration suite
+with a cached engine (the other `#[ignore]`d suites are local runs).
+Release archives are cut by cargo-dist (`cargo dist build`, configured
+in the `[dist]` section of the root `Cargo.toml`); no release workflow
+is checked in. The corpus harnesses are manual runs, not CI gates;
+`scripts/benchmark.sh` reports a ≥ 90 % navigate+snapshot success
+bar.
