@@ -221,4 +221,15 @@ mod tests {
             "a decision after cancellation is rejected"
         );
     }
+
+    #[test]
+    fn default_matches_new() {
+        let default = ApprovalBroker::default();
+        let constructed = ApprovalBroker::new();
+        assert_eq!(default.pending_count(), 0);
+        assert_eq!(constructed.pending_count(), 0);
+        let (id, _receiver) = default.open();
+        assert_eq!(default.pending_count(), 1);
+        assert!(default.decide(&id, Decision::Grant));
+    }
 }

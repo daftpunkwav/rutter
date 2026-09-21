@@ -79,4 +79,16 @@ mod tests {
         bus.publish(envelope(1));
         bus.publish(envelope(2));
     }
+
+    #[tokio::test]
+    async fn default_matches_new() {
+        let default: EventBus = EventBus::default();
+        let constructed = EventBus::new();
+        let mut default_rx = default.subscribe();
+        let mut constructed_rx = constructed.subscribe();
+        default.publish(envelope(1));
+        constructed.publish(envelope(1));
+        assert_eq!(default_rx.recv().await.expect("envelope").seq, 1);
+        assert_eq!(constructed_rx.recv().await.expect("envelope").seq, 1);
+    }
 }

@@ -346,3 +346,98 @@ mod proptests {
         }
     }
 }
+
+// --- fit() branch pins: the 20k default budget makes these unreachable
+// through `build`, so the unit under test is driven directly. ---
+
+fn named(role: &str, name: &str, page_y: f64, height: f64) -> RawNode {
+    RawNode {
+        role: role.to_owned(),
+        name: Some(name.to_owned()),
+        page_y,
+        height,
+        ..RawNode::default()
+    }
+}
+
+fn fresh_state() -> BuildState {
+    BuildState {
+        nodes: 0,
+        truncated: false,
+    }
+}
+
+#[test]
+fn null_children_are_not_truncation() {
+    // `children: null` is the serializer's "no children" marker, not
+    // lost information.
+    let tree = json!({ "role": "button", "children": null });
+    let snapshot = build("https://example.com", &meta(), &tree);
+    assert!(!snapshot.truncated);
+}
+
+#[test]
+fn fit_clears_children_when_the_own_line_exceeds_the_budget() {
+    let mut state = fresh_state();
+    let node = named("list", &"x".repeat(MAX_TEXT_CHARS), 0.0, 20.0);
+    let mut node = RawNode {
+        children: vec![RawNode::default()],
+        ..node
+    };
+    let own = line_len(&node, 0);
+
+    let used = fit(&mut node, 0, own - 1, &meta(), &mut state);
+
+    assert_eq!(used, own, "the caller learns the true cost");
+    assert!(node.children.is_empty(), "children over budget are cut");
+    assert!(state.truncated);
+}
+
+#[test]
+fn fit_folds_a_large_out_of_viewport_subtree_at_entry() {
+    let mut state = fresh_state();
+    // Deep below the viewport: a subtree over the minimum fold size
+    // folds at the fit entry, whatever the budget says.
+    let mut node = RawNode {
+        children: vec![
+            named("listitem", &"y".repeat(MAX_TEXT_CHARS), 5000.0, 30.0),
+            named("listitem", &"z".repeat(MAX_TEXT_CHARS), 5000.0, 30.0),
+        ],
+        ..named("list", "wrap", 5000.0, 60.0)
+    };
+    assert!(
+        !meta().in_viewport(5000.0, 60.0),
+        "fixture must sit outside the viewport"
+    );
+
+    fit(&mut node, 0, DEFAULT_BUDGET_CHARS, &meta(), &mut state);
+
+    assert_eq!(node.folded_count, Some(2), "the subtree folds to a summary");
+    assert!(node.children.is_empty());
+    assert!(state.truncated);
+}
+
+#[test]
+fn fit_keeps_a_folded_child_that_still_fits() {
+    let mut state = fresh_state();
+    // Parent in view; one child far below with a subtree over the fold
+    // minimum: the child folds, and the summary line is cheap enough to
+    // keep.
+    let child = RawNode {
+        children: vec![
+            named("listitem", &"y".repeat(MAX_TEXT_CHARS), 5000.0, 30.0),
+            named("listitem", &"z".repeat(MAX_TEXT_CHARS), 5000.0, 30.0),
+        ],
+        ..named("list", "child", 5000.0, 60.0)
+    };
+    let mut parent = RawNode {
+        children: vec![child],
+        ..named("root", "parent", 0.0, 40.0)
+    };
+
+    fit(&mut parent, 0, DEFAULT_BUDGET_CHARS, &meta(), &mut state);
+
+    assert_eq!(parent.children.len(), 1, "the folded child stays");
+    assert_eq!(parent.children[0].folded_count, Some(2));
+    assert!(state.truncated);
+}

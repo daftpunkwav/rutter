@@ -262,6 +262,17 @@ mod tests {
         );
     }
 
+    #[test]
+    fn default_matches_new() {
+        let default: Backbone = Backbone::default();
+        let constructed = Backbone::new();
+        let session = SessionId::new("s1");
+        default.publish(session.clone(), Event::SessionStarted);
+        constructed.publish(session.clone(), Event::SessionStarted);
+        assert_eq!(default.replay(&session).len(), 1);
+        assert_eq!(constructed.replay(&session).len(), 1);
+    }
+
     #[tokio::test]
     async fn lagged_subscriber_can_resync_from_rings() {
         // Premise of the dashboard's Lagged handling: a subscriber that

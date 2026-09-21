@@ -167,6 +167,18 @@ mod tests {
     }
 
     #[test]
+    fn fold_summary_lines_render_the_count() {
+        let fold = SnapshotNode::fold_summary("listitem", 7);
+        assert_eq!(fold.folded_count, Some(7));
+        let snapshot = Snapshot {
+            url: "https://example.com".to_owned(),
+            root: fold,
+            truncated: true,
+        };
+        assert_eq!(snapshot.to_string(), "- listitem × 7\n");
+    }
+
+    #[test]
     fn escapes_quotes_in_names() {
         let mut quoted = node("button", Some("Say \"hi\""));
         quoted.reference = Some(Reference::new("e1"));
