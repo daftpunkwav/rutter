@@ -207,7 +207,6 @@ async fn history_navigation_and_reload() -> Result<(), Box<dyn std::error::Error
 async fn context_exposes_ids_pages_and_cookie_edges() -> Result<(), Box<dyn std::error::Error>> {
     use rutter_core::cookie::{Cookie, SameSite};
     use rutter_core::ids::PageId;
-    use rutter_engine::page::PageHandle;
 
     let executable = resolve_executable().await?;
     let launcher = CdpLauncher::new(executable, EngineBackend::ChromiumHeadlessShell);

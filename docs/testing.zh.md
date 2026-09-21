@@ -74,3 +74,27 @@ bash scripts/check_encoding.sh  # 跟踪的文本文件：UTF-8、LF、无 BOM
 中没有入库的 release workflow。语料基准是手动运行，不是 CI 门槛；
 `scripts/benchmark.sh` 报告 ≥ 90 % 的 navigate+snapshot 成功率
 门槛。
+
+## 5. 覆盖率
+
+行覆盖率用
+[cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) 在整个
+workspace 上测量，包含 `#[ignore]` 的引擎套件，且必须在同一次
+插桩运行中完成（build、测试、报告共用一次调用，否则插桩的
+`rutter.exe` 会在 e2e 子进程继承它之前被清掉）：
+
+```sh
+export RUTTER_BIN="$PWD/target/llvm-cov-target/debug/rutter"
+cargo llvm-cov --locked --workspace --bins --tests \
+    --summary-only --output-path target/coverage-full.txt \
+    -- --include-ignored --test-threads=1
+```
+
+全量运行（含驱动插桩二进制的 `open_e2e`、`mcp_e2e`、
+`approval_e2e`、`http_e2e`）在 0.1.0 时测得 **91.7 % 行覆盖**;
+剩余未覆盖行只属于：headed 模式专属路径（browse 模式）、引擎下载
+器的网络中段路径，以及需要一个卡死浏览器才能触发的防御性分支。
+
+CI 不对覆盖率设硬门槛：引擎套件无法在 CI 运行（没有 Chrome
+下载预算），只在 CI 跑的覆盖率数字会显得虚假地低。门槛是测试
+套件本身；上面的数字是本地全量运行的基准，新增代码时与之对照。

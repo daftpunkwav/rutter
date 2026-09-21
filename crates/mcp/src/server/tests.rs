@@ -633,7 +633,7 @@ async fn screenshot_returns_image_blocks_for_each_format() {
         let block = result
             .content
             .iter()
-            .find_map(|block| block.as_image().map(|image| image.clone()))
+            .find_map(|block| block.as_image().cloned())
             .expect("an image content block");
         assert_eq!(block.mime_type, mime);
     }

@@ -79,3 +79,30 @@ in the `[dist]` section of the root `Cargo.toml`); no release workflow
 is checked in. The corpus harnesses are manual runs, not CI gates;
 `scripts/benchmark.sh` reports a ≥ 90 % navigate+snapshot success
 bar.
+
+## 5. Coverage
+
+Line coverage is measured with
+[cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) over the
+whole workspace, including the `#[ignore]`d engine suites, in one
+instrumented run (build, tests, and report must share one invocation,
+or the instrumented `rutter.exe` is removed before the e2e children
+inherit it):
+
+```sh
+export RUTTER_BIN="$PWD/target/llvm-cov-target/debug/rutter"
+cargo llvm-cov --locked --workspace --bins --tests \
+    --summary-only --output-path target/coverage-full.txt \
+    -- --include-ignored --test-threads=1
+```
+
+The full run (including `open_e2e`, `mcp_e2e`, `approval_e2e`, and
+`http_e2e` driving the instrumented binary) measures **91.7 % lines**
+as of 0.1.0; the remaining lines are headed-mode only paths (browse
+mode), network-mid paths of the engine downloader, and defensive
+branches that need a wedged browser.
+
+CI does not gate on a coverage threshold: the engine suites cannot
+run there (no Chrome download budget), so a CI-only number would read
+artificially low. The gate is the suite itself; the number above is
+the local full-run figure to compare against when adding code.

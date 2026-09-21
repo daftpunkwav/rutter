@@ -201,8 +201,8 @@ mod tests {
             .expect("bind");
         let port = listener.local_addr().expect("addr").port();
         tokio::spawn(async move {
-            let mut responses = responses.into_iter();
-            while let Some((status, body)) = responses.next() {
+            let responses = responses.into_iter();
+            for (status, body) in responses {
                 let (mut socket, _) = listener.accept().await.expect("accept");
                 // Read the request head so the client can send its body
                 // (a pipelined write would otherwise race the answer).

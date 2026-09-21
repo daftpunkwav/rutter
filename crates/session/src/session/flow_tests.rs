@@ -457,7 +457,8 @@ async fn broker_and_backbone_are_the_shared_instances() {
 #[test]
 fn engine_failures_map_through_the_event_taxonomy() {
     let session = rutter_core::ids::SessionId::new("s-map");
-    let cases: Vec<(SessionError, Box<dyn Fn(&ActionError) -> bool>)> = vec![
+    type Case = (SessionError, Box<dyn Fn(&ActionError) -> bool>);
+    let cases: Vec<Case> = vec![
         (
             SessionError::Engine(EngineError::Terminated),
             Box::new(|error| matches!(error, ActionError::EngineTerminated { .. })),
