@@ -520,4 +520,136 @@ mod tests {
             "unexpected error: {error}"
         );
     }
+
+    #[test]
+    fn an_empty_cache_has_no_install() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = EngineStore::new(root.path());
+        assert!(
+            store
+                .installed("chrome-headless-shell")
+                .expect("scan")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn scan_skips_garbage_and_versions_without_a_binary() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = EngineStore::new(root.path());
+        let product_dir = root.path().join("engines").join("chrome-headless-shell");
+        // A stale staging dir, a non-version name, and a version whose
+        // binary is missing: none of them is an install.
+        for name in [".tmp-141.0.1-1", "latest", "141.0.1"] {
+            std::fs::create_dir_all(product_dir.join(name)).expect("entry dir");
+        }
+
+        assert!(
+            store
+                .installed("chrome-headless-shell")
+                .expect("scan")
+                .is_none(),
+            "garbage entries never satisfy a lookup"
+        );
+    }
+
+    #[test]
+    fn scan_reports_a_cache_path_that_is_not_a_directory() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = EngineStore::new(root.path());
+        let product_dir = root.path().join("engines").join("chrome-headless-shell");
+        std::fs::create_dir_all(product_dir.parent().expect("engines dir")).expect("parent");
+        std::fs::write(&product_dir, b"i am a file").expect("decoy file");
+
+        let error = store
+            .installed("chrome-headless-shell")
+            .expect_err("a file where the product dir belongs must fail");
+        assert!(
+            error.to_string().contains("cannot read cache directory"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn reinstalling_a_present_version_is_a_noop() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = EngineStore::new(root.path());
+        let zip = shell_zip();
+        let first = store
+            .install("chrome-headless-shell", "141.0.1", &zip)
+            .expect("install");
+
+        let second = store
+            .install("chrome-headless-shell", "141.0.1", &zip)
+            .expect("reinstall");
+        assert_eq!(first.executable, second.executable);
+        assert!(
+            !root
+                .path()
+                .join("engines")
+                .join("chrome-headless-shell")
+                .read_dir()
+                .expect("entries")
+                .any(|entry| entry
+                    .expect("entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(TMP_PREFIX)),
+            "a short-circuited install leaves no staging dir"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_zip_fails_without_staging_leftovers() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = EngineStore::new(root.path());
+
+        let error = store
+            .install("chrome-headless-shell", "141.0.1", b"this is not a zip")
+            .expect_err("garbage bytes must fail");
+        assert!(
+            error.to_string().contains("not readable"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            store
+                .installed("chrome-headless-shell")
+                .expect("scan")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn zips_with_directory_entries_and_bare_names_extract() {
+        // Chrome for Testing zips carry a top-level folder; a zip whose
+        // binary sits at the root (no folder at all) must install too,
+        // and directory entries must be skipped, not written as files.
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = EngineStore::new(root.path());
+        let zip = build_zip(&[
+            ("chrome-headless-shell-linux64/", b"" as &[u8]),
+            (product(), b"MZ" as &[u8]),
+        ]);
+
+        let installed = store
+            .install("chrome-headless-shell", "141.0.1", &zip)
+            .expect("install");
+        assert!(installed.executable.is_file());
+    }
+
+    #[test]
+    fn safe_join_rejects_absolute_colon_and_escaping_names() {
+        // The zip crate normalizes some of these away when writing an
+        // archive, so the rejection itself is tested directly; the
+        // end-to-end slip case lives in `hostile_zip_paths_are_rejected`.
+        let base = Path::new("/cache/staging");
+        for relative in ["/evil.exe", "C:evil.exe", "a//b", "a/./b", "a/../b", ""] {
+            assert!(
+                safe_join(base, relative).is_err(),
+                "{relative:?} must be refused"
+            );
+        }
+        let joined = safe_join(base, "folder/binary.exe").expect("a plain name joins");
+        assert_eq!(joined, base.join("folder/binary.exe"));
+    }
 }

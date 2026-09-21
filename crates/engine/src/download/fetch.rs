@@ -189,4 +189,80 @@ mod tests {
             "unexpected error: {error}"
         );
     }
+
+    /// Serves `responses` in order, one per connection, on a loopback
+    /// port; returns the port. After the scripted answers run out the
+    /// task exits, so an unexpected extra attempt errors loudly instead
+    /// of hanging.
+    async fn serve(responses: Vec<(u16, &'static [u8])>) -> u16 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        tokio::spawn(async move {
+            let mut responses = responses.into_iter();
+            while let Some((status, body)) = responses.next() {
+                let (mut socket, _) = listener.accept().await.expect("accept");
+                // Read the request head so the client can send its body
+                // (a pipelined write would otherwise race the answer).
+                let mut buffer = [0u8; 4096];
+                let _ = socket.read(&mut buffer).await;
+                let head = format!(
+                    "HTTP/1.1 {status}\r\ncontent-length: {}\r\n\
+                     content-type: application/octet-stream\r\nconnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = socket.write_all(head.as_bytes()).await;
+                let _ = socket.write_all(body).await;
+            }
+        });
+        port
+    }
+
+    #[tokio::test]
+    async fn fetch_json_parses_documents_and_rejects_garbage() {
+        let port = serve(vec![(200, br#"{"ok":true}"#)]).await;
+        let value = fetch_json(&format!("http://127.0.0.1:{port}/manifest.json"))
+            .await
+            .expect("a served document parses");
+        assert_eq!(value["ok"], true);
+
+        let port = serve(vec![(200, b"not json")]).await;
+        let error = fetch_json(&format!("http://127.0.0.1:{port}/manifest.json"))
+            .await
+            .expect_err("garbage must fail");
+        assert!(
+            error.to_string().contains("not valid JSON"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn client_errors_fail_fast_without_retries() {
+        // A 404 is deterministic: the answer must come from the first
+        // attempt (the responder serves exactly one response).
+        let port = serve(vec![(404, b"nope")]).await;
+        let error = fetch_bytes(&format!("http://127.0.0.1:{port}/shell.zip"))
+            .await
+            .expect_err("a 404 must fail");
+        assert!(
+            error.to_string().contains("server rejected the request"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn server_errors_exhaust_the_attempts() {
+        // A 500 stays retriable; the responder answers all three
+        // attempts, then the fetch reports the exhaustion.
+        let port = serve(vec![(500, b"busy"), (500, b"busy"), (500, b"busy")]).await;
+        let error = fetch_bytes(&format!("http://127.0.0.1:{port}/shell.zip"))
+            .await
+            .expect_err("persistent 500s must fail");
+        assert!(
+            error.to_string().contains("3 attempts"),
+            "unexpected error: {error}"
+        );
+    }
 }
