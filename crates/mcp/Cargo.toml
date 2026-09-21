@@ -27,8 +27,14 @@ tokio = { workspace = true }
 
 # Tests may use a scripted engine launcher for the session lifecycle.
 # Engine types reach production code only through rutter-session's
-# re-exports, so rutter-engine is a test-only dependency here.
+# re-exports, so rutter-engine is a test-only dependency here. The
+# transport tests speak MCP as a client over the in-process server.
 [dev-dependencies]
 async-trait = { workspace = true }
+rmcp = { workspace = true, features = [
+    "client",
+    "transport-streamable-http-client",
+    "transport-streamable-http-client-reqwest",
+] }
 rutter-engine = { workspace = true }
 rutter-policy = { workspace = true }
