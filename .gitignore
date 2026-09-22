@@ -10,6 +10,7 @@ coverage/
 dist/
 node_modules/
 .playwright-mcp/
+.rutter-engine-cache/
 
 # Environment and secrets
 .env
