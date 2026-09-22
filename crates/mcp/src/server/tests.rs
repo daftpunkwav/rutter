@@ -1,5 +1,5 @@
 //! Server tests: session lifecycle over a stub engine, result
-//! mapping (truncation marker), and parameter mapping.
+//! mapping (truncation marker), and tool handlers over a scripted page.
 
 use super::*;
 use rutter_engine::config::{ContextConfig, LaunchMode};

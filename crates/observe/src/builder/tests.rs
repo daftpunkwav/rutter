@@ -369,8 +369,8 @@ fn fresh_state() -> BuildState {
 
 #[test]
 fn null_children_are_not_truncation() {
-    // `children: null` is the serializer's "no children" marker, not
-    // lost information.
+    // A null `children` reads as "no children", not as lost
+    // information.
     let tree = json!({ "role": "button", "children": null });
     let snapshot = build("https://example.com", &meta(), &tree);
     assert!(!snapshot.truncated);

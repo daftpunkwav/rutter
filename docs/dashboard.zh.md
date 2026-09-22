@@ -41,6 +41,8 @@ UI 字符串来自 `frontend/i18n/en.json` 目录。
   自批的部署，要把 dashboard 跑在 agent 账户之外。
 - **令牌换 cookie。** 首次带 `?token=` 访问会设置 `HttpOnly`、
   `SameSite=Strict` 的会话 cookie；之后的请求仅凭 cookie 认证。
+  生成的 token 必定可安全放入 cookie；不可安全放入的
+  `RUTTER_DASHBOARD_TOKEN` 覆盖值继续以 query 参数认证。
 - **`Host` 校验**防范 DNS rebinding。
 
 ## 3. WebSocket 协议

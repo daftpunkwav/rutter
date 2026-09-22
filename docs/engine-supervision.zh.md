@@ -40,16 +40,16 @@ trait 之上的任何 API。
 ## 2. 引擎获取
 
 [`ensure()`](../crates/engine/src/download/mod.rs) 解析可启动的
-二进制；代码库中再无其他地方下载或启动引擎：
+二进制；代码库中再无其他地方直接下载或启动引擎：
 
 1. 显式 `--engine-executable <PATH>` 最优先。路径必须存在；其
    版本报告为 `external`；缓存不受影响。
 2. 查询缓存。`<cache-root>/engines/<product>/<version>/` 存放解压
    后的二进制；命中即无需网络。
 3. 未命中时，抓取 Chrome for Testing manifest 并下载对应的稳定
-   渠道工件（按宿主平台选择 `chrome-headless-shell` 或 `chrome`），
-   一次性安装进缓存。缓存版本被复用，直到缓存目录被清空——包括
-   离线时。
+   渠道工件（`chrome-headless-shell` 或 `chrome`，取宿主平台对应的
+   构建），一次性安装进缓存。缓存版本被复用，直到缓存目录被清空
+   ——包括离线时。
 
 缓存根默认为 `<OS 缓存目录>/rutter`，可由 `--cache-dir` /
 `RUTTER_CACHE_DIR` 覆盖。进度输出到 stderr；stdout 保留给数据。
@@ -96,9 +96,10 @@ Chrome for Testing 下载。
 
 随附后端中在 trait 之上可见的事实：
 
-- **每条 CDP 命令都在 30 s 截止时间内运行**
-  （[`COMMAND_TIMEOUT`](../crates/engine-cdp/src/error.rs)），因此
-  卡死的浏览器降级为错误，而不是挂死 session 或其监督。
+- **每条 CDP 命令都在 deadline 之下运行**——没有专属预算的调用
+  使用固定的 [`COMMAND_TIMEOUT`](../crates/engine-cdp/src/error.rs)
+  （30 s）——因此卡死的浏览器降级为错误，而不是挂死 session 或其
+  监督。
 - **Screencast** 使用 `Page.startScreencast`：JPEG，宽度 ≤ 1024，
   每帧一个 `screencastFrameAck` 回环。CDP 在导航时停止 screencast，
   因此传输在看到导航事件时重启截取。帧经过有界 channel（4）：

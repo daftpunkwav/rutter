@@ -23,8 +23,9 @@
 | [`docs/testing.md`](docs/testing.md) | 测试层级、契约钉定、运行方式 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 工作规则与本地门禁 |
 
-每个源码目录都带有说明自身职责、边界与文件清单的 `README.md`（两个
-共享测试助手目录 `tests/common/` 与 `crates/session/tests/common/`
+每个源码目录都带有说明自身职责、边界与文件清单的 `README.md`（四个
+共享测试助手目录 `tests/common/`、`crates/session/tests/common/`、
+`crates/dashboard/tests/common/` 与 `crates/mcp/tests/common/`
 由各自的父级测试 README 覆盖）—— 从
 [`crates/README.md`](crates/README.md) 开始。每个 README 与每篇
 `docs/` 文档都有中文镜像：`README.md` 旁是 `README.zh.md`，
@@ -148,6 +149,7 @@ cargo test -p rutter-engine-cdp --test integration -- --ignored
 cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored
+cargo test -p rutter-integration-tests --test open_e2e -- --ignored
 cargo test -p rutter-engine-cdp --test screencast -- --ignored
 ```
 

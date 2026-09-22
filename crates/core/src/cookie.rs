@@ -14,7 +14,8 @@ pub struct Cookie {
     pub value: String,
     /// Domain the cookie belongs to, for example `example.com`.
     pub domain: String,
-    /// Path scope; defaults to `/` when absent.
+    /// Path scope; when absent, the browser derives a default from the
+    /// active page's URL.
     pub path: Option<String>,
     /// Whether the cookie is sent over secure transports only.
     pub secure: bool,

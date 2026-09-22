@@ -52,6 +52,7 @@ starting from the architecture map.
    cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
    cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
    cargo test -p rutter-integration-tests --test http_e2e -- --ignored
+   cargo test -p rutter-integration-tests --test open_e2e -- --ignored
    cargo test -p rutter-engine-cdp --test screencast -- --ignored
    ```
 

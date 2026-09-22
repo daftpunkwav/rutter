@@ -4,8 +4,9 @@
 //! - Own one supervised engine per process and hand out one
 //!   [`session::Session`] per MCP client (docs/architecture.md, docs/tool-catalog.md).
 //! - Execute typed [`rutter_core::action::Action`]s through the
-//!   three-phase auto-wait (visible, stable, enabled — act — settle) and
-//!   return a fresh snapshot for every mutating action (docs/tool-catalog.md §3).
+//!   three-phase auto-wait (visible, stable, enabled — act — settle,
+//!   docs/tool-catalog.md §3) and return a fresh snapshot for every
+//!   mutating action (docs/tool-catalog.md §2).
 //! - Emit the event backbone's semantic events for everything a session
 //!   does (docs/events.md).
 //!

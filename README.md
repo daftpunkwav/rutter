@@ -26,9 +26,10 @@ for sensitive operations.
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Working rules and local gates |
 
 Every source directory carries a `README.md` stating its
-responsibility, boundary, and file map (the two shared test-helper
-directories, `tests/common/` and `crates/session/tests/common/`, are
-covered by their parent test READMEs) — start at
+responsibility, boundary, and file map (the four shared test-helper
+directories — `tests/common/`, `crates/session/tests/common/`,
+`crates/dashboard/tests/common/`, and `crates/mcp/tests/common/` —
+are covered by their parent test READMEs) — start at
 [`crates/README.md`](crates/README.md). Each README and each
 `docs/` document has a Chinese mirror: `README.zh.md` beside its
 `README.md`, and `<name>.zh.md` beside `<name>.md` under `docs/`;
@@ -159,6 +160,7 @@ cargo test -p rutter-engine-cdp --test integration -- --ignored
 cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored
+cargo test -p rutter-integration-tests --test open_e2e -- --ignored
 cargo test -p rutter-engine-cdp --test screencast -- --ignored
 ```
 

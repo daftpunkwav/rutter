@@ -1,6 +1,6 @@
 //! Functional tests for the core domain vocabulary through its public
 //! API: action serde round-trips, the error taxonomy's event-convention
-//! serialization, and reference identity.
+//! serialization, reference identity, and snapshot rendering.
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.

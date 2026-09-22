@@ -13,7 +13,7 @@
 | `storage.rs` | 存储状态（cookies + localStorage），原子且仅限属主的持久化 |
 | `audit.rs` | 仅追加的审批轨迹：每个受监管的决定一行 JSON |
 | `wait.rs` | `poll_until`，带 600 s 预算钳制（时钟溢出防护） |
-| `config.rs` | `SessionConfig` 默认值由 docs/tool-catalog.md §3 钉死（`wait_for` 预算默认值在 MCP 工具层，§4） |
+| `config.rs` | `SessionConfig`，其自动等待默认值由 docs/tool-catalog.md §3 钉死（`wait_for` 预算默认值在 MCP 工具层，§4） |
 | `error.rs` | `SessionError`，衔接引擎错误与动作错误 |
 | `mock.rs` | 仅供测试的引擎替身（`#[cfg(test)]`），用于无浏览器测试 |
 

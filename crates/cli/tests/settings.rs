@@ -23,7 +23,7 @@ fn explicit_values_win_over_defaults() {
         Some(PathBuf::from("browser.exe"))
     );
     assert_eq!(settings.cache_root, PathBuf::from("cache"));
-    // Navigation deadline pinned by docs/tool-catalog.md §3.
+    // Navigation deadline pinned by docs/sessions.md (context caps).
     assert_eq!(settings.navigation_timeout, Duration::from_secs(30));
 }
 

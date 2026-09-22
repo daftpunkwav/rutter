@@ -15,9 +15,9 @@
 //! engine death.
 //!
 //! Two shapes matter here. The supervision state is one explicit
-//! [`Phase`] value rather than an `Option` slot plus a restart flag plus a
+//! `Phase` value rather than an `Option` slot plus a restart flag plus a
 //! timestamp history that callers had to read together, and the restart
-//! policy loop exists once — [`bring_up`] — which the initial start and
+//! policy loop exists once — `bring_up` — which the initial start and
 //! every later replacement both go through. It used to exist twice, with
 //! the two copies free to drift.
 

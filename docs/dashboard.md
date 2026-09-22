@@ -48,7 +48,9 @@ Every endpoint, including the WebSocket upgrade, passes the same gate
   its own actions runs the dashboard outside the agent's account.
 - **Token-for-cookie exchange.** The first visit with `?token=` sets
   an `HttpOnly`, `SameSite=Strict` session cookie; later requests
-  authenticate through the cookie alone.
+  authenticate through the cookie alone. Generated tokens are always
+  cookie-safe; a `RUTTER_DASHBOARD_TOKEN` override that is not keeps
+  authenticating through the query parameter.
 - **`Host` validation** defends against DNS rebinding.
 
 ## 3. WebSocket protocol

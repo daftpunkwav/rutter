@@ -10,7 +10,7 @@
 //! - Hand that token's URL to a human through a channel chosen by who
 //!   owns stderr: a terminal gets the URL, a piped stderr (the MCP
 //!   client's case) gets an owner-only file and only its path is
-//!   printed. See [`DashboardServer::hand_off`].
+//!   printed. See `DashboardServer::hand_off`.
 //! - Stream events over one WebSocket: replay first, then live; the
 //!   client submits approval decisions through the same socket.
 //!
@@ -80,7 +80,7 @@ impl DashboardServer {
     /// through the manager's broker — the one the sessions park on — so
     /// it is derived here, never passed in. `access_file` is the private
     /// hand-off path for the access URL; it is required whenever stderr
-    /// has no terminal (see [`Self::hand_off`]).
+    /// has no terminal (see `hand_off`).
     pub fn new(manager: Arc<SessionManager>, port: u16, access_file: Option<PathBuf>) -> Self {
         Self {
             broker: manager.broker(),

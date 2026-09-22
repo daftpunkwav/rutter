@@ -59,7 +59,7 @@ role `generic` with no name.
 | Field | Type | Meaning |
 |---|---|---|
 | `role` | string | ARIA role: explicit `role` attribute first, then the implicit role of the tag (link, button, textbox, heading, list, listitem, image, …), else `generic` |
-| `name` | string, optional | Accessible name, computed as: `aria-label` → `alt` (image) → associated `<label>` (form controls) → `placeholder` (text fields) → `title` → visible text, whitespace-collapsed, capped at 120 characters |
+| `name` | string, optional | Accessible name, computed as: `aria-label` → `alt` (image) → associated `<label>` (form controls) → `placeholder` (text fields) → `title` → visible text (text-bearing roles only; containers such as `generic`, `list`, or `group` stay nameless), whitespace-collapsed, capped at 120 characters |
 | `value` | string, optional | Current value of form controls, capped at 200 characters |
 | `ref` | string, optional | Stable handle (§4); present on actionable, enabled elements |
 | `checked` | bool, optional | Checkbox/radio state |

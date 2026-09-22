@@ -48,6 +48,7 @@ cargo test -p rutter-engine-cdp --test integration -- --ignored
 cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored
+cargo test -p rutter-integration-tests --test open_e2e -- --ignored
 cargo test -p rutter-engine-cdp --test screencast -- --ignored
 ```
 
@@ -102,7 +103,9 @@ as of 0.1.0; the remaining lines are headed-mode only paths (browse
 mode), network-mid paths of the engine downloader, and defensive
 branches that need a wedged browser.
 
-CI does not gate on a coverage threshold: the engine suites cannot
-run there (no Chrome download budget), so a CI-only number would read
-artificially low. The gate is the suite itself; the number above is
-the local full-run figure to compare against when adding code.
+CI does not gate on a coverage threshold: only the
+`rutter-engine-cdp` integration suite runs there (with a cached
+engine); the remaining `#[ignore]`d suites are local runs, so a
+CI-only number would read artificially low. The gate is the suite
+itself; the number above is the local full-run figure to compare
+against when adding code.

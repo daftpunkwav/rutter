@@ -1,5 +1,6 @@
 //! The in-page scripts owned by the observation layer: reference
-//! resolution, focusing, option selection, and text waits.
+//! resolution, focusing, option selection, text waits, and localStorage
+//! dump/restore.
 //!
 //! Boundary: page-side JS next to the serializer. These scripts map
 //! snapshot references back to live elements and drive small page

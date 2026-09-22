@@ -1,5 +1,7 @@
-//! The session error contract: agent-facing action failures plus
-//! engine-level failures that reach the caller unchanged.
+//! The session error contract: agent-facing action failures,
+//! engine-level failures that reach the caller unchanged, and the
+//! orchestration layer's own answers (session capacity, observation
+//! with no open page, contained bugs).
 
 use rutter_core::error::ActionError;
 use rutter_engine::error::EngineError;
@@ -8,7 +10,7 @@ use thiserror::Error;
 /// Why a session operation failed.
 #[derive(Debug, Error)]
 pub enum SessionError {
-    /// A typed action failure from the docs/tool-catalog.md §3 taxonomy.
+    /// A typed action failure from the docs/tool-catalog.md §2 taxonomy.
     #[error("{0}")]
     Action(#[from] ActionError),
 

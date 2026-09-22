@@ -68,7 +68,8 @@ pub struct CookieInput {
     pub value: String,
     /// Domain the cookie belongs to.
     pub domain: String,
-    /// Path scope; defaults to `/` when absent.
+    /// Path scope; when absent, the browser derives a default from the
+    /// active page's URL.
     pub path: Option<String>,
     /// Secure-only flag; defaults to false.
     pub secure: Option<bool>,

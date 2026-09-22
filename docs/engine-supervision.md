@@ -44,15 +44,16 @@ speaks CDP, over `chromiumoxide`. Public surface: one launcher
 
 [`ensure()`](../crates/engine/src/download/mod.rs) resolves a
 launchable binary; nothing else in the codebase downloads or launches
-engines:
+engines directly:
 
 1. An explicit `--engine-executable <PATH>` wins. The path must exist;
    its version reports as `external`; the cache is untouched.
 2. The cache is consulted. `<cache-root>/engines/<product>/<version>/`
    holds the extracted binary; a hit needs no network.
 3. On a miss, the Chrome for Testing manifest is fetched and the
-   pinned stable artifact (`chrome-headless-shell` or `chrome`, per
-   host platform) is downloaded once and installed into the cache. The
+   pinned stable artifact (`chrome-headless-shell` or `chrome`, the
+   build for the host platform) is downloaded once and installed into
+   the cache. The
    cached version is reused until the cache directory is cleared,
    including offline.
 
@@ -109,15 +110,15 @@ rutter. This is the orchestration-layer invariant
 
 Facts about the shipped backend that are visible above the trait:
 
-- **Every CDP command runs under a 30 s deadline**
-  ([`COMMAND_TIMEOUT`](../crates/engine-cdp/src/error.rs)), so a
-  wedged browser degrades to errors instead of hanging a session or
-  its supervision.
+- **Every CDP command runs under a deadline** — the fixed
+  [`COMMAND_TIMEOUT`](../crates/engine-cdp/src/error.rs) (30 s) where
+  a call has no dedicated budget — so a wedged browser degrades to
+  errors instead of hanging a session or its supervision.
 - **Screencast** uses `Page.startScreencast`: JPEG, width ≤ 1024, a
   `screencastFrameAck` loop per frame. CDP stops screencasts on
   navigation, so the transport restarts the capture when it sees the
   navigation event. Frames flow through a bounded channel (4): a slow
   viewer loses frames, not memory
   ([dashboard](dashboard.md#5-screencast)).
-- **Screenshots** honor a per-context minimum interval (500 ms) that
-  caps the capture rate.
+- **Screenshots** honor a per-page minimum interval (500 ms, from the
+  context config) that caps the capture rate.

@@ -1,7 +1,8 @@
 //! Session and auto-wait configuration.
 //!
-//! Boundary: numeric policy for one process. The values are defaults
-//! pinned by `docs/tool-catalog.md` §3; the `wait_for` budget default is
+//! Boundary: numeric policy for one process. The auto-wait defaults
+//! (phase budget, stability interval, settle) are pinned by
+//! `docs/tool-catalog.md` §3; the `wait_for` budget default is
 //! pinned by the MCP tool layer (docs/tool-catalog.md §4), not here. The approval
 //! window lives on the policy's [`rutter_policy::RuleSet`], which the
 //! session reads directly.

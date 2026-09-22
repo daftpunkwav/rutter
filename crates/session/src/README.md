@@ -13,7 +13,7 @@ English | [中文](README.zh.md)
 | `storage.rs` | Storage state (cookies + localStorage), atomic owner-only persistence |
 | `audit.rs` | Append-only approval trail: one JSON line per supervised decision |
 | `wait.rs` | `poll_until` with the 600 s budget clamp (clock-overflow guard) |
-| `config.rs` | `SessionConfig` defaults pinned by docs/tool-catalog.md §3 (the `wait_for` budget default lives on the MCP tool layer, §4) |
+| `config.rs` | `SessionConfig`, its auto-wait defaults pinned by docs/tool-catalog.md §3 (the `wait_for` budget default lives on the MCP tool layer, §4) |
 | `error.rs` | `SessionError` bridging engine and action errors |
 | `mock.rs` | Test-only engine doubles (`#[cfg(test)]`) for browser-free tests |
 

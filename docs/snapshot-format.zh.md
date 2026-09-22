@@ -52,7 +52,7 @@ injected serializer (page)       rutter-observe
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `role` | string | ARIA role：先看显式 `role` 属性，再看标签的隐式 role（link、button、textbox、heading、list、listitem、image、…），否则 `generic` |
-| `name` | string, 可选 | 可访问名称，计算顺序：`aria-label` → `alt`（图片）→ 关联 `<label>`（表单控件）→ `placeholder`（文本框）→ `title` → 可见文本，空白折叠，上限 120 字符 |
+| `name` | string, 可选 | 可访问名称，计算顺序：`aria-label` → `alt`（图片）→ 关联 `<label>`（表单控件）→ `placeholder`（文本框）→ `title` → 可见文本（仅限可承载文本的 role；`generic`、`list`、`group` 等容器保持无名），空白折叠，上限 120 字符 |
 | `value` | string, 可选 | 表单控件当前值，上限 200 字符 |
 | `ref` | string, 可选 | 稳定句柄（§4）；出现在可操作且启用的元素上 |
 | `checked` | bool, 可选 | 复选框/单选框状态 |

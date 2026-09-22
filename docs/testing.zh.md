@@ -44,6 +44,7 @@ cargo test -p rutter-engine-cdp --test integration -- --ignored
 cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored
+cargo test -p rutter-integration-tests --test open_e2e -- --ignored
 cargo test -p rutter-engine-cdp --test screencast -- --ignored
 ```
 
@@ -95,6 +96,7 @@ cargo llvm-cov --locked --workspace --bins --tests \
 剩余未覆盖行只属于：headed 模式专属路径（browse 模式）、引擎下载
 器的网络中段路径，以及需要一个卡死浏览器才能触发的防御性分支。
 
-CI 不对覆盖率设硬门槛：引擎套件无法在 CI 运行（没有 Chrome
-下载预算），只在 CI 跑的覆盖率数字会显得虚假地低。门槛是测试
-套件本身；上面的数字是本地全量运行的基准，新增代码时与之对照。
+CI 不对覆盖率设硬门槛：只有 `rutter-engine-cdp` 集成套件在 CI
+运行（用缓存的引擎）；其余 `#[ignore]` 套件只在本地运行，只在 CI
+跑的覆盖率数字会显得虚假地低。门槛是测试套件本身；上面的数字是
+本地全量运行的基准，新增代码时与之对照。

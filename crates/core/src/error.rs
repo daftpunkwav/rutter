@@ -150,7 +150,8 @@ pub enum TransportCause {
     },
 }
 
-/// Phases of the three-phase auto-wait every mutating action runs through.
+/// Phases a mutating action moves through: the three-phase auto-wait
+/// before acting, then acting and settling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error, Serialize, Deserialize)]
 pub enum WaitPhase {
     /// Waiting for the element to become visible.

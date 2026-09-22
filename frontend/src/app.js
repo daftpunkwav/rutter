@@ -37,8 +37,8 @@
   function t(key) { return I18N[key] || key; }
 
   var socket = null;
-  // Seconds between reconnect attempts; reset on a successful open and
-  // capped so a dead server cannot spin the loop forever.
+  // Milliseconds between reconnect attempts; reset on a successful open
+  // and capped so a dead server cannot spin the loop forever.
   var reconnectDelay = 1000;
 
   function connect() {

@@ -29,8 +29,8 @@ license = "Apache-2.0"
 publish = false
 
 # Packaging via cargo-dist: `cargo dist build`
-# produces the rutter binary archives; tagging a release triggers the
-# publish workflow. The engine is not bundled — rutter downloads the
+# produces the rutter binary archives (no release workflow is checked
+# in). The engine is not bundled — rutter downloads the
 # Chrome for Testing binary into its cache on first use. The metadata
 # table name is what cargo-dist reads; a bare `[dist]` would draw an
 # "unused manifest key" warning from cargo on every build.
@@ -58,8 +58,9 @@ rutter-policy = { path = "crates/policy" }
 rutter-session = { path = "crates/session" }
 axum = { version = "0.8", features = ["ws"] }
 # Server-side surface only: stdio (transport-io) + streamable HTTP.
-# The client-side transports live in crates/cli's dev-dependencies —
-# only the e2e tests speak MCP as a client.
+# The client-side transports are test-only: the root tests/ package
+# and crates/mcp add them in their dev-dependencies — only tests
+# speak MCP as a client.
 rmcp = { version = "3.4", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 async-trait = "0.1"
 base64 = "0.22"

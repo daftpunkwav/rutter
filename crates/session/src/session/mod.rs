@@ -313,7 +313,7 @@ impl Session {
     /// on-demand, dashboard never executes actions).
     ///
     /// This path reads the registry instead of going through
-    /// [`Self::ensure_page`] on purpose: a viewer asking to watch must not
+    /// `ensure_page` on purpose: a viewer asking to watch must not
     /// cause a tab to open, so a session with no page answers
     /// [`SessionError::NoOpenPage`] rather than mutating first.
     pub async fn screencast(&self) -> Result<ScreencastStream, SessionError> {

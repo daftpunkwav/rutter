@@ -1,5 +1,5 @@
-//! Streamable HTTP transport for the MCP server (docs/architecture.md:
-//! "stdio first, streamable HTTP later" — this is the later).
+//! Streamable HTTP transport for the MCP server (docs/tool-catalog.md
+//! §1: stdio is the default transport; HTTP is opt-in via `--http`).
 //!
 //! Boundary: transport mapping only. rmcp's `StreamableHttpService`
 //! validates inbound `Host` headers against a loopback allowlist by
