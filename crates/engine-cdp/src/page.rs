@@ -49,7 +49,25 @@ fn screencast_params() -> StartScreencastParams {
         .build()
 }
 
-/// One CDP target (tab) wrapped as a page handle.
+/// Resolves the instant the next capture may run and records it as the
+/// new reservation, given the previous one. Pure so the spacing rules
+/// are unit-testable without a page.
+fn capture_due(last: Option<Instant>, min_interval: Duration, now: Instant) -> Instant {
+    let wait = match last {
+        // A future `at` is a slot a concurrent capture already reserved;
+        // `elapsed()` saturates to zero there, which would shorten the
+        // spacing, so this capture queues behind that slot instead.
+        Some(at) if at > now => (at - now) + min_interval,
+        // Both arms measure against the caller's `now`, keeping the
+        // function deterministic (a second clock read inside would race
+        // the first).
+        Some(at) => min_interval.saturating_sub(now - at),
+        None => Duration::ZERO,
+    };
+    now + wait
+}
+
+/// One CDP target wrapped as a page handle.
 pub struct CdpPage {
     page: Page,
     navigation_timeout: Duration,
@@ -57,6 +75,12 @@ pub struct CdpPage {
     /// disables the rate limit.
     screenshot_min_interval: Option<Duration>,
     last_capture: Mutex<Option<Instant>>,
+    /// Whether closing this page may close the underlying target.
+    /// Pages attached to a target that already existed (the Electron
+    /// engine's one visible surface, created by its own UI) outlive
+    /// their handle: closing that target would take the browser's
+    /// window content with it.
+    closable: bool,
 }
 
 impl CdpPage {
@@ -71,7 +95,27 @@ impl CdpPage {
             navigation_timeout,
             screenshot_min_interval,
             last_capture: Mutex::new(None),
+            closable: true,
         }
+    }
+
+    /// Wraps a target that the browser owned before this handle asked
+    /// for a page. The target belongs to the engine's own UI, so it
+    /// survives the handle: `close_page` removes the registration only.
+    pub fn attach(
+        page: Page,
+        navigation_timeout: Duration,
+        screenshot_min_interval: Option<Duration>,
+    ) -> Self {
+        Self {
+            closable: false,
+            ..Self::new(page, navigation_timeout, screenshot_min_interval)
+        }
+    }
+
+    /// Whether closing this page may close the underlying target.
+    pub fn closable(&self) -> bool {
+        self.closable
     }
 
     /// Target id for closing the tab through the browser connection
@@ -218,19 +262,16 @@ impl rutter_engine::page::PageHandle for CdpPage {
         // Enforce the context's capture-rate cap so one caller cannot
         // flood the engine with captures.
         if let Some(min_interval) = self.screenshot_min_interval {
+            let now = Instant::now();
             let due = {
                 let mut last = self
                     .last_capture
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
-                let wait = match *last {
-                    Some(at) => min_interval.saturating_sub(at.elapsed()),
-                    None => Duration::ZERO,
-                };
-                *last = Some(Instant::now() + wait);
-                Instant::now() + wait
+                let due = capture_due(*last, min_interval, now);
+                *last = Some(due);
+                due
             };
-            let now = Instant::now();
             if due > now {
                 tokio::time::sleep(due - now).await;
             }
@@ -329,5 +370,51 @@ impl rutter_engine::page::PageHandle for CdpPage {
         });
 
         Ok(ScreencastStream::new(receiver))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_capture_is_immediate() {
+        let now = Instant::now();
+        assert_eq!(capture_due(None, Duration::from_secs(10), now), now);
+    }
+
+    #[test]
+    fn capture_waits_out_the_remaining_interval() {
+        let now = Instant::now();
+        let last = now - Duration::from_secs(2);
+        assert_eq!(
+            capture_due(Some(last), Duration::from_secs(10), now),
+            now + Duration::from_secs(8)
+        );
+    }
+
+    #[test]
+    fn elapsed_interval_does_not_delay_the_capture() {
+        let now = Instant::now();
+        let last = now - Duration::from_secs(20);
+        assert_eq!(capture_due(Some(last), Duration::from_secs(10), now), now);
+    }
+
+    #[test]
+    fn concurrent_capture_queues_behind_a_reserved_slot() {
+        let now = Instant::now();
+        // A slot another capture is already sleeping on; elapsed() would
+        // saturate to zero here and reset the schedule instead.
+        let reserved = now + Duration::from_secs(7);
+        assert_eq!(
+            capture_due(Some(reserved), Duration::from_secs(10), now),
+            reserved + Duration::from_secs(10)
+        );
+    }
+
+    #[test]
+    fn zero_interval_never_waits() {
+        let now = Instant::now();
+        assert_eq!(capture_due(Some(now), Duration::ZERO, now), now);
     }
 }

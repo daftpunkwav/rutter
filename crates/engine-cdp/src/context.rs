@@ -1,8 +1,9 @@
 //! CDP implementation of context-scoped operations.
 //!
-//! Boundary: one CDP browser context per handle, enforcing the page cap
-//! from its configuration. Storage state persistence is a session-layer
-//! concern and never happens here.
+//! Boundary: at most one CDP browser context per handle (engines
+//! without context support run every page in the default one),
+//! enforcing the page cap from its configuration. Storage state
+//! persistence is a session-layer concern and never happens here.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,7 +17,7 @@ use chromiumoxide::cdp::browser_protocol::network::TimeSinceEpoch;
 use chromiumoxide::cdp::browser_protocol::network::{CookieParam, CookieSameSite};
 use chromiumoxide::cdp::browser_protocol::storage::{GetCookiesParams, SetCookiesParams};
 use chromiumoxide::cdp::browser_protocol::target::{
-    CloseTargetParams, CreateTargetParams, GetTargetsParams,
+    CloseTargetParams, CreateTargetParams, GetTargetsParams, TargetId, TargetInfo,
 };
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -102,23 +103,44 @@ impl ContextHandle for CdpContext {
 
         let mut params = CreateTargetParams::new("about:blank");
         params.browser_context_id = self.cdp_context_id.clone();
-        let page = {
+        let (page, created) = {
             let browser = self.browser.lock().await;
-            crate::error::with_deadline(
+            match crate::error::with_deadline(
                 "open_page",
                 crate::error::COMMAND_TIMEOUT,
                 browser.new_page(params),
             )
-            .await?
+            .await
+            {
+                Ok(page) => (page, true),
+                // Engines without target creation fall back to the page
+                // surface they already have: the Electron-based Rutter
+                // Browser answers Target.createTarget with "Not
+                // supported" because its one visible window is the
+                // surface, and driving that is the point.
+                Err(error) if is_not_supported(&error) => (
+                    attach_existing_surface(&browser).await.map_err(|_| error)?,
+                    false,
+                ),
+                Err(error) => return Err(error),
+            }
         };
 
         let serial = self.page_counter.fetch_add(1, Ordering::Relaxed);
         let page_id = PageId::new(format!("{}:page-{}", self.id, serial));
-        let handle = Arc::new(CdpPage::new(
-            page,
-            self.config.navigation_timeout,
-            Some(self.config.screenshot_min_interval),
-        ));
+        let handle = Arc::new(if created {
+            CdpPage::new(
+                page,
+                self.config.navigation_timeout,
+                Some(self.config.screenshot_min_interval),
+            )
+        } else {
+            CdpPage::attach(
+                page,
+                self.config.navigation_timeout,
+                Some(self.config.screenshot_min_interval),
+            )
+        });
 
         // The cap protects the shared engine process, so it is re-checked
         // under the lock that owns registration: a concurrent open may
@@ -133,17 +155,22 @@ impl ContextHandle for CdpContext {
             over
         };
         if over_cap {
-            let target_id = handle.target_id();
-            let browser = self.browser.lock().await;
-            // Same wedged-handler threat model as every call here: the
-            // cleanup must be bounded or a hung browser would park
-            // `open_page` forever while holding the browser mutex.
-            let _ = crate::error::with_deadline(
-                "close_overflow_page",
-                crate::error::COMMAND_TIMEOUT,
-                browser.execute(CloseTargetParams::new(target_id)),
-            )
-            .await;
+            // An attached surface belongs to the engine's UI and is
+            // never closed; see [`CdpPage::attach`].
+            if handle.closable() {
+                let target_id = handle.target_id();
+                let browser = self.browser.lock().await;
+                // Same wedged-handler threat model as every call here:
+                // the cleanup must be bounded or a hung browser would
+                // park `open_page` forever while holding the browser
+                // mutex.
+                let _ = crate::error::with_deadline(
+                    "close_overflow_page",
+                    crate::error::COMMAND_TIMEOUT,
+                    browser.execute(CloseTargetParams::new(target_id)),
+                )
+                .await;
+            }
             return Err(EngineError::Capacity {
                 detail: format!(
                     "context '{}' reached its cap of {} pages; close a page first",
@@ -205,22 +232,27 @@ impl ContextHandle for CdpContext {
         let Some(handle) = handle else {
             return Ok(());
         };
-        let target_id = handle.target_id();
-        {
-            let browser = self.browser.lock().await;
-            let closed = crate::error::with_deadline(
-                "close_page",
-                crate::error::COMMAND_TIMEOUT,
-                browser.execute(CloseTargetParams::new(target_id.clone())),
-            )
-            .await;
-            if let Err(error) = closed {
-                // A target the browser dropped on its own (a user closed
-                // the tab, or the renderer crashed) answers CloseTarget
-                // with an error; the registration must still go, or the
-                // page cap counts a page that no longer exists.
-                if target_still_exists(&browser, target_id).await {
-                    return Err(error);
+        // An attached surface is the engine's own window content and
+        // outlives the handle: closing its target would blank the
+        // browser's UI, so the registration alone goes.
+        if handle.closable() {
+            let target_id = handle.target_id();
+            {
+                let browser = self.browser.lock().await;
+                let closed = crate::error::with_deadline(
+                    "close_page",
+                    crate::error::COMMAND_TIMEOUT,
+                    browser.execute(CloseTargetParams::new(target_id.clone())),
+                )
+                .await;
+                if let Err(error) = closed {
+                    // A target the browser dropped on its own (a user closed
+                    // the tab, or the renderer crashed) answers CloseTarget
+                    // with an error; the registration must still go, or the
+                    // page cap counts a page that no longer exists.
+                    if target_still_exists(&browser, target_id).await {
+                        return Err(error);
+                    }
                 }
             }
         }
@@ -292,6 +324,66 @@ impl ContextHandle for CdpContext {
     }
 }
 
+/// Whether the browser refused the command itself rather than failing
+/// it: the Electron engine's CDP endpoint answers commands it does not
+/// implement (target creation, browser contexts) with the CDP server
+/// error "Not supported", which [`crate::error::fold`] keeps verbatim
+/// in the detail text.
+pub(crate) fn is_not_supported(error: &EngineError) -> bool {
+    matches!(error, EngineError::Internal { detail }
+        if detail.to_lowercase().contains("not supported"))
+}
+
+/// Whether a target URL is the shell's own toolbar document — the
+/// window chrome that `browser/main.js` loads, so renaming the file
+/// there must update this matcher. The toolbar is loaded from the app
+/// directory, so its URL is always a
+/// `file://` one; anchoring the match there keeps a web page that
+/// navigates itself to `https://evil.com/toolbar.html` from being
+/// mistaken for shell UI (which would fail the attach fail-closed) —
+/// web content cannot initiate `file://` navigations.
+fn is_toolbar_document(url: &str) -> bool {
+    url.starts_with("file://") && url.ends_with("/toolbar.html")
+}
+
+/// Picks the target a page handle may drive: the first `page`-typed
+/// target that is not the shell's own toolbar document. Pure so the
+/// attach rules are unit-testable without a browser connection.
+fn pick_drivable_target(infos: &[TargetInfo]) -> Option<TargetId> {
+    infos
+        .iter()
+        .filter(|info| info.r#type == "page")
+        .find(|info| !is_toolbar_document(&info.url))
+        .map(|info| info.target_id.clone())
+}
+
+/// The browser's own page surface, for engines that cannot create
+/// targets: lists the targets and attaches to the one
+/// [`pick_drivable_target`] selects. Fails when the browser offers
+/// nothing drivable, which keeps the original "Not supported" error
+/// the caller holds.
+async fn attach_existing_surface(
+    browser: &chromiumoxide::Browser,
+) -> Result<chromiumoxide::Page, EngineError> {
+    let response = crate::error::with_deadline(
+        "list_targets",
+        crate::error::COMMAND_TIMEOUT,
+        browser.execute(GetTargetsParams::default()),
+    )
+    .await?;
+    let Some(target_id) = pick_drivable_target(&response.result.target_infos) else {
+        return Err(EngineError::Internal {
+            detail: "the engine exposes no page surface to attach to".to_owned(),
+        });
+    };
+    crate::error::with_deadline(
+        "attach_surface",
+        crate::error::COMMAND_TIMEOUT,
+        browser.get_page(target_id),
+    )
+    .await
+}
+
 /// Whether the browser still knows a target; the answer defaults to
 /// `true` when the probe itself fails, so an unverifiable target keeps
 /// the original close error instead of being torn down on a guess. The
@@ -333,5 +425,103 @@ fn cdp_same_site(same_site: SameSite) -> CookieSameSite {
         SameSite::Strict => CookieSameSite::Strict,
         SameSite::Lax => CookieSameSite::Lax,
         SameSite::None => CookieSameSite::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::fold;
+    use chromiumoxide::error::CdpError;
+    use std::time::Duration;
+
+    #[test]
+    fn only_the_app_directory_toolbar_document_is_excluded() {
+        // The shell loads the toolbar from its own directory.
+        assert!(is_toolbar_document("file:///C:/apps/rutter/toolbar.html"));
+        assert!(is_toolbar_document("file:///home/u/rutter/toolbar.html"));
+        // A web page that names itself toolbar.html is drivable, not
+        // shell UI.
+        assert!(!is_toolbar_document("https://evil.com/toolbar.html"));
+        assert!(!is_toolbar_document("http://localhost/toolbar.html"));
+        // Other file documents stay drivable too.
+        assert!(!is_toolbar_document("file:///C:/apps/rutter/start.html"));
+    }
+
+    /// Builds a target listing entry the way `Target.getTargets`
+    /// reports one.
+    fn target(id: &str, kind: &str, url: &str) -> TargetInfo {
+        TargetInfo::builder()
+            .target_id(TargetId::new(id))
+            .r#type(kind)
+            .title(id)
+            .url(url)
+            .attached(false)
+            .can_access_opener(false)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn attach_picks_the_first_drivable_page_skipping_shell_ui() {
+        // The toolbar window typically lists first; the drivable
+        // surface sits behind it. Non-page targets (workers, iframes)
+        // are never drivable no matter where they list.
+        let infos = [
+            target("toolbar", "page", "file:///C:/apps/rutter/toolbar.html"),
+            target("worker", "service_worker", "https://example.com/sw.js"),
+            target("frame", "iframe", "https://example.com/"),
+            target("start", "page", "file:///C:/apps/rutter/start.html"),
+        ];
+        assert_eq!(pick_drivable_target(&infos), Some(TargetId::new("start")));
+    }
+
+    #[test]
+    fn attach_fails_closed_when_only_shell_ui_is_exposed() {
+        // Driving the toolbar would navigate the shell's own UI away,
+        // so nothing drivable means the caller keeps its refusal error
+        // instead of attaching to the wrong surface.
+        let infos = [target(
+            "toolbar",
+            "page",
+            "file:///C:/apps/rutter/toolbar.html",
+        )];
+        assert_eq!(pick_drivable_target(&infos), None);
+        assert_eq!(pick_drivable_target(&[]), None);
+    }
+
+    #[test]
+    fn a_cdp_refusal_is_recognized_as_not_supported() {
+        // The exact shape a real refusal takes: the CDP server error
+        // rides through `fold` into an Internal detail. The match is
+        // case-insensitive because the wording belongs to the engine.
+        let refusal = fold(CdpError::Chrome(chromiumoxide::types::Error {
+            code: -32000,
+            message: "Not supported".to_owned(),
+        }));
+        assert!(
+            is_not_supported(&refusal),
+            "real refusal shape must match: {refusal}"
+        );
+        assert!(is_not_supported(&EngineError::Internal {
+            detail: "cdp command failed: Error -32000: not supported".to_owned(),
+        }));
+    }
+
+    #[test]
+    fn a_wedged_or_unrelated_engine_error_never_counts_as_refusal() {
+        // A timeout or transport failure must surface unchanged: one
+        // wedged call must not silently strip per-context isolation for
+        // the engine's lifetime.
+        assert!(!is_not_supported(&EngineError::Timeout {
+            operation: "create_context".to_owned(),
+            elapsed: Duration::from_secs(30),
+        }));
+        assert!(!is_not_supported(&EngineError::Internal {
+            detail: "cdp layer failure: connection closed before a response".to_owned(),
+        }));
+        assert!(!is_not_supported(&EngineError::Capacity {
+            detail: "cap reached".to_owned(),
+        }));
     }
 }

@@ -122,11 +122,21 @@ Facts about the shipped backend that are visible above the trait:
   ([dashboard](dashboard.md#5-screencast)).
 - **Screenshots** honor a per-page minimum interval (500 ms, from the
   context config) that caps the capture rate.
-- **Headed windows are chromeless app surfaces**: headed mode spawns the
-  browser with `--app` and a fresh per-launch profile (no bookmarks,
-  history, or login state), so the visible window is a pure page surface
-  for agents to operate and humans to watch. rutter spawns the browser
+- **Headed windows are chromeless app surfaces**: when the launcher
+  resolves the headed browser itself, headed mode spawns it with `--app`
+  and a fresh per-launch profile (no bookmarks, history, or login
+  state), so the visible window is a pure page surface for agents to
+  operate and humans to watch. An explicit `--engine-executable` keeps
+  control of its own window story — Electron reserves `--app` to mean
+  "run this app" ([browser README](../../browser/README.md)).
+  rutter spawns the browser
   process and resolves the debugging endpoint by polling the port
   itself — launcher-style executables (Edge) and full Chrome both
   start, which a spawner that parses the browser's stderr or runs
   children in a job object cannot guarantee on Windows.
+- **Per-context isolation is best-effort**: an engine that refuses
+  context and target creation (the Electron-based Rutter Browser, whose
+  one visible window is the surface) gets the default context and the
+  browser's existing page surface instead, and `descriptor()` reports
+  `per_context_isolation: false` from then on
+  ([capabilities](../crates/engine/src/descriptor.rs)).

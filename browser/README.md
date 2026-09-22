@@ -19,8 +19,11 @@ npm run package          # dist/RutterBrowser/RutterBrowser.exe (double-click)
   `RUTTER_PROFILE` environment variables; the app enables the debugging
   port on that exact port with that per-launch profile.
 - Standalone launches pick a free port and publish it in
-  `<userData>/cdp-port` (`%APPDATA%/Rutter Browser/cdp-port`) so a
-  local rutter `attach` can discover the running browser.
+  `<userData>/cdp-port` (`%APPDATA%/Rutter Browser/cdp-port`) so the
+  independently started browser can be discovered on the machine.
+- When rutter attaches, its fallback skips the shell's own toolbar
+  document: the `toolbar.html` filename is part of the attach contract
+  (see `crates/engine-cdp/src/context.rs`).
 
 Electron reserves the `--app` switch, so rutter's chromeless-window
 flag is deliberately not applied to this engine (see

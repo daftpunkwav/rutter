@@ -1,4 +1,4 @@
-//! Static descriptions of engine backends and their capabilities.
+//! Descriptions of engine backends and their capabilities.
 
 use std::fmt;
 
@@ -31,11 +31,13 @@ impl fmt::Display for EngineBackend {
 ///
 /// This is self-reported metadata: it reaches diagnostics and the
 /// `EngineStarted` event. It is not yet a behavior gate — no code path
-/// consults a capability before attempting the operation, and an
-/// unsupported operation surfaces as [`crate::error::EngineError::
-/// Unsupported`] from the backend instead. A second engine is the moment
-/// to decide which of these become checked; until then the fields say
-/// what the one backend is, not what callers may assume.
+/// consults a capability before attempting the operation. A backend
+/// refusal surfaces as an [`crate::error::EngineError`] from the call
+/// that hit it; where a degraded mode preserves function, the backend
+/// degrades and reports the reduced capability here instead (see
+/// [`EngineCapabilities::per_context_isolation`]). A second engine is
+/// the moment to decide which of these become checked; until then the
+/// fields say what the one backend is, not what callers may assume.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineCapabilities {
     /// Whether the backend can run headless.
@@ -44,8 +46,11 @@ pub struct EngineCapabilities {
     pub headed: bool,
     /// Whether the backend supports CDP screencast streaming.
     pub screencast: bool,
-    /// Whether the backend isolates contexts into separate cookie and
-    /// storage units.
+    /// Whether contexts get browser-level isolation into separate cookie
+    /// and storage units. Effective state, not a static trait: a backend
+    /// that discovers at runtime it cannot create isolated contexts
+    /// reports `false` from then on, so read it from a fresh
+    /// `descriptor()` at the moment of decision rather than caching it.
     pub per_context_isolation: bool,
 }
 

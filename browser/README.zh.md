@@ -18,7 +18,9 @@ npm run package          # dist/RutterBrowser/RutterBrowser.exe（可双击）
   环境变量；应用会在该端口开启调试端点，并使用该独立 profile。
 - 独立双击启动时会挑一个空闲端口，并发布到
   `<userData>/cdp-port`（`%APPDATA%/Rutter Browser/cdp-port`），
-  便于本地 rutter `attach` 发现正在运行的浏览器。
+  使单独启动的浏览器可在本机被发现。
+- rutter 附着时，其回退逻辑会跳过壳自身的工具栏文档：`toolbar.html`
+  文件名属于附着契约的一部分（见 `crates/engine-cdp/src/context.rs`）。
 
 Electron 保留了 `--app` 开关，因此 rutter 的无 chrome 窗口参数刻意
 不作用于本引擎（见 `crates/engine-cdp/src/launch.rs`）。

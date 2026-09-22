@@ -106,7 +106,10 @@ impl Engine for CdpEngine {
         &self,
         config: ContextConfig,
     ) -> Result<Arc<dyn ContextHandle>, EngineError> {
-        let cdp_context_id = {
+        // Once one creation was refused the engine cannot isolate, and
+        // every later call would fail the same way, so the flag also
+        // short-circuits the command.
+        let cdp_context_id = if self.isolation.load(Ordering::Relaxed) {
             let browser = self.browser.lock().await;
             match crate::error::with_deadline(
                 "create_context",
@@ -119,11 +122,18 @@ impl Engine for CdpEngine {
                 // Engines without browser-context support (the
                 // Electron-based Rutter Browser runs everything in its
                 // one visible window) fall back to the default context.
-                Err(_) => {
+                // Only a refusal by the engine itself takes that path: a
+                // timeout or transport failure must surface, or one
+                // wedged call would silently strip isolation — and the
+                // reported capability — for the engine's lifetime.
+                Err(error) if crate::context::is_not_supported(&error) => {
                     self.isolation.store(false, Ordering::Relaxed);
                     None
                 }
+                Err(error) => return Err(error),
             }
+        } else {
+            None
         };
 
         let serial = self.context_counter.fetch_add(1, Ordering::Relaxed);
@@ -154,5 +164,121 @@ impl Engine for CdpEngine {
         crate::error::with_deadline("shutdown", crate::error::COMMAND_TIMEOUT, browser.close())
             .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_tungstenite::tungstenite::Message;
+    use futures::StreamExt;
+    use std::net::SocketAddr;
+    use std::process::Stdio;
+
+    /// A fake CDP endpoint that mimics the Electron engine's refusals:
+    /// `Target.createBrowserContext` is answered with the CDP server
+    /// error "Not supported" (and counted), everything else with an
+    /// empty success. Returns the address to dial and the refusal
+    /// count.
+    async fn spawn_refusing_endpoint() -> (SocketAddr, Arc<AtomicU64>) {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let refusals = Arc::new(AtomicU64::new(0));
+        let counted = Arc::clone(&refusals);
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = async_tungstenite::tokio::accept_async(stream)
+                .await
+                .unwrap();
+            while let Some(Ok(message)) = ws.next().await {
+                let Message::Text(text) = message else {
+                    continue;
+                };
+                let request: serde_json::Value = serde_json::from_str(&text).unwrap();
+                let id = request["id"].clone();
+                let response = if request["method"] == "Target.createBrowserContext" {
+                    counted.fetch_add(1, Ordering::Relaxed);
+                    serde_json::json!({
+                        "id": id,
+                        "error": {"code": -32000, "message": "Not supported"}
+                    })
+                } else {
+                    serde_json::json!({ "id": id, "result": {} })
+                };
+                ws.send(Message::text(response.to_string())).await.unwrap();
+            }
+        });
+        (addr, refusals)
+    }
+
+    /// A stand-in child for the drop guard: the test exercises the CDP
+    /// layer, so any process the guard can kill on drop works.
+    fn dummy_child() -> Child {
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = tokio::process::Command::new("ping");
+            command.args(["-n", "60", "127.0.0.1"]);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let mut command = tokio::process::Command::new("sleep");
+            command.arg("60");
+            command
+        };
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap()
+    }
+
+    /// The isolation fallback: when the engine refuses browser-context
+    /// creation the way the Electron-based Rutter Browser does, the
+    /// context still opens (everything runs in the default context),
+    /// the first refusal flips the reported capability off, and later
+    /// calls stop asking (the refusal short-circuits on the flag).
+    #[tokio::test]
+    async fn refused_context_creation_falls_back_to_the_default_context() {
+        let (addr, refusals) = spawn_refusing_endpoint().await;
+        let (browser, mut handler) = chromiumoxide::Browser::connect(format!("ws://{addr}"))
+            .await
+            .unwrap();
+        // The handler stream must drain for command responses to flow.
+        tokio::spawn(async move { while handler.next().await.is_some() {} });
+
+        let engine = CdpEngine::new(
+            Arc::new(Mutex::new(browser)),
+            EngineBackend::Chromium,
+            "fake/1.0".to_owned(),
+            LaunchMode::Headless,
+            BrowserProcess::new(dummy_child()),
+        );
+        assert!(
+            engine.descriptor().capabilities.per_context_isolation,
+            "an untried engine reports isolation"
+        );
+
+        let first = engine
+            .create_context(ContextConfig::default())
+            .await
+            .expect("the refusal must fall back, not fail the caller");
+        let second = engine
+            .create_context(ContextConfig::default())
+            .await
+            .unwrap();
+        assert_ne!(first.id(), second.id());
+        assert!(
+            !engine.descriptor().capabilities.per_context_isolation,
+            "the refusal must flip the capability off"
+        );
+        assert_eq!(
+            refusals.load(Ordering::Relaxed),
+            1,
+            "the second create_context must short-circuit on the flipped flag"
+        );
     }
 }

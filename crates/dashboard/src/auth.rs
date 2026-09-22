@@ -81,12 +81,18 @@ pub(crate) fn token_cookie_header(token: &str) -> Option<axum::http::HeaderValue
 }
 
 /// Equality without early exit; tokens are short so this is cheap.
+/// The loop always runs over the longer input and the length difference
+/// folds into the accumulator, so neither a matching prefix nor the
+/// secret's length can shortcut the comparison.
 fn constant_time_eq(a: &str, b: &str) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
-    if a.len() != b.len() {
-        return false;
+    let mut diff = (a.len() ^ b.len()) as u32;
+    for i in 0..a.len().max(b.len()) {
+        let x = a.get(i).copied().unwrap_or(0);
+        let y = b.get(i).copied().unwrap_or(0);
+        diff |= u32::from(x ^ y);
     }
-    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    diff == 0
 }
 
 /// Gate every endpoint shares: the `Host` header must name loopback and
@@ -120,6 +126,18 @@ mod tests {
         let headers = cookie_headers(&["a=1; rutter_token=abc123", "b=2"]);
         assert_eq!(cookie_token(&headers).as_deref(), Some("abc123"));
         assert_eq!(cookie_token(&HeaderMap::new()), None);
+    }
+
+    #[test]
+    fn constant_time_eq_accepts_only_exact_matches() {
+        assert!(constant_time_eq("0123abcd", "0123abcd"));
+        assert!(constant_time_eq("", ""));
+        // Mismatched lengths, including a proper prefix of the secret,
+        // must not compare equal.
+        assert!(!constant_time_eq("0123abcd", "0123abc"));
+        assert!(!constant_time_eq("0123abc", "0123abcd"));
+        assert!(!constant_time_eq("", "x"));
+        assert!(!constant_time_eq("0123abcd", "0123abce"));
     }
 
     #[test]

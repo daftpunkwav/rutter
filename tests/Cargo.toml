@@ -43,4 +43,6 @@ workspace = true
 rmcp = { workspace = true, features = ["client", "transport-child-process", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+# Resolving the cached engine binary for the spawned rutter children.
+rutter-engine = { workspace = true }
 tokio = { workspace = true, features = ["process"] }

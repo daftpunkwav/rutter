@@ -23,3 +23,11 @@ serde_json = { workspace = true }
 # The engine spawn is rutter's own (chromiumoxide's spawner runs
 # children in a job object that full Chrome cannot start in).
 tokio = { workspace = true, features = ["process"] }
+
+[dev-dependencies]
+# The isolation fallback test dials a fake CDP endpoint that refuses
+# browser-context creation the way the Electron engine does; it rides
+# the same websocket stack the real connection uses.
+async-tungstenite = { version = "0.32", features = ["tokio-runtime", "handshake"] }
+# TcpListener for the fake endpoint.
+tokio = { workspace = true, features = ["net"] }

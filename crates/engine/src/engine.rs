@@ -20,7 +20,11 @@ pub trait Engine: Send + Sync {
     /// Identifying and capability information about this engine.
     fn descriptor(&self) -> EngineDescriptor;
 
-    /// Creates a new isolated context with the given resource caps.
+    /// Creates a new context with the given resource caps.
+    ///
+    /// Isolation is best-effort: a backend that cannot isolate contexts
+    /// returns one sharing the engine default storage, and reports that
+    /// through `descriptor().capabilities.per_context_isolation`.
     async fn create_context(
         &self,
         config: ContextConfig,

@@ -35,18 +35,43 @@ async fn write_policy(dir: &std::path::Path, timeout_ms: u64) -> std::path::Path
     path
 }
 
+/// Resolves a real engine binary the way the engine-cdp integration
+/// tests do: an explicit override via `RUTTER_TEST_ENGINE`, else the
+/// shared downloader cache. The path is handed to the spawned
+/// `rutter serve` explicitly (`--engine-executable`) so the child can
+/// run against a private `--cache-dir` without re-downloading.
+async fn engine_executable() -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    use rutter_engine::download::{Product, cache_root_default, ensure};
+    if let Ok(path) = std::env::var("RUTTER_TEST_ENGINE") {
+        return Ok(std::path::PathBuf::from(path));
+    }
+    let cache = cache_root_default()?;
+    let installed = ensure(Product::ChromeHeadlessShell, &cache, None).await?;
+    Ok(installed.executable)
+}
+
 /// Boots `rutter serve` with a policy and dashboard; the token reaches
 /// only the child process through its environment. The returned client
-/// owns the child.
+/// owns the child. Both paths keep the tests independent of each other:
+/// the engine executable is named explicitly, so the child can run
+/// against a private cache dir, and the dashboard hands its access URL
+/// to `<cache-dir>/dashboard-access.url` — serves sharing the user
+/// cache would race on that one file, the losers refusing to bind.
 async fn connect(
+    engine: &std::path::Path,
     policy: &std::path::Path,
+    cache_dir: &std::path::Path,
     dashboard_port: u16,
 ) -> rmcp::service::RunningService<rmcp::RoleClient, ()> {
     let mut command = Command::new(common::rutter_bin());
     command
         .arg("serve")
+        .arg("--engine-executable")
+        .arg(engine)
         .arg("--policy")
         .arg(policy)
+        .arg("--cache-dir")
+        .arg(cache_dir)
         .arg("--dashboard")
         .arg(dashboard_port.to_string())
         .env("RUTTER_DASHBOARD_TOKEN", "test-token");
@@ -148,10 +173,11 @@ async fn wait_for_dashboard(port: u16) {
 /// Grant: a parked click proceeds once a human grants it.
 #[tokio::test]
 #[ignore = "requires the engine binary in the cache"]
-async fn approval_grant_flow() {
+async fn approval_grant_flow() -> Result<(), Box<dyn std::error::Error>> {
+    let engine = engine_executable().await?;
     let dir = tempfile::tempdir().expect("tempdir");
     let policy = write_policy(dir.path(), 30_000).await;
-    let client = connect(&policy, 47901).await;
+    let client = connect(&engine, &policy, dir.path(), 47901).await;
     wait_for_dashboard(47901).await;
 
     let reference = park_button(&client).await;
@@ -173,15 +199,17 @@ async fn approval_grant_flow() {
         "granted click must succeed: {:?}",
         first_text(&result)
     );
+    Ok(())
 }
 
 /// Deny: a parked click fails with an approval denial.
 #[tokio::test]
 #[ignore = "requires the engine binary in the cache"]
-async fn approval_deny_flow() {
+async fn approval_deny_flow() -> Result<(), Box<dyn std::error::Error>> {
+    let engine = engine_executable().await?;
     let dir = tempfile::tempdir().expect("tempdir");
     let policy = write_policy(dir.path(), 30_000).await;
-    let client = connect(&policy, 47902).await;
+    let client = connect(&engine, &policy, dir.path(), 47902).await;
     wait_for_dashboard(47902).await;
 
     let reference = park_button(&client).await;
@@ -203,16 +231,18 @@ async fn approval_deny_flow() {
         result.is_error.unwrap_or(false) && text.contains("approval denied"),
         "denied click must fail with the denial: {text}"
     );
+    Ok(())
 }
 
 /// Timeout: nobody answers within the policy window.
 #[tokio::test]
 #[ignore = "requires the engine binary in the cache"]
-async fn approval_timeout_flow() {
+async fn approval_timeout_flow() -> Result<(), Box<dyn std::error::Error>> {
+    let engine = engine_executable().await?;
     let dir = tempfile::tempdir().expect("tempdir");
     // A 500 ms window: the parked click resolves on its own.
     let policy = write_policy(dir.path(), 500).await;
-    let client = connect(&policy, 47903).await;
+    let client = connect(&engine, &policy, dir.path(), 47903).await;
 
     let reference = park_button(&client).await;
     let result = call(&client, "click", json!({ "reference": reference })).await;
@@ -221,4 +251,5 @@ async fn approval_timeout_flow() {
         result.is_error.unwrap_or(false) && text.contains("no approval decision arrived"),
         "an unanswered approval must time out: {text}"
     );
+    Ok(())
 }

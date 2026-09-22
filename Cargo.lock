@@ -1762,6 +1762,7 @@ name = "rutter-engine-cdp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "async-tungstenite",
  "base64 0.22.1",
  "chromiumoxide",
  "futures",
@@ -1788,6 +1789,7 @@ name = "rutter-integration-tests"
 version = "0.1.0"
 dependencies = [
  "rmcp",
+ "rutter-engine",
  "serde_json",
  "tempfile",
  "tokio",

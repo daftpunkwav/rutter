@@ -109,6 +109,18 @@ impl EngineStore {
         version: &str,
         zip_bytes: &[u8],
     ) -> Result<InstalledEngine, EngineError> {
+        // The version names two directories below and comes verbatim
+        // from the downloaded manifest, so it must be a plain
+        // dotted-numeric version: `..` parts or separators would steer
+        // the final rename outside the cache root — the same compromised
+        // manifest the artifact-host pin defends against. `installed()`
+        // only ever finds parseable versions, so this matches the read
+        // side too.
+        if parse_version(version).is_none() {
+            return Err(EngineError::DownloadFailed {
+                detail: format!("engine version is not dotted-numeric: '{version}'"),
+            });
+        }
         let final_dir = self.root.join("engines").join(product).join(version);
         if final_dir.join(binary_name(product)).is_file() {
             return Ok(InstalledEngine {
@@ -409,6 +421,40 @@ mod tests {
         assert!(matches!(error, EngineError::DownloadFailed { .. }));
         let found = store.installed("chrome-headless-shell").expect("scan");
         assert!(found.is_none(), "failed install must not be visible");
+    }
+
+    #[test]
+    fn hostile_versions_are_rejected_before_touching_the_cache() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = EngineStore::new(root.path());
+        let zip = shell_zip();
+
+        // The version comes verbatim from the downloaded manifest; a
+        // traversal or separator-bearing value must fail before any
+        // path is built, or the final rename would escape the cache.
+        for version in [
+            "../../evil",
+            "141.0.1/../../../evil",
+            "141.0.1\\..\\..\\evil",
+            "C:\\evil",
+            "/evil",
+            "",
+        ] {
+            let error = store
+                .install("chrome-headless-shell", version, &zip)
+                .expect_err("hostile version must fail");
+            assert!(
+                error.to_string().contains("dotted-numeric"),
+                "version '{version}' must fail the version check, not later work: {error}"
+            );
+        }
+        assert!(
+            store
+                .installed("chrome-headless-shell")
+                .expect("scan")
+                .is_none(),
+            "rejected installs must leave the cache untouched"
+        );
     }
 
     #[test]

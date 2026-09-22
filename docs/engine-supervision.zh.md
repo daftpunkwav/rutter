@@ -106,9 +106,17 @@ Chrome for Testing 下载。
   慢的观看者丢帧，不丢内存（[仪表盘](dashboard.zh.md#5-screencast)）。
 - **截图** 遵守每页面最小间隔（500 ms，由 context 配置），限制截取
   频率。
-- **有头窗口是无 chrome UI 的应用面板**：headed 模式以 `--app` 加每次
-  启动独立的 profile（无收藏、历史或登录态）拉起浏览器，可见窗口是
-  纯页面表面——agent 操作、人类观看。rutter 自己拉起浏览器进程并轮询
-  调试端口来解析地址——启动器式可执行文件（Edge）与完整 Chrome 都能
-  启动；靠解析浏览器 stderr 或把子进程放进 job object 的启动方式在
-  Windows 上做不到这一点。
+- **有头窗口是无 chrome UI 的应用面板**：当启动器自行解析有头浏览器
+  时，headed 模式以 `--app` 加每次启动独立的 profile（无收藏、历史或
+  登录态）拉起浏览器，可见窗口是纯页面表面——agent 操作、人类观看。
+  显式指定的 `--engine-executable` 保留自己的窗口形态——Electron 把
+  `--app` 保留为“运行该应用”之意
+  （[browser README](../../browser/README.zh.md)）。rutter 自己拉起
+  浏览器进程并轮询调试端口来解析地址——启动器式可执行文件（Edge）与
+  完整 Chrome 都能启动；靠解析浏览器 stderr 或把子进程放进 job
+  object 的启动方式在 Windows 上做不到这一点。
+- **context 级隔离是尽力而为**：拒绝创建 context 与 target 的引擎
+  （Electron 版 Rutter Browser，其唯一可见窗口即页面表面）会退回到
+  默认 context 与浏览器既有的页面表面，此后 `descriptor()` 报告
+  `per_context_isolation: false`
+  （[capabilities](../crates/engine/src/descriptor.rs)）。

@@ -114,8 +114,9 @@ impl CdpLauncher {
     }
 
     /// Marks headed mode as a chromeless app window (`--app`). Set by
-    /// the CLI for browser shells; an explicitly chosen engine binary
-    /// keeps full control of its own window story.
+    /// the CLI whenever it resolves the headed browser itself; an
+    /// explicitly chosen engine binary keeps full control of its own
+    /// window story.
     pub fn with_app_window(mut self, app_window: bool) -> Self {
         self.app_window = app_window;
         self
