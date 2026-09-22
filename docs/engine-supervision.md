@@ -122,3 +122,11 @@ Facts about the shipped backend that are visible above the trait:
   ([dashboard](dashboard.md#5-screencast)).
 - **Screenshots** honor a per-page minimum interval (500 ms, from the
   context config) that caps the capture rate.
+- **Headed windows are chromeless app surfaces**: headed mode spawns the
+  browser with `--app` and a fresh per-launch profile (no bookmarks,
+  history, or login state), so the visible window is a pure page surface
+  for agents to operate and humans to watch. rutter spawns the browser
+  process and resolves the debugging endpoint by polling the port
+  itself — launcher-style executables (Edge) and full Chrome both
+  start, which a spawner that parses the browser's stderr or runs
+  children in a job object cannot guarantee on Windows.

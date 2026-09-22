@@ -7,6 +7,14 @@ and the project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- Headed mode launches on Windows: rutter spawns the browser itself and
+  resolves the debugging endpoint by polling the port, so both
+  launcher-style executables (Edge) and full Chrome start where
+  chromiumoxide's stderr parsing and job-object spawner failed. Headed
+  windows are chromeless app surfaces with a fresh per-launch profile.
+
 ## [0.1.0] - 2026-09-21
 
 ### Security

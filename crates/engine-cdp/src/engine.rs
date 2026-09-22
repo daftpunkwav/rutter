@@ -5,11 +5,13 @@
 //! sibling modules; callers see only `rutter-engine` types.
 
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use chromiumoxide::cdp::browser_protocol::browser::BrowserContextId;
 use chromiumoxide::cdp::browser_protocol::target::CreateBrowserContextParams;
+use tokio::process::Child;
 use tokio::sync::Mutex;
 
 use rutter_engine::config::{ContextConfig, LaunchMode};
@@ -25,20 +27,47 @@ use crate::context::CdpContext;
 /// funnel through this mutex.
 pub type SharedBrowser = Arc<Mutex<chromiumoxide::Browser>>;
 
+/// The browser process this engine spawned and owns. Killing on drop is
+/// the backstop for abnormal teardown (a wedged browser under restart, a
+/// failed post-connect check); the graceful path is [`Engine::shutdown`]'s
+/// CDP `Browser.close`, which also reaches a browser whose intermediate
+/// launcher process already exited. `Child` is not `Sync`, so the guard
+/// parks it in a lock the drop path can take synchronously.
+pub(crate) struct BrowserProcess(StdMutex<Child>);
+
+impl BrowserProcess {
+    /// Takes ownership of a freshly spawned browser process.
+    pub fn new(child: Child) -> Self {
+        Self(StdMutex::new(child))
+    }
+}
+
+impl Drop for BrowserProcess {
+    fn drop(&mut self) {
+        if let Ok(mut child) = self.0.lock() {
+            let _ = child.start_kill();
+        }
+    }
+}
+
 /// One launched CDP engine process.
 pub struct CdpEngine {
     browser: SharedBrowser,
+    #[allow(dead_code)] // held for its Drop side effect
+    process: BrowserProcess,
     descriptor: EngineDescriptor,
     context_counter: AtomicU64,
 }
 
 impl CdpEngine {
-    /// Wraps a launched browser connection as an engine.
+    /// Wraps a launched browser connection — and the process behind it —
+    /// as an engine.
     pub fn new(
         browser: SharedBrowser,
         backend: EngineBackend,
         version: String,
         mode: LaunchMode,
+        process: BrowserProcess,
     ) -> Self {
         let descriptor = EngineDescriptor {
             backend,
@@ -55,6 +84,7 @@ impl CdpEngine {
         };
         Self {
             browser,
+            process,
             descriptor,
             context_counter: AtomicU64::new(0),
         }
