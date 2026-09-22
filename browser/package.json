@@ -1,0 +1,15 @@
+{
+  "name": "rutter-browser",
+  "productName": "Rutter Browser",
+  "version": "0.1.0",
+  "description": "The Rutter browser: a minimal Chromium surface for agents to drive and humans to watch.",
+  "main": "main.js",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "electron .",
+    "package": "node package.js"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0"
+  }
+}

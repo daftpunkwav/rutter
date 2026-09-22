@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body { margin: 0; height: 100%; }
+    body {
+      display: flex; gap: 6px; align-items: center;
+      padding: 0 8px; box-sizing: border-box;
+      height: 48px; background: #f6f7f9; border-bottom: 1px solid #d9dde3;
+      font: 14px/1 "Segoe UI", system-ui, sans-serif; color: #1f2733;
+    }
+    button {
+      width: 32px; height: 30px; border: 0; border-radius: 6px;
+      background: transparent; font-size: 15px; cursor: pointer;
+    }
+    button:hover { background: #e6e9ee; }
+    #url {
+      flex: 1; height: 30px; padding: 0 10px; box-sizing: border-box;
+      border: 1px solid #d9dde3; border-radius: 15px; font: inherit;
+      color: inherit; background: #fff;
+    }
+    #url:focus { outline: 2px solid #4d9de0; border-color: transparent; }
+    .brand { font-weight: 600; color: #2b6cb0; padding: 0 4px; user-select: none; }
+  </style>
+</head>
+<body>
+  <span class="brand">rutter</span>
+  <button id="back" title="Back">&#8592;</button>
+  <button id="forward" title="Forward">&#8594;</button>
+  <button id="reload" title="Reload">&#8635;</button>
+  <button id="home" title="Home">&#8962;</button>
+  <input id="url" spellcheck="false" placeholder="Search or enter address" />
+  <script>
+    const input = document.getElementById("url");
+    document.getElementById("back").onclick = () => rutter.back();
+    document.getElementById("forward").onclick = () => rutter.forward();
+    document.getElementById("reload").onclick = () => rutter.reload();
+    document.getElementById("home").onclick = () => rutter.home();
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") rutter.navigate(input.value.trim());
+    });
+    rutter.onNavigated((url) => { input.value = url; });
+  </script>
+</body>
+</html>

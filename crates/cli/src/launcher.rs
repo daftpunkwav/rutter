@@ -32,7 +32,13 @@ pub async fn headless_launcher(settings: &Settings) -> Result<CdpLauncher, Engin
 
 /// Browse mode needs a visible window: an explicit binary wins, then a
 /// system-installed browser, then the full Chrome for Testing download.
+///
+/// An explicitly chosen engine binary keeps control of its own window
+/// story (`--app` is a browser-shell concern and Electron reserves the
+/// switch), so the chromeless app window applies only to the browsers
+/// this launcher resolves itself.
 pub async fn headed_launcher(settings: &Settings) -> Result<CdpLauncher, EngineError> {
+    let explicit = settings.engine_executable.is_some();
     let executable = if let Some(path) = &settings.engine_executable {
         path.clone()
     } else if let Some(path) = discover_system_browser() {
@@ -42,6 +48,7 @@ pub async fn headed_launcher(settings: &Settings) -> Result<CdpLauncher, EngineE
         installed.executable
     };
     Ok(CdpLauncher::new(executable, EngineBackend::Chromium)
+        .with_app_window(!explicit)
         .with_extra_args(settings.extra_engine_args.clone()))
 }
 

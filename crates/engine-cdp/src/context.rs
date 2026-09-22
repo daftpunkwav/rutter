@@ -38,7 +38,10 @@ pub struct CdpContext {
     /// Shared browser connection handle; `Browser` itself is not
     /// `Clone`, so every layer funnels through this mutex.
     browser: Arc<AsyncMutex<chromiumoxide::Browser>>,
-    cdp_context_id: BrowserContextId,
+    /// `None` on engines without browser-context support (the
+    /// Electron-based Rutter Browser): every page lives in the default
+    /// context.
+    cdp_context_id: Option<BrowserContextId>,
     config: ContextConfig,
     /// Sync mutex on purpose: the `ContextHandle` reads (`pages`, `page`)
     /// are synchronous per trait, and guards are never held across an
@@ -52,7 +55,7 @@ impl CdpContext {
     pub fn new(
         id: ContextId,
         browser: Arc<AsyncMutex<chromiumoxide::Browser>>,
-        cdp_context_id: BrowserContextId,
+        cdp_context_id: Option<BrowserContextId>,
         config: ContextConfig,
     ) -> Self {
         Self {
@@ -98,7 +101,7 @@ impl ContextHandle for CdpContext {
         }
 
         let mut params = CreateTargetParams::new("about:blank");
-        params.browser_context_id = Some(self.cdp_context_id.clone());
+        params.browser_context_id = self.cdp_context_id.clone();
         let page = {
             let browser = self.browser.lock().await;
             crate::error::with_deadline(
@@ -159,12 +162,18 @@ impl ContextHandle for CdpContext {
     }
 
     async fn close(&self) -> Result<(), EngineError> {
-        // Disposing the context closes every target inside it.
+        // Disposing the context closes every target inside it. The
+        // default context (context-less engines) cannot be disposed —
+        // nothing to do there.
+        let Some(context_id) = self.cdp_context_id.clone() else {
+            self.lock_pages().drain();
+            return Ok(());
+        };
         let browser = self.browser.lock().await;
         let disposed = crate::error::with_deadline(
             "close_context",
             crate::error::COMMAND_TIMEOUT,
-            browser.dispose_browser_context(self.cdp_context_id.clone()),
+            browser.dispose_browser_context(context_id),
         )
         .await;
         // Disposing an already-dead context (engine restart raced the
@@ -243,7 +252,7 @@ impl ContextHandle for CdpContext {
                     partition_key: None,
                 })
                 .collect(),
-            browser_context_id: Some(self.cdp_context_id.clone()),
+            browser_context_id: self.cdp_context_id.clone(),
         };
         let browser = self.browser.lock().await;
         crate::error::with_deadline(
@@ -261,7 +270,7 @@ impl ContextHandle for CdpContext {
             "cookies",
             crate::error::COMMAND_TIMEOUT,
             browser.execute(GetCookiesParams {
-                browser_context_id: Some(self.cdp_context_id.clone()),
+                browser_context_id: self.cdp_context_id.clone(),
             }),
         )
         .await?;

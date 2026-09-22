@@ -93,6 +93,12 @@ pub struct CdpLauncher {
     executable: PathBuf,
     backend: EngineBackend,
     extra_args: Vec<String>,
+    /// Whether headed mode should hide the browser shell (`--app`).
+    /// Engines whose window is already a bare page surface — the
+    /// Electron-based Rutter Browser — must not receive it: Electron
+    /// reserves `--app` to mean "run this app" and would never start
+    /// rutter's main.js.
+    app_window: bool,
 }
 
 impl CdpLauncher {
@@ -103,7 +109,16 @@ impl CdpLauncher {
             executable,
             backend,
             extra_args: Vec::new(),
+            app_window: false,
         }
+    }
+
+    /// Marks headed mode as a chromeless app window (`--app`). Set by
+    /// the CLI for browser shells; an explicitly chosen engine binary
+    /// keeps full control of its own window story.
+    pub fn with_app_window(mut self, app_window: bool) -> Self {
+        self.app_window = app_window;
+        self
     }
 
     /// Passes arguments verbatim to the browser process, for example
@@ -123,7 +138,7 @@ impl CdpLauncher {
         if mode == LaunchMode::Headless {
             // chromiumoxide's headless defaults, kept for parity.
             args.extend(["--headless", "--hide-scrollbars", "--mute-audio"].map(str::to_owned));
-        } else {
+        } else if self.app_window {
             // The headed window is a chromeless app window: no address
             // bar, tab strip, or bookmarks — the pure surface agents
             // operate and humans watch.
@@ -153,11 +168,21 @@ impl CdpLauncher {
 
     /// Spawns the browser process. Streams are severed: rutter discovers
     /// the endpoint by polling the port, and unread pipes would deadlock
-    /// a chatty browser.
-    fn spawn_browser(&self, args: &[String]) -> Result<Child, EngineError> {
+    /// a chatty browser. The port and profile also travel as environment
+    /// variables for shells that rebuild their command line and drop
+    /// Chromium switches — Electron does exactly that — while plain
+    /// browsers ignore the extra environment.
+    fn spawn_browser(
+        &self,
+        args: &[String],
+        port: u16,
+        profile: &Path,
+    ) -> Result<Child, EngineError> {
         let mut command = tokio::process::Command::new(&self.executable);
         command
             .args(args)
+            .env("RUTTER_CDP_PORT", port.to_string())
+            .env("RUTTER_PROFILE", profile.as_os_str())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -240,7 +265,7 @@ impl EngineLauncher for CdpLauncher {
             None => pick_debug_port()?,
         };
         let args = self.browser_args(mode, port, &profile);
-        let child = self.spawn_browser(&args)?;
+        let child = self.spawn_browser(&args, port, &profile)?;
         // Every error path below drops the guard, killing the child, so
         // the policy's next attempt starts clean.
         let process = BrowserProcess::new(child);
@@ -294,9 +319,20 @@ mod tests {
     }
 
     #[test]
-    fn headed_is_a_chromeless_app_window() {
-        let args = launcher(&[]).browser_args(LaunchMode::Headed, 9222, Path::new("p"));
+    fn headed_is_a_chromeless_app_window_when_asked() {
+        let args = launcher(&[]).with_app_window(true).browser_args(
+            LaunchMode::Headed,
+            9222,
+            Path::new("p"),
+        );
         assert!(args.contains(&"--app=about:blank".to_owned()));
+        assert!(!args.contains(&"--headless".to_owned()));
+    }
+
+    #[test]
+    fn headed_plain_window_when_app_mode_not_requested() {
+        let args = launcher(&[]).browser_args(LaunchMode::Headed, 9222, Path::new("p"));
+        assert!(!args.contains(&"--app=about:blank".to_owned()));
         assert!(!args.contains(&"--headless".to_owned()));
     }
 

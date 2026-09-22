@@ -6,10 +6,9 @@
 
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use async_trait::async_trait;
-use chromiumoxide::cdp::browser_protocol::browser::BrowserContextId;
 use chromiumoxide::cdp::browser_protocol::target::CreateBrowserContextParams;
 use tokio::process::Child;
 use tokio::sync::Mutex;
@@ -56,6 +55,9 @@ pub struct CdpEngine {
     #[allow(dead_code)] // held for its Drop side effect
     process: BrowserProcess,
     descriptor: EngineDescriptor,
+    /// Whether contexts actually get browser-level isolation; flipped
+    /// off the first time a context creation is refused (Electron).
+    isolation: AtomicBool,
     context_counter: AtomicU64,
 }
 
@@ -86,6 +88,7 @@ impl CdpEngine {
             browser,
             process,
             descriptor,
+            isolation: AtomicBool::new(true),
             context_counter: AtomicU64::new(0),
         }
     }
@@ -94,21 +97,33 @@ impl CdpEngine {
 #[async_trait]
 impl Engine for CdpEngine {
     fn descriptor(&self) -> EngineDescriptor {
-        self.descriptor.clone()
+        let mut descriptor = self.descriptor.clone();
+        descriptor.capabilities.per_context_isolation = self.isolation.load(Ordering::Relaxed);
+        descriptor
     }
 
     async fn create_context(
         &self,
         config: ContextConfig,
     ) -> Result<Arc<dyn ContextHandle>, EngineError> {
-        let cdp_context_id: BrowserContextId = {
+        let cdp_context_id = {
             let browser = self.browser.lock().await;
-            crate::error::with_deadline(
+            match crate::error::with_deadline(
                 "create_context",
                 crate::error::COMMAND_TIMEOUT,
                 browser.create_browser_context(CreateBrowserContextParams::default()),
             )
-            .await?
+            .await
+            {
+                Ok(id) => Some(id),
+                // Engines without browser-context support (the
+                // Electron-based Rutter Browser runs everything in its
+                // one visible window) fall back to the default context.
+                Err(_) => {
+                    self.isolation.store(false, Ordering::Relaxed);
+                    None
+                }
+            }
         };
 
         let serial = self.context_counter.fetch_add(1, Ordering::Relaxed);
