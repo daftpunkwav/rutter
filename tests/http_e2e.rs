@@ -24,7 +24,10 @@ use tokio::process::Command;
 struct Server {
     client: rmcp::service::RunningService<rmcp::RoleClient, ()>,
     port: u16,
-    /// The serve process id, for the tree teardown in `Drop`.
+    /// The serve process id, for the Windows-only tree teardown in
+    /// `Drop`; elsewhere kill-on-drop is the only guard and the field
+    /// is never read.
+    #[cfg_attr(not(windows), expect(dead_code))]
     pid: Option<u32>,
     /// Ownership guard: kill-on-drop is the fallback that never leaves
     /// the serve child itself behind.
