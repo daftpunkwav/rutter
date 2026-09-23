@@ -25,6 +25,7 @@
 //! abnormal rutter kill can therefore leak a browser whose spawn
 //! exited — the known cost of launcher-style executables.
 
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -167,17 +168,20 @@ impl CdpLauncher {
         })
     }
 
-    /// Spawns the browser process. Streams are severed: rutter discovers
-    /// the endpoint by polling the port, and unread pipes would deadlock
-    /// a chatty browser. The port and profile also travel as environment
-    /// variables for shells that rebuild their command line and drop
-    /// Chromium switches — Electron does exactly that — while plain
-    /// browsers ignore the extra environment.
+    /// Spawns the browser process. Stdin and stdout are severed; stderr
+    /// goes to a launch log file — an unread pipe would deadlock a
+    /// chatty browser, while a file the OS writes cannot block the
+    /// child, and a launch that never opens its endpoint gets its dying
+    /// words surfaced in the error. The port and profile also travel as
+    /// environment variables for shells that rebuild their command line
+    /// and drop Chromium switches — Electron does exactly that — while
+    /// plain browsers ignore the extra environment.
     fn spawn_browser(
         &self,
         args: &[String],
         port: u16,
         profile: &Path,
+        stderr: Stdio,
     ) -> Result<Child, EngineError> {
         let mut command = tokio::process::Command::new(&self.executable);
         command
@@ -186,7 +190,7 @@ impl CdpLauncher {
             .env("RUTTER_PROFILE", profile.as_os_str())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(stderr);
         #[cfg(windows)]
         {
             // Never allocate a console for the child.
@@ -200,8 +204,16 @@ impl CdpLauncher {
 
     /// Reconnects until the debugging endpoint answers or the launch
     /// budget runs out. Each attempt is bounded, so an endpoint that
-    /// accepts but never answers cannot stall the loop.
-    async fn connect_with_retries(&self, port: u16) -> Result<Browser, EngineError> {
+    /// accepts but never answers cannot stall the loop. On failure the
+    /// engine's stderr log is surfaced: a browser that never opens the
+    /// endpoint almost always says why first (a missing library, a
+    /// blocked sandbox), and without this the reason dies with the
+    /// null'd stream it wrote to.
+    async fn connect_with_retries(
+        &self,
+        port: u16,
+        stderr_log: &Path,
+    ) -> Result<Browser, EngineError> {
         let url = format!("http://127.0.0.1:{port}");
         let deadline = Instant::now() + LAUNCH_TIMEOUT;
         loop {
@@ -214,15 +226,46 @@ impl CdpLauncher {
                 return Ok(browser);
             }
             if Instant::now() >= deadline {
+                let stderr = stderr_tail(stderr_log);
+                let detail = format!(
+                    "browser did not open its debugging endpoint on port {port} within the launch budget"
+                );
                 return Err(EngineError::LaunchFailed {
-                    detail: format!(
-                        "browser did not open its debugging endpoint on port {port} within the launch budget"
-                    ),
+                    detail: if stderr.is_empty() {
+                        detail
+                    } else {
+                        format!("{detail}; engine stderr: {stderr}")
+                    },
                 });
             }
             tokio::time::sleep(CONNECT_RETRY_DELAY).await;
         }
     }
+}
+
+/// The engine's last words from its launch stderr log, whitespace-
+/// collapsed into a single line. A missing, empty, or non-UTF-8 log
+/// (the file can also be lost to a wiped temp dir) yields an empty
+/// string; the budget message alone still tells the caller what
+/// happened, just not why.
+fn stderr_tail(log: &Path) -> String {
+    const MAX_TAIL_BYTES: u64 = 4096;
+    let Ok(mut file) = std::fs::File::open(log) else {
+        return String::new();
+    };
+    let len = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+    let start = len.saturating_sub(MAX_TAIL_BYTES);
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return String::new();
+    }
+    let mut bytes = Vec::new();
+    if file.read_to_end(&mut bytes).is_err() {
+        return String::new();
+    }
+    String::from_utf8_lossy(&bytes)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Picks a free loopback port by binding and releasing a listener. The
@@ -261,17 +304,25 @@ impl EngineLauncher for CdpLauncher {
 
     async fn launch(&self, mode: LaunchMode) -> Result<Arc<dyn Engine>, EngineError> {
         let profile = profile_dir();
+        // The engine's stderr lands next to the profile, under the OS
+        // temp cleaner's care like the profile itself, so a failed
+        // launch can quote it in the error it raises.
+        let stderr_log = profile.with_extension("stderr.log");
         let port = match self.configured_port() {
             Some(port) => port,
             None => pick_debug_port()?,
         };
         let args = self.browser_args(mode, port, &profile);
-        let child = self.spawn_browser(&args, port, &profile)?;
+        let stderr =
+            std::fs::File::create(&stderr_log).map_err(|error| EngineError::LaunchFailed {
+                detail: format!("create launch stderr log {}: {error}", stderr_log.display()),
+            })?;
+        let child = self.spawn_browser(&args, port, &profile, stderr.into())?;
         // Every error path below drops the guard, killing the child, so
         // the policy's next attempt starts clean.
         let process = BrowserProcess::new(child);
 
-        let browser = self.connect_with_retries(port).await?;
+        let browser = self.connect_with_retries(port, &stderr_log).await?;
 
         // The version query carries a deadline like every CDP call: it
         // runs inside the supervisor's restart loop, so a browser that
@@ -354,5 +405,36 @@ mod tests {
             Some(9333)
         );
         assert_eq!(launcher(&[]).configured_port(), None);
+    }
+
+    #[test]
+    fn stderr_tail_is_empty_for_a_missing_log() {
+        assert_eq!(stderr_tail(Path::new("no-such-launch-log.tmp")), "");
+    }
+
+    #[test]
+    fn stderr_tail_collapses_the_log_into_one_line() {
+        let mut log = std::env::temp_dir();
+        log.push(format!("rutter-tail-test-{}.log", std::process::id()));
+        std::fs::write(
+            &log,
+            "first line\n\nerror while loading\n  shared  libraries\n",
+        )
+        .unwrap();
+        let tail = stderr_tail(&log);
+        let _ = std::fs::remove_file(&log);
+        assert_eq!(tail, "first line error while loading shared libraries");
+    }
+
+    #[test]
+    fn stderr_tail_keeps_only_the_end_of_a_chatty_log() {
+        let mut log = std::env::temp_dir();
+        log.push(format!("rutter-tail-test-{}.log", std::process::id()));
+        let noise = "x".repeat(100_000);
+        std::fs::write(&log, format!("{noise}\nTHE ACTUAL CAUSE")).unwrap();
+        let tail = stderr_tail(&log);
+        let _ = std::fs::remove_file(&log);
+        assert!(tail.ends_with("THE ACTUAL CAUSE"));
+        assert!(tail.len() < 5_000, "the tail must stay bounded");
     }
 }
