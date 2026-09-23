@@ -8,12 +8,18 @@
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::error::EngineError;
 
 /// Directory name for in-progress installs; renamed into place on
 /// success so a crash never leaves a half-extracted version visible.
 const TMP_PREFIX: &str = ".tmp-";
+
+/// Disambiguates staging directories between installs in the same
+/// process: the process id alone collides when concurrent callers
+/// (each test of a suite on a cold cache) race one version's install.
+static STAGING_ATTEMPT: AtomicU64 = AtomicU64::new(0);
 
 /// Hard caps for archive extraction. Legit Chrome for Testing archives
 /// stay far below them (a full chrome-win64 install extracts to a few
@@ -135,7 +141,11 @@ impl EngineStore {
             .ok_or_else(|| EngineError::DownloadFailed {
                 detail: format!("cache path has no parent: {}", final_dir.display()),
             })?
-            .join(format!("{TMP_PREFIX}{version}-{}", std::process::id()));
+            .join(format!(
+                "{TMP_PREFIX}{version}-{}-{}",
+                std::process::id(),
+                STAGING_ATTEMPT.fetch_add(1, Ordering::Relaxed)
+            ));
         fs::create_dir_all(&staging).map_err(|error| EngineError::DownloadFailed {
             detail: format!(
                 "cannot create staging directory {}: {error}",
@@ -407,6 +417,62 @@ mod tests {
             .expect("scan")
             .expect("version installed");
         assert_eq!(found.executable, installed.executable);
+    }
+
+    /// Regression: the staging directory used to be named with only
+    /// the process id, so concurrent installs of one version inside
+    /// a single process (an integration suite on a cold cache) shared
+    /// one staging directory and the winning rename made every other
+    /// extraction fail mid-write. Each attempt now extracts into its
+    /// own staging; the losers adopt the winner's install.
+    #[test]
+    fn concurrent_installs_of_one_version_all_succeed() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = EngineStore::new(root.path());
+        let version = "141.0.1";
+
+        // Many entries keep every extraction busy so, on the old
+        // pid-only staging name, the first rename routinely deleted
+        // the directory out from under the other threads.
+        let names: Vec<String> = (0..256)
+            .map(|index| format!("chrome-headless-shell-win64/locales/{index}.pak"))
+            .collect();
+        let binary = format!("chrome-headless-shell-win64/{}", product());
+        let mut entries: Vec<(&str, &[u8])> = names
+            .iter()
+            .map(|name| (name.as_str(), b"pak" as &[u8]))
+            .collect();
+        entries.insert(0, (binary.as_str(), b"MZ" as &[u8]));
+        let zip = build_zip(&entries);
+
+        let threads = 6;
+        let barrier = std::sync::Barrier::new(threads);
+        std::thread::scope(|scope| {
+            for _ in 0..threads {
+                scope.spawn(|| {
+                    barrier.wait();
+                    let installed = store
+                        .install("chrome-headless-shell", version, &zip)
+                        .expect("concurrent install must succeed");
+                    assert!(installed.executable.is_file());
+                });
+            }
+        });
+
+        let found = store
+            .installed("chrome-headless-shell")
+            .expect("scan")
+            .expect("version installed");
+        assert_eq!(found.version, version);
+
+        let product_dir = root.path().join("engines").join("chrome-headless-shell");
+        let leftovers: Vec<String> = std::fs::read_dir(&product_dir)
+            .expect("product dir")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with(TMP_PREFIX))
+            .collect();
+        assert!(leftovers.is_empty(), "staging leftovers: {leftovers:?}");
     }
 
     #[test]
