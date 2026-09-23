@@ -281,13 +281,25 @@ async fn ws_decisions_answer_parked_approvals_and_controls_are_acked() {
 async fn ws_rejects_an_upgrade_without_the_token() {
     let serving = serve().await;
     let url = format!("{}?token=wrong", serving.ws_url);
-    let error = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect_err("the upgrade must be refused");
-    match error {
-        tokio_tungstenite::tungstenite::Error::Http(response) => {
-            assert_eq!(response.status(), 403, "strangers get forbidden");
+    // `serve` releases the port before the spawned server rebinds it,
+    // so the first attempts can hit a connection refusal that carries
+    // no verdict — retry like `connect` does and judge only the HTTP
+    // answer the running server gives.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        match tokio_tungstenite::connect_async(&url).await {
+            Ok(_) => panic!("the upgrade must be refused, not accepted"),
+            Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
+                assert_eq!(response.status(), 403, "strangers get forbidden");
+                break;
+            }
+            Err(error) => {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "dashboard never answered the upgrade: {error}"
+                );
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
         }
-        other => panic!("expected an HTTP refusal, got {other}"),
     }
 }
