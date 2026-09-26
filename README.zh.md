@@ -23,9 +23,10 @@
 | [`docs/testing.md`](docs/testing.md) | 测试层级、契约钉定、运行方式 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 工作规则与本地门禁 |
 
-每个源码目录都带有说明自身职责、边界与文件清单的 `README.md`（四个
-共享测试助手目录 `tests/common/`、`crates/session/tests/common/`、
-`crates/dashboard/tests/common/` 与 `crates/mcp/tests/common/`
+每个源码目录都带有说明自身职责、边界与文件清单的 `README.md`（五个
+共享测试助手目录 `tests/common/`、`crates/engine-cdp/tests/common/`、
+`crates/session/tests/common/`、`crates/dashboard/tests/common/` 与
+`crates/mcp/tests/common/`
 由各自的父级测试 README 覆盖）—— 从
 [`crates/README.md`](crates/README.md) 开始。每个 README 与每篇
 `docs/` 文档都有中文镜像：`README.md` 旁是 `README.zh.md`，
@@ -131,6 +132,7 @@ rutter/
 cargo build
 cargo test --all
 cargo clippy --all-targets -- -D warnings
+cargo doc --no-deps
 cargo fmt --all -- --check
 ```
 
@@ -141,6 +143,10 @@ bash scripts/check_headers.sh   # 每个源文件以头注开头
 bash scripts/check_encoding.sh  # 跟踪的文本文件：UTF-8、LF、无 BOM
 ```
 
+CI 还对工作区行覆盖率设门禁：`scripts/check_coverage.sh` 将
+cargo-llvm-cov 报告与阈值比对（CI 为 90%，引擎套件与 e2e 套件
+包含在内）。
+
 引擎集成测试需要真实二进制，默认 `#[ignore]`；显式运行（复用
 `rutter open` 填充的缓存）：
 
@@ -150,7 +156,6 @@ cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored
 cargo test -p rutter-integration-tests --test open_e2e -- --ignored
-cargo test -p rutter-engine-cdp --test screencast -- --ignored
 ```
 
 `scripts/smoke_open.sh` 用 `rutter open` 驱动 10 个真实站点并打印通

@@ -61,20 +61,29 @@ scripts/benchmark.sh     # 20-site navigate+snapshot benchmark, 90 % success bar
 
 ## 4. Quality gates
 
-CI runs on every push/PR, identical to the local checks in
-[`CONTRIBUTING.md`](../CONTRIBUTING.md):
+CI runs on every push/PR. The quality job runs the local checks of
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) plus a rustdoc gate:
 
 ```sh
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
+cargo doc --locked --no-deps
 cargo test --all
 bash scripts/check_headers.sh   # every source file opens with a truthful header
 bash scripts/check_encoding.sh  # tracked text files: UTF-8, LF, no BOM
 ```
 
-Plus `cargo-deny` (`deny.toml`: advisories, licenses, bans) and an
-integration job that runs the `rutter-engine-cdp` integration suite
-with a cached engine (the other `#[ignore]`d suites are local runs).
+Plus `cargo-deny` (`deny.toml`: advisories, licenses, bans). The
+`#[ignore]`d suites run in CI too: an integration job executes every
+`rutter-engine-cdp` suite (`--tests`, screencast included) and an e2e
+job runs the full `rutter-integration-tests` set, both on ubuntu and
+windows against the real engine; a coverage job (ubuntu) measures the
+whole workspace — engine suites and e2e included — and fails below
+90 % line coverage (§5). Pull-request runs are canceled when a newer
+push supersedes them (concurrency group), every job carries a
+`timeout-minutes` bound, and the three engine jobs share one composite
+action ([engine-setup](../.github/actions/engine-setup/action.yml)) for the
+engine cache and Linux engine dependencies.
 Release archives are cut by cargo-dist (`cargo dist build`, configured
 in the `[workspace.metadata.dist]` section of the root `Cargo.toml`); no release workflow
 is checked in. The corpus harnesses are manual runs, not CI gates;
@@ -98,14 +107,14 @@ cargo llvm-cov --locked --workspace --bins --tests \
 ```
 
 The full run (including `open_e2e`, `mcp_e2e`, `approval_e2e`, and
-`http_e2e` driving the instrumented binary) measures **91.7 % lines**
-as of 0.1.0; the remaining lines are headed-mode only paths (browse
-mode), network-mid paths of the engine downloader, and defensive
-branches that need a wedged browser.
+`http_e2e` driving the instrumented binary) measures **92.79 % lines**
+(6356 of 6850 source lines; test targets themselves are excluded from
+the count) as of 2026-09-27. The remaining lines are headed/browse-mode
+paths (`crates/cli/src/browse.rs` accounts for all 15 of its lines),
+network-mid failure paths of the engine downloader, defensive branches
+that need a wedged browser, and some WebSocket reconnect paths.
 
-CI does not gate on a coverage threshold: only the
-`rutter-engine-cdp` integration suite runs there (with a cached
-engine); the remaining `#[ignore]`d suites are local runs, so a
-CI-only number would read artificially low. The gate is the suite
-itself; the number above is the local full-run figure to compare
-against when adding code.
+CI gates on this number: the coverage job runs the same invocation
+(lcov output instead of a summary) and fails below 90 % lines via
+[`scripts/check_coverage.sh`](../scripts/check_coverage.sh), so the CI
+figure and the local figure above are one method and one number.

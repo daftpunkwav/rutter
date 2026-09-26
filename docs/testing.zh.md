@@ -57,20 +57,29 @@ scripts/benchmark.sh     # 20 站点 navigate+snapshot 基准，90 % 成功率�
 
 ## 4. 质量门
 
-CI 在每次 push/PR 上运行，与
-[`CONTRIBUTING.md`](../CONTRIBUTING.md) 中的本地检查一致：
+CI 在每次 push/PR 上运行。quality job 运行
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) 中的本地检查，外加 rustdoc
+门禁：
 
 ```sh
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
+cargo doc --locked --no-deps
 cargo test --all
 bash scripts/check_headers.sh   # 每个源文件以真实的头注释开头
 bash scripts/check_encoding.sh  # 跟踪的文本文件：UTF-8、LF、无 BOM
 ```
 
-另有 `cargo-deny`（`deny.toml`：安全通告、许可证、禁用项）和一个
-以缓存引擎运行 `rutter-engine-cdp` 集成套件的集成任务（其余
-`#[ignore]` 套件为本地运行）。发布归档由 cargo-dist 生成
+另有 `cargo-deny`（`deny.toml`：安全通告、许可证、禁用项）。
+`#[ignore]` 套件也在 CI 运行：integration job 以 `--tests` 执行
+`rutter-engine-cdp` 全部套件（含 screencast），e2e job 在 ubuntu 与
+windows 上以真实引擎跑完 `rutter-integration-tests` 的全部套件；
+coverage job（ubuntu）度量整个 workspace——引擎套件与 e2e 一并计入
+——行覆盖低于 90 % 即失败（§5）。concurrency 组会取消同一 PR 被更新的
+push 取代的旧运行，每个 job 都有 `timeout-minutes` 上限，三个引擎
+job 共用一个复合 action
+（[engine-setup](../.github/actions/engine-setup/action.yml)）负责引擎缓存与
+Linux 引擎依赖。发布归档由 cargo-dist 生成
 （`cargo dist build`，配置在根 `Cargo.toml` 的 `[workspace.metadata.dist]` 段）；仓库
 中没有入库的 release workflow。语料基准是手动运行，不是 CI 门槛；
 `scripts/benchmark.sh` 报告 ≥ 90 % 的 navigate+snapshot 成功率
@@ -92,11 +101,13 @@ cargo llvm-cov --locked --workspace --bins --tests \
 ```
 
 全量运行（含驱动插桩二进制的 `open_e2e`、`mcp_e2e`、
-`approval_e2e`、`http_e2e`）在 0.1.0 时测得 **91.7 % 行覆盖**;
-剩余未覆盖行只属于：headed 模式专属路径（browse 模式）、引擎下载
-器的网络中段路径，以及需要一个卡死浏览器才能触发的防御性分支。
+`approval_e2e`、`http_e2e`）在 2026-09-27 测得 **92.79 % 行覆盖**
+（6356/6850 源码行；测试目标本身不计入）。剩余未覆盖行属于：
+headed/browse 模式路径（`crates/cli/src/browse.rs` 的全部 15 行）、
+引擎下载器的网络中段失败路径、需要卡死浏览器才能触发的防御性分支，
+以及部分 WebSocket 重连路径。
 
-CI 不对覆盖率设硬门槛：只有 `rutter-engine-cdp` 集成套件在 CI
-运行（用缓存的引擎）；其余 `#[ignore]` 套件只在本地运行，只在 CI
-跑的覆盖率数字会显得虚假地低。门槛是测试套件本身；上面的数字是
-本地全量运行的基准，新增代码时与之对照。
+CI 对这一数字设门槛：coverage job 用同一命令形态（lcov 输出代替
+汇总）度量，行覆盖低于 90 % 时经
+[`scripts/check_coverage.sh`](../scripts/check_coverage.sh) 失败，
+因此 CI 数字与上面的本地数字同法同源。

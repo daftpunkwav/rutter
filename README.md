@@ -26,10 +26,11 @@ for sensitive operations.
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Working rules and local gates |
 
 Every source directory carries a `README.md` stating its
-responsibility, boundary, and file map (the four shared test-helper
-directories — `tests/common/`, `crates/session/tests/common/`,
-`crates/dashboard/tests/common/`, and `crates/mcp/tests/common/` —
-are covered by their parent test READMEs) — start at
+responsibility, boundary, and file map (the five shared test-helper
+directories — `tests/common/`, `crates/engine-cdp/tests/common/`,
+`crates/session/tests/common/`, `crates/dashboard/tests/common/`, and
+`crates/mcp/tests/common/` — are covered by their parent test READMEs)
+— start at
 [`crates/README.md`](crates/README.md). Each README and each
 `docs/` document has a Chinese mirror: `README.zh.md` beside its
 `README.md`, and `<name>.zh.md` beside `<name>.md` under `docs/`;
@@ -141,6 +142,7 @@ Requires a stable Rust toolchain (1.88 or newer).
 cargo build
 cargo test --all
 cargo clippy --all-targets -- -D warnings
+cargo doc --no-deps
 cargo fmt --all -- --check
 ```
 
@@ -150,6 +152,10 @@ Quality gates, identical to CI:
 bash scripts/check_headers.sh   # every source file opens with a header
 bash scripts/check_encoding.sh  # tracked text files: UTF-8, LF, no BOM
 ```
+
+CI also gates workspace line coverage: `scripts/check_coverage.sh`
+checks the cargo-llvm-cov report against a threshold (90 % in CI,
+engine suites and e2e suites included).
 
 Engine integration tests need a real binary and are `#[ignore]`d by
 default; run them explicitly (they reuse the cache `rutter open`
@@ -161,7 +167,6 @@ cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored
 cargo test -p rutter-integration-tests --test open_e2e -- --ignored
-cargo test -p rutter-engine-cdp --test screencast -- --ignored
 ```
 
 `scripts/smoke_open.sh` drives 10 real sites through `rutter open` and

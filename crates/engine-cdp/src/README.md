@@ -9,7 +9,7 @@ is `launch.rs`'s `CdpLauncher` alone.
 |---|---|
 | `launch.rs` | `CdpLauncher`: takes the resolved binary, launches chromiumoxide, wraps it as `Engine` |
 | `engine.rs` | `CdpEngine`: browser contexts over chromiumoxide's browser |
-| `context.rs` | `CdpContext`: targets, cookies, idempotent context close |
+| `context.rs` | `CdpContext`: targets, foreign-target discovery and adoption, cookies, idempotent context close |
 | `page.rs` | `CdpPage`: evaluate, input, screenshots, deadline-wrapped screencast |
 | `error.rs` | `with_deadline` wrappers + folding CDP errors into `EngineError` |
 

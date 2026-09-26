@@ -9,7 +9,7 @@
 |---|---|
 | `launch.rs` | `CdpLauncher`：接收已解析的二进制、启动 chromiumoxide、包装为 `Engine` |
 | `engine.rs` | `CdpEngine`：chromiumoxide 浏览器之上的浏览器 Context（上下文） |
-| `context.rs` | `CdpContext`：target、cookies、幂等的上下文关闭 |
+| `context.rs` | `CdpContext`：target、foreign target 的发现与采纳、cookies、幂等的上下文关闭 |
 | `page.rs` | `CdpPage`：evaluate、输入、截图、带 deadline 的 screencast |
 | `error.rs` | `with_deadline` 包装器 + 把 CDP 错误折入 `EngineError` |
 

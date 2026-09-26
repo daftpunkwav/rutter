@@ -14,6 +14,22 @@ and the project adheres to
   launcher-style executables (Edge) and full Chrome start where
   chromiumoxide's stderr parsing and job-object spawner failed. Headed
   windows are chromeless app surfaces with a fresh per-launch profile.
+- Dashboard access handoff no longer races between rutter processes on
+  one machine: the access file is written only after the bind
+  succeeded and is named by the port the server actually owns
+  (`<cache-dir>/dashboard-access-<port>.url`), which also fixes the
+  URL reported under `--dashboard 0`.
+
+### Added
+
+- Tabs discovery and adoption: windows the engine opens without rutter
+  — a `window.open` popup, a human's window — are reported by the
+  engine, adopted into the session's context on `tabs_list`, and are
+  visible and selectable like any other page under stable
+  `target:…` ids.
+- CI runs the e2e acceptance suites and gates workspace line coverage
+  at 90 % (`cargo-llvm-cov`, engine suites and e2e included), with the
+  engine-backed jobs sharing one composite setup action.
 
 ## [0.1.0] - 2026-09-21
 

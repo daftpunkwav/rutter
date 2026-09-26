@@ -5,7 +5,7 @@
 | Item | 职责 |
 |---|---|
 | `engine.rs` | `Engine` trait：创建 Context（上下文）、descriptor、健康检查、关闭 |
-| `context.rs` | `ContextHandle` trait：Page（页面）、cookies、幂等的 `close()` |
+| `context.rs` | `ContextHandle` trait：Page（页面）、foreign page 的发现与采纳、cookies、幂等的 `close()` |
 | `page.rs` | `PageHandle` trait、截图、screencast 流类型 |
 | `descriptor.rs` | `EngineDescriptor`、后端、capabilities（`Display` = 事件名） |
 | `health.rs` | `HealthReport` |

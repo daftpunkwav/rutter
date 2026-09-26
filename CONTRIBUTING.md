@@ -39,10 +39,16 @@ starting from the architecture map.
    ```sh
    cargo fmt --all -- --check
    cargo clippy --all-targets -- -D warnings
+   cargo doc --no-deps
    cargo test --all
    bash scripts/check_headers.sh
    bash scripts/check_encoding.sh
    ```
+
+   CI additionally gates workspace line coverage at 90 % —
+   `scripts/check_coverage.sh` over a cargo-llvm-cov report that
+   includes the engine suites and the e2e suites; running it locally
+   needs cargo-llvm-cov.
 
 4. Integration and acceptance suites need the real engine; run them
    once locally (the engine caches after the first download):
@@ -53,7 +59,6 @@ starting from the architecture map.
    cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
    cargo test -p rutter-integration-tests --test http_e2e -- --ignored
    cargo test -p rutter-integration-tests --test open_e2e -- --ignored
-   cargo test -p rutter-engine-cdp --test screencast -- --ignored
    ```
 
 ## Commits

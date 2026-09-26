@@ -5,7 +5,7 @@ English | [中文](README.zh.md)
 | Item | Role |
 |---|---|
 | `engine.rs` | `Engine` trait: create contexts, descriptor, health, shutdown |
-| `context.rs` | `ContextHandle` trait: pages, cookies, idempotent `close()` |
+| `context.rs` | `ContextHandle` trait: pages, foreign-page discovery and adoption, cookies, idempotent `close()` |
 | `page.rs` | `PageHandle` trait, screenshots, screencast stream types |
 | `descriptor.rs` | `EngineDescriptor`, backends, capabilities (`Display` = event names) |
 | `health.rs` | `HealthReport` |
