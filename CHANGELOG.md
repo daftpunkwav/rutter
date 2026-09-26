@@ -32,6 +32,10 @@ and the project adheres to
 
 ### Added
 
+- Network visibility: finished page requests (method, URL, status or
+  failure, resource type) are recorded per page, and the new
+  `network_requests` MCP tool lists the active page's entries, oldest
+  first.
 - Viewport control: the new `set_viewport` MCP tool resizes the active
   page in CSS pixels so screenshots, snapshots, and layouts match the
   size an agent wants to work with.

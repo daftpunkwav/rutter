@@ -735,6 +735,17 @@ impl Session {
         }
     }
 
+    /// The active page's finished network requests, oldest first
+    /// (docs/tool-catalog.md §4: `network_requests`). Read-only like
+    /// [`Session::console_messages`]: no page opens, none of the
+    /// requests were made by rutter itself.
+    pub fn network_requests(&self) -> Vec<rutter_engine::RequestEntry> {
+        match self.pages.active() {
+            Some((page_id, _)) => self.feeds.requests(&page_id),
+            None => Vec::new(),
+        }
+    }
+
     /// Starts the observation feed for a tracked page: dialogs the page
     /// opens are dismissed and recorded (docs/tool-catalog.md §4), its
     /// console lines land in the page's buffer.

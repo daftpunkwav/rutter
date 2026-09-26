@@ -90,7 +90,7 @@ timeline.
 
 ## 4. Tools
 
-Twenty-four tools. Parameter types: `reference` is a snapshot handle
+Twenty-five tools. Parameter types: `reference` is a snapshot handle
 (`e17`); `direction` is one of `up|down|left|right`; durations are
 milliseconds.
 
@@ -218,6 +218,14 @@ same_site? }] }` → text confirmation. Cookies apply to the session's
 context (context isolation, [glossary](glossary.md)). `same_site` is
 `strict|lax|none`; persistence across restarts works through storage
 state ([sessions](sessions.md#3-storage-state)).
+
+### network_requests
+`{}` → text block, the network requests the active page made, oldest
+first, one line per request as `METHOD url -> status [type]` or
+`METHOD url -> failed (error) [type]`. Requests are recorded when they
+finish; redirect hops are not reported, only how a request ended. A
+bounded buffer keeps the most recent entries per page. Observation
+only, like [`console_messages`](#console_messages).
 
 ### console_messages
 `{}` → text block, the console output the active page produced —

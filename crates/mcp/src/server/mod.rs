@@ -422,6 +422,20 @@ impl RutterMcp {
         Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }
 
+    #[tool(
+        description = "Show the network requests the active page made, oldest first, with status or failure"
+    )]
+    async fn network_requests(&self) -> Result<CallToolResult, McpError> {
+        let session = self.session().await?;
+        let entries = session.network_requests();
+        let text = if entries.is_empty() {
+            "no network requests on the active page\n".to_owned()
+        } else {
+            entries.iter().map(|entry| format!("{entry}\n")).collect()
+        };
+        Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
+    }
+
     #[tool(description = "Close this session's pages and context")]
     async fn close_session(&self) -> Result<CallToolResult, McpError> {
         self.manager.close_session(&self.session_id).await;

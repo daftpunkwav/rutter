@@ -80,7 +80,7 @@ agent 可执行的英文提示：
 
 ## 4. 工具
 
-二十四个工具。参数类型：`reference` 是快照句柄（`e17`）；
+二十五个工具。参数类型：`reference` 是快照句柄（`e17`）；
 `direction` 是 `up|down|left|right` 之一；时长单位为毫秒。
 
 **对话框。**页面调用 `alert`、`confirm`、`prompt` 或触发
@@ -192,6 +192,13 @@ same_site? }] }` → 文本确认。cookie 应用到 session 的 context
 （context 隔离，见[术语表](glossary.zh.md)）。`same_site` 是
 `strict|lax|none`；跨重启的持久化经由 storage state 完成
 （[sessions](sessions.zh.md#3-storage-state)）。
+
+### network_requests
+`{}` → text block，活动页面发起的网络请求，从旧到新，每条一行
+`METHOD url -> status [type]` 或 `METHOD url -> failed (error) [type]`。
+请求在结束时记录；不报告重定向跳数，只报告请求的最终结局。每页面
+维护有界缓冲，保留最近的条目。仅观察，同
+[`console_messages`](#console_messages)。
 
 ### console_messages
 `{}` → text block，活动页面产生的控制台输出——`console.*` 调用与

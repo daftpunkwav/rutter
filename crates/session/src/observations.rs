@@ -15,17 +15,21 @@ use std::sync::{Arc, Mutex};
 
 use rutter_core::ids::{PageId, SessionId};
 use rutter_engine::page::{
-    ConsoleEntry, ConsoleLevel, ObservationStream, PageHandle, PageObservation,
+    ConsoleEntry, ConsoleLevel, ObservationStream, PageHandle, PageObservation, RequestEntry,
 };
 use rutter_events::{Backbone, Event};
 
 /// Console entries kept per page; older entries fall off the front.
 pub(crate) const FEED_CAPACITY: usize = 200;
 
+/// Network entries kept per page; older entries fall off the front.
+pub(crate) const REQUEST_CAPACITY: usize = 100;
+
 /// One tracked page's feed: the bounded console buffer plus the handle
 /// that stops the background task when the page leaves the session.
 struct Feed {
     entries: VecDeque<ConsoleEntry>,
+    requests: VecDeque<RequestEntry>,
     stop: tokio::task::AbortHandle,
 }
 
@@ -66,6 +70,7 @@ impl ObservationFeeds {
                 page,
                 Feed {
                     entries: VecDeque::new(),
+                    requests: VecDeque::new(),
                     stop,
                 },
             );
@@ -85,6 +90,26 @@ impl ObservationFeeds {
     pub fn entries(&self, page: &PageId) -> Vec<ConsoleEntry> {
         match self.lock().get(page) {
             Some(feed) => feed.entries.iter().cloned().collect(),
+            None => Vec::new(),
+        }
+    }
+
+    /// Records one finished network request; the buffer keeps the newest
+    /// [`REQUEST_CAPACITY`] entries.
+    pub(crate) fn record_request(&self, page: &PageId, entry: RequestEntry) {
+        let mut feeds = self.lock();
+        if let Some(feed) = feeds.get_mut(page) {
+            if feed.requests.len() >= REQUEST_CAPACITY {
+                feed.requests.pop_front();
+            }
+            feed.requests.push_back(entry);
+        }
+    }
+
+    /// The page's network entries, oldest first.
+    pub fn requests(&self, page: &PageId) -> Vec<RequestEntry> {
+        match self.lock().get(page) {
+            Some(feed) => feed.requests.iter().cloned().collect(),
             None => Vec::new(),
         }
     }
@@ -166,6 +191,9 @@ async fn run_feed(
                         text,
                     },
                 );
+            }
+            PageObservation::RequestObserved { entry } => {
+                feeds.record_request(&page, entry);
             }
         }
     }

@@ -9,8 +9,7 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 
 use chromiumoxide::cdp::browser_protocol::input::{
-    DispatchMouseEventParams, DispatchMouseEventType,
-    MouseButton as CdpMouseButton,
+    DispatchMouseEventParams, DispatchMouseEventType, MouseButton as CdpMouseButton,
 };
 use chromiumoxide::error::CdpError;
 

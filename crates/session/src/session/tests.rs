@@ -1284,3 +1284,48 @@ async fn set_viewport_resizes_the_active_page_and_returns_a_snapshot() {
     let mock = context.page_mock(page_id).expect("mock page");
     assert_eq!(mock.viewport_calls(), vec![(1280, 720)]);
 }
+
+#[tokio::test]
+async fn network_requests_reports_the_active_pages_entries() {
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+    let (page_id, _) = session.active_page_for_test().await;
+    let mock = context.page_mock(page_id.clone()).expect("mock page");
+
+    assert!(session.network_requests().is_empty());
+
+    crate::wait::poll_until(
+        || async { mock.feed_claimed().then_some(()) },
+        Duration::from_secs(5),
+        Duration::from_millis(20),
+    )
+    .await
+    .expect("the feed claims the page's stream");
+
+    mock.emit(rutter_engine::PageObservation::RequestObserved {
+        entry: rutter_engine::RequestEntry {
+            method: "GET".to_owned(),
+            url: "https://a.example/x".to_owned(),
+            status: Some(200),
+            resource_type: Some("fetch".to_owned()),
+            error: None,
+        },
+    });
+
+    crate::wait::poll_until(
+        || async { (!session.network_requests().is_empty()).then_some(()) },
+        Duration::from_secs(5),
+        Duration::from_millis(20),
+    )
+    .await
+    .expect("the request lands");
+    let requests = session.network_requests();
+    assert_eq!(
+        requests[0].to_string(),
+        "GET https://a.example/x -> 200 [fetch]"
+    );
+
+    // A closed page's requests go with it.
+    session.close_page(page_id).await.expect("page closes");
+    assert!(session.network_requests().is_empty());
+}

@@ -50,6 +50,6 @@ pub use storage::StorageState;
 // alone; the engine layer stays an implementation detail behind the
 // orchestration surface.
 pub use rutter_engine::{
-    ConsoleEntry, ConsoleLevel, EngineError, EngineLauncher, ImageFormat, LaunchMode,
+    ConsoleEntry, ConsoleLevel, EngineError, EngineLauncher, ImageFormat, LaunchMode, RequestEntry,
     ScreencastStream, Screenshot,
 };

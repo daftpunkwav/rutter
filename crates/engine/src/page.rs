@@ -124,6 +124,39 @@ pub struct ConsoleEntry {
     pub text: String,
 }
 
+/// One finished network request: the request line plus its terminal
+/// outcome. Redirect hops are not reported — only how the request
+/// ended (a response, or a failure).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestEntry {
+    /// HTTP method of the request.
+    pub method: String,
+    /// URL of the response (after redirects) or of the request when it
+    /// failed.
+    pub url: String,
+    /// HTTP status code; `None` when the request failed.
+    pub status: Option<u32>,
+    /// The protocol's resource type, lowercased (`document`, `xhr`, …).
+    pub resource_type: Option<String>,
+    /// Protocol error text when the request failed.
+    pub error: Option<String>,
+}
+
+impl fmt::Display for RequestEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {} ", self.method, self.url)?;
+        match (self.status, &self.error) {
+            (Some(status), _) => write!(f, "-> {status}")?,
+            (None, Some(error)) => write!(f, "-> failed ({error})")?,
+            (None, None) => write!(f, "-> ?")?,
+        }
+        if let Some(resource_type) = &self.resource_type {
+            write!(f, " [{resource_type}]")?;
+        }
+        Ok(())
+    }
+}
+
 /// A fact a page produced on its own — no orchestration asked for it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PageObservation {
@@ -147,6 +180,12 @@ pub enum PageObservation {
     UncaughtException {
         /// The exception text.
         text: String,
+    },
+    /// A network request finished: either a response arrived or the
+    /// load failed.
+    RequestObserved {
+        /// The request's line and terminal outcome.
+        entry: RequestEntry,
     },
 }
 

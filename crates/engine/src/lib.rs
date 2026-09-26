@@ -38,7 +38,7 @@ pub use health::HealthReport;
 pub use input::{InputEvent, MouseButton};
 pub use page::{
     ConsoleEntry, ConsoleLevel, DialogKind, ImageFormat, ObservationStream, PageHandle,
-    PageObservation, ScreencastFrame, ScreencastStream, Screenshot,
+    PageObservation, RequestEntry, ScreencastFrame, ScreencastStream, Screenshot,
 };
 pub use supervisor::policy::RestartPolicy;
 pub use supervisor::{EngineLauncher, Supervisor};

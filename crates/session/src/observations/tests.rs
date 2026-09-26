@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use rutter_core::ids::SessionId;
 use rutter_engine::context::ContextHandle;
-use rutter_engine::page::{ConsoleEntry, ConsoleLevel, DialogKind, PageObservation};
+use rutter_engine::page::{ConsoleEntry, ConsoleLevel, DialogKind, PageObservation, RequestEntry};
 use rutter_events::Backbone;
 
 use super::{FEED_CAPACITY, ObservationFeeds, push};
@@ -177,4 +177,48 @@ async fn feeds_are_isolated_per_page_and_removable() {
         1,
         "the other page keeps its feed"
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn network_requests_land_in_the_page_buffer() {
+    let context = MockContext::new();
+    let (page_id, _handle) = context.open_page().await.expect("mock open");
+    let mock = context.page_mock(page_id.clone()).expect("mock page");
+
+    let feeds = Arc::new(ObservationFeeds::default());
+    feeds.spawn(
+        session_id(),
+        page_id.clone(),
+        context.page_mock(page_id.clone()).expect("mock page"),
+        Arc::new(Backbone::new()),
+    );
+    wait_for(|| mock.feed_claimed()).await;
+
+    mock.emit(PageObservation::RequestObserved {
+        entry: RequestEntry {
+            method: "GET".to_owned(),
+            url: "https://a.example/x".to_owned(),
+            status: Some(200),
+            resource_type: Some("fetch".to_owned()),
+            error: None,
+        },
+    });
+    mock.emit(PageObservation::RequestObserved {
+        entry: RequestEntry {
+            method: "GET".to_owned(),
+            url: "https://a.example/missing".to_owned(),
+            status: None,
+            resource_type: Some("fetch".to_owned()),
+            error: Some("net::ERR_NAME_NOT_RESOLVED".to_owned()),
+        },
+    });
+
+    wait_for(|| feeds.requests(&page_id).len() == 2).await;
+    let requests = feeds.requests(&page_id);
+    assert_eq!(requests[0].status, Some(200));
+    assert_eq!(
+        requests[1].error.as_deref(),
+        Some("net::ERR_NAME_NOT_RESOLVED")
+    );
+    assert!(feeds.entries(&page_id).is_empty(), "rings stay separate");
 }

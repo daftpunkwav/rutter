@@ -18,6 +18,9 @@ use chromiumoxide::cdp::browser_protocol::emulation::{
 use chromiumoxide::cdp::browser_protocol::input::{
     DispatchKeyEventType, DispatchMouseEventType, InsertTextParams,
 };
+use chromiumoxide::cdp::browser_protocol::network::{
+    EventLoadingFailed, EventRequestWillBeSent, EventResponseReceived, RequestId,
+};
 use chromiumoxide::cdp::browser_protocol::page::{
     EventFrameNavigated, EventJavascriptDialogOpening, EventScreencastFrame,
     GetNavigationHistoryParams, HandleJavaScriptDialogParams, NavigateParams,
@@ -35,9 +38,10 @@ use serde_json::Value;
 use rutter_engine::error::EngineError;
 use rutter_engine::input::InputEvent;
 use rutter_engine::page::{
-    ConsoleLevel, DialogKind, ImageFormat, ObservationStream, PageObservation, ScreencastFrame,
-    ScreencastStream, Screenshot,
+    ConsoleLevel, DialogKind, ImageFormat, ObservationStream, PageObservation, RequestEntry,
+    ScreencastFrame, ScreencastStream, Screenshot,
 };
+use std::collections::{HashMap, VecDeque};
 
 use crate::error::{self, COMMAND_TIMEOUT, fold, fold_navigation, with_deadline, with_deadline_by};
 use crate::keys;
@@ -521,6 +525,23 @@ impl rutter_engine::page::PageHandle for CdpPage {
             .event_listener::<EventExceptionThrown>()
             .await
             .map_err(fold)?;
+        let mut requests = self
+            .page
+            .event_listener::<EventRequestWillBeSent>()
+            .await
+            .map_err(fold)?;
+        let mut responses = self
+            .page
+            .event_listener::<EventResponseReceived>()
+            .await
+            .map_err(fold)?;
+        let mut failures = self
+            .page
+            .event_listener::<EventLoadingFailed>()
+            .await
+            .map_err(fold)?;
+
+        let mut pending = PendingRequests::default();
 
         let (sender, receiver) = tokio::sync::mpsc::channel::<PageObservation>(64);
         // The forwarding task owns the feed: observations hand off
@@ -553,6 +574,47 @@ impl rutter_engine::page::PageHandle for CdpPage {
                     Some(event) = exceptions.next() => {
                         let observation = PageObservation::UncaughtException {
                             text: exception_text(&event.exception_details),
+                        };
+                        if !try_forward(&sender, observation) {
+                            break;
+                        }
+                    }
+                    Some(event) = requests.next() => {
+                        pending.note(
+                            event.request_id.clone(),
+                            event.request.method.clone(),
+                            event.request.url.clone(),
+                        );
+                    }
+                    Some(event) = responses.next() => {
+                        let (method, _) = pending
+                            .take(&event.request_id)
+                            .unwrap_or_else(|| (String::new(), String::new()));
+                        let observation = PageObservation::RequestObserved {
+                            entry: RequestEntry {
+                                method,
+                                url: cap_text(event.response.url.clone()),
+                                status: Some(event.response.status.clamp(0, u32::MAX as i64) as u32),
+                                resource_type: Some(event.r#type.as_ref().to_lowercase()),
+                                error: None,
+                            },
+                        };
+                        if !try_forward(&sender, observation) {
+                            break;
+                        }
+                    }
+                    Some(event) = failures.next() => {
+                        let (method, url) = pending
+                            .take(&event.request_id)
+                            .unwrap_or_else(|| (String::new(), String::new()));
+                        let observation = PageObservation::RequestObserved {
+                            entry: RequestEntry {
+                                method,
+                                url: cap_text(url),
+                                status: None,
+                                resource_type: Some(event.r#type.as_ref().to_lowercase()),
+                                error: Some(cap_text(event.error_text.clone())),
+                            },
                         };
                         if !try_forward(&sender, observation) {
                             break;
@@ -622,6 +684,42 @@ impl rutter_engine::page::PageHandle for CdpPage {
         with_deadline("set_viewport", COMMAND_TIMEOUT, self.page.execute(metrics))
             .await
             .map(|_| ())
+    }
+}
+
+/// Correlates requests that were sent with their terminal outcome.
+/// Requests that never finish are bounded: once [`PENDING_CAP`] are
+/// in flight, the oldest falls off and its eventual outcome degrades
+/// to a method-less entry. Free of I/O so the rules are unit-testable.
+#[derive(Default)]
+struct PendingRequests {
+    map: HashMap<RequestId, (String, String)>,
+    order: VecDeque<RequestId>,
+}
+
+/// How many requests may sit unanswered before the oldest is dropped.
+const PENDING_CAP: usize = 256;
+
+impl PendingRequests {
+    fn note(&mut self, id: RequestId, method: String, url: String) {
+        if !self.map.contains_key(&id)
+            && self.order.len() >= PENDING_CAP
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.map.remove(&oldest);
+        }
+        if !self.map.contains_key(&id) {
+            self.order.push_back(id.clone());
+        }
+        self.map.insert(id, (method, url));
+    }
+
+    fn take(&mut self, id: &RequestId) -> Option<(String, String)> {
+        let entry = self.map.remove(id);
+        if entry.is_some() {
+            self.order.retain(|pending| pending != id);
+        }
+        entry
     }
 }
 
@@ -766,6 +864,55 @@ mod tests {
         assert!(
             !try_forward(&sender, observation),
             "a closed feed ends the task"
+        );
+    }
+}
+
+#[cfg(test)]
+mod pending_tests {
+    use super::*;
+
+    fn id(name: &str) -> RequestId {
+        RequestId::new(name)
+    }
+
+    #[test]
+    fn outcomes_pair_with_their_request() {
+        let mut pending = PendingRequests::default();
+        pending.note(id("r1"), "GET".to_owned(), "https://a.example".to_owned());
+        pending.note(id("r2"), "POST".to_owned(), "https://b.example".to_owned());
+
+        assert_eq!(
+            pending.take(&id("r1")),
+            Some(("GET".to_owned(), "https://a.example".to_owned()))
+        );
+        assert_eq!(pending.take(&id("r1")), None, "a request answers once");
+        assert_eq!(
+            pending.take(&id("r2")),
+            Some(("POST".to_owned(), "https://b.example".to_owned()))
+        );
+    }
+
+    #[test]
+    fn unknown_requests_degrade_to_a_methodless_entry() {
+        let mut pending = PendingRequests::default();
+        assert_eq!(pending.take(&id("ghost")), None);
+    }
+
+    #[test]
+    fn pending_requests_are_bounded_and_the_oldest_falls_off() {
+        let mut pending = PendingRequests::default();
+        for index in 0..PENDING_CAP + 10 {
+            pending.note(id(&format!("r{index}")), "GET".to_owned(), String::new());
+        }
+        // The oldest ten fell off: their outcomes degrade.
+        assert_eq!(pending.take(&id("r0")), None);
+        assert_eq!(pending.take(&id("r9")), None);
+        assert!(pending.take(&id("r10")).is_some());
+        // The cap freed room, so everything answered stays accounted.
+        assert_eq!(
+            pending.take(&id(&format!("r{}", PENDING_CAP + 9))),
+            Some(("GET".to_owned(), String::new()))
         );
     }
 }
