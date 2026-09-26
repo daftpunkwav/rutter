@@ -426,6 +426,66 @@ impl Session {
         .await
     }
 
+    /// Opens a new page in the session's context and makes it the
+    /// active one (docs/tool-catalog.md §4: `tabs_open`); with a `url`
+    /// the new page navigates there, judged by the policy exactly like a
+    /// `navigate` action. A denial or failed navigation leaves the new
+    /// page open at its blank start so the agent can see — and close —
+    /// what it opened (docs/tool-catalog.md §4).
+    pub async fn open_page(&self, url: Option<String>) -> Result<Snapshot, SessionError> {
+        if !self.pages.accepts_new_page() {
+            return Err(SessionError::Engine(EngineError::Terminated));
+        }
+        let context = self.context.read().await.clone();
+        let (page_id, handle) = context.open_page().await.map_err(engine_error)?;
+        // Registration mirrors `ensure_page`'s race handling, except the
+        // new page takes the active flag: opening a tab is a focus
+        // change, unlike the adoption paths that never steal focus.
+        if !self.pages.admit(PageSlot {
+            id: page_id.clone(),
+            url: String::new(),
+            handle: Arc::clone(&handle),
+            active: false,
+        }) {
+            let _ = context.close_page(page_id).await;
+            return Err(SessionError::Engine(EngineError::Terminated));
+        }
+        self.pages.activate(&page_id);
+        self.start_feed(&page_id, &handle);
+        self.backbone.publish(
+            self.id.clone(),
+            Event::PageOpened {
+                page: page_id.clone(),
+            },
+        );
+
+        if let Some(url) = url {
+            self.enforce(
+                ApprovalEffect::Action {
+                    action: Action::Navigate { url: url.clone() },
+                },
+                Some(&url),
+                &page_id,
+            )
+            .await?;
+            let effective = handle.navigate(&url).await.map_err(engine_error)?;
+            self.pages.set_url(&page_id, &effective);
+            self.backbone.publish(
+                self.id.clone(),
+                Event::PageNavigated {
+                    page: page_id.clone(),
+                    url: effective,
+                },
+            );
+        }
+        PageOps {
+            page: handle.as_ref(),
+            config: &self.config,
+        }
+        .snapshot()
+        .await
+    }
+
     /// Closes a page; closing the active page promotes the first
     /// remaining page. An id the session does not track is a client
     /// error: closing it would otherwise report success and publish a

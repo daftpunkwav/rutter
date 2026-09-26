@@ -27,6 +27,9 @@ and the project adheres to
 
 ### Added
 
+- Explicit tab opening: the new `tabs_open` MCP tool opens a page in
+  the session's context, makes it active, and optionally navigates it
+  through the same policy judgment as a `navigate` action.
 - Cookie reads: the new `get_cookies` MCP tool returns every cookie
   scoped to the session's browser context, complementing `set_cookies`;
   reading is observation and needs no approval.

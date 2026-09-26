@@ -18,7 +18,8 @@ mod params;
 
 pub use params::{
     CookieInput, CookiesParams, Direction, NavigateParams, PageParams, PressKeyParams,
-    ReferenceParams, SameSiteInput, ScrollParams, SelectOptionParams, TypeParams, WaitForParams,
+    ReferenceParams, SameSiteInput, ScrollParams, SelectOptionParams, TabsOpenParams, TypeParams,
+    WaitForParams,
 };
 
 use std::sync::Arc;
@@ -287,6 +288,20 @@ impl RutterMcp {
             return Err(invalid_params(format!("no open page with id '{page_id}'")));
         }
         match session.select_page(PageId::new(page_id)).await {
+            Ok(snapshot) => Ok(snapshot_result(&snapshot)),
+            Err(error) => Ok(error_result(&error)),
+        }
+    }
+
+    #[tool(
+        description = "Open a new page in this session's context, make it active, and return a fresh snapshot"
+    )]
+    async fn tabs_open(
+        &self,
+        Parameters(TabsOpenParams { url }): Parameters<TabsOpenParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let session = self.session().await?;
+        match session.open_page(url).await {
             Ok(snapshot) => Ok(snapshot_result(&snapshot)),
             Err(error) => Ok(error_result(&error)),
         }

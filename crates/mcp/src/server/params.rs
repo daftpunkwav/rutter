@@ -164,6 +164,15 @@ pub struct PageParams {
 }
 
 #[derive(Debug, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
+/// Parameters of the tabs_open tool.
+pub struct TabsOpenParams {
+    /// URL the new page navigates to; omitted opens a blank page.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
 /// Parameters of the set_cookies tool.
 pub struct CookiesParams {
     /// Cookies to set on this session's context.

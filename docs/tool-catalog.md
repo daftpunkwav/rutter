@@ -90,7 +90,7 @@ timeline.
 
 ## 4. Tools
 
-Twenty-one tools. Parameter types: `reference` is a snapshot handle
+Twenty-two tools. Parameter types: `reference` is a snapshot handle
 (`e17`); `direction` is one of `up|down|left|right`; durations are
 milliseconds.
 
@@ -179,6 +179,15 @@ window) is only untracked.
 `invalid_params`. Closing the active page makes the first remaining
 page active; closing the last page is allowed — the next `navigate`
 opens a new one.
+
+### tabs_open
+`{ url?: string }` → snapshot. Opens a new page in the session's
+context and makes it the active one (the previous page keeps its
+tracked slot); with `url`, the new page navigates there, judged by the
+policy exactly like a `navigate` action at that URL. A denied
+navigation or a navigation failure leaves the new page open at its
+blank start, so the agent can see what it got and `tabs_close` it. The
+context's page cap applies; over cap → action failure.
 
 ### get_cookies
 `{}` → text block, every cookie scoped to the session's context, one

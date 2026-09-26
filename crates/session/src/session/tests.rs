@@ -1192,3 +1192,80 @@ async fn get_cookies_reads_the_context_without_opening_a_page() {
         "a cookie read is observation and never opens a page"
     );
 }
+
+#[tokio::test]
+async fn opening_a_page_takes_the_active_flag_and_tracks_its_url() {
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+    let (first, _) = session.active_page_for_test().await;
+
+    let snapshot = session.open_page(None).await.expect("a blank page opens");
+    let listed = session.pages().await;
+    assert_eq!(listed.len(), 2);
+    let active: Vec<&PageInfo> = listed.iter().filter(|page| page.active).collect();
+    assert_eq!(active.len(), 1, "exactly one page is active");
+    assert_ne!(active[0].id, first, "the new page takes the focus");
+    // The mock's blank page reports an empty href; a real engine
+    // reports `about:blank` here.
+    assert_eq!(snapshot.url, "");
+
+    let snapshot = session
+        .open_page(Some("https://opened.example".to_owned()))
+        .await
+        .expect("a navigated page opens");
+    assert_eq!(snapshot.url, "https://opened.example");
+    assert!(
+        session
+            .backbone()
+            .replay(&SessionId::new("s-test"))
+            .iter()
+            .any(|envelope| matches!(
+                envelope.event,
+                Event::PageNavigated { ref url, .. } if url == "https://opened.example"
+            )),
+        "the navigation lands on the timeline"
+    );
+    let active = session
+        .pages()
+        .await
+        .into_iter()
+        .find(|page| page.active)
+        .expect("one active page");
+    assert_eq!(
+        active.url, "https://opened.example",
+        "the tracked url follows the new page"
+    );
+}
+
+#[tokio::test]
+async fn a_denied_tabs_open_navigation_leaves_the_new_blank_page() {
+    let context = MockContext::new();
+    let session = session_with_policy(
+        Arc::new(context.clone()),
+        RuleSet::new(
+            vec![navigation_deny("https://denied.example/*")],
+            Verdict::Allow,
+        ),
+    );
+    session.active_page_for_test().await;
+
+    let error = session
+        .open_page(Some("https://denied.example/login".to_owned()))
+        .await
+        .expect_err("the deny rule blocks the navigation");
+    assert!(
+        matches!(
+            error,
+            SessionError::Action(ActionError::ApprovalDenied { .. })
+        ),
+        "unexpected error: {error}"
+    );
+    let listed = session.pages().await;
+    assert_eq!(
+        listed.len(),
+        2,
+        "the opened page stays so the agent can see what it got"
+    );
+    let active = listed.iter().find(|page| page.active).expect("one active");
+    assert_eq!(active.url, "", "the denied page never navigated");
+}

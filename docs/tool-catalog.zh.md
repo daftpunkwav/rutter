@@ -80,7 +80,7 @@ agent 可执行的英文提示：
 
 ## 4. 工具
 
-二十一个工具。参数类型：`reference` 是快照句柄（`e17`）；
+二十二个工具。参数类型：`reference` 是快照句柄（`e17`）；
 `direction` 是 `up|down|left|right` 之一；时长单位为毫秒。
 
 **对话框。**页面调用 `alert`、`confirm`、`prompt` 或触发
@@ -159,6 +159,13 @@ auto-wait；提取规则与守卫见[读取格式](read-format.zh.md)。站点�
 `{ page_id: string }` → 文本确认。未知 id → `invalid_params`。
 关闭活动页面时提升第一个剩余页面；允许关闭最后一个页面——下一次
 `navigate` 会打开新的。
+
+### tabs_open
+`{ url?: string }` → snapshot。在 session 的 context 中打开新页面并
+将其设为活动页（先前的页面保留其槽位）；带 `url` 时新页面导航到该
+URL，策略判定与 `navigate` 动作完全一致。被拒绝或失败的导航会让新
+页面停留在空白起始页，agent 能看到它拿到了什么并可用 `tabs_close`
+关闭。context 的页面配额照常生效；超配额 → 动作失败。
 
 ### get_cookies
 `{}` → text block，session 的 context 作用域内的全部 cookie，每条一行
