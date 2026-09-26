@@ -415,7 +415,9 @@ mod tests {
     #[test]
     fn stderr_tail_collapses_the_log_into_one_line() {
         let mut log = std::env::temp_dir();
-        log.push(format!("rutter-tail-test-{}.log", std::process::id()));
+        // A name of this test's own: the sibling tail test would
+        // overwrite a shared path while running concurrently.
+        log.push(format!("rutter-tail-collapse-{}.log", std::process::id()));
         std::fs::write(
             &log,
             "first line\n\nerror while loading\n  shared  libraries\n",
@@ -429,7 +431,7 @@ mod tests {
     #[test]
     fn stderr_tail_keeps_only_the_end_of_a_chatty_log() {
         let mut log = std::env::temp_dir();
-        log.push(format!("rutter-tail-test-{}.log", std::process::id()));
+        log.push(format!("rutter-tail-bounded-{}.log", std::process::id()));
         let noise = "x".repeat(100_000);
         std::fs::write(&log, format!("{noise}\nTHE ACTUAL CAUSE")).unwrap();
         let tail = stderr_tail(&log);
