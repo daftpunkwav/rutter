@@ -77,20 +77,33 @@ async fn screencast_delivers_jpeg_frames() {
 }
 
 /// Dropping the stream stops the capture: a fresh page handle can
-/// start another screencast afterwards (on-demand lifecycle).
+/// start another screencast afterwards (on-demand lifecycle). The
+/// restart is polled instead of timed: the stop command races nothing
+/// but the runner's scheduler, so a slow machine may take a beat
+/// longer than any fixed sleep would guess.
 #[tokio::test]
 #[ignore = "requires a downloaded engine binary"]
 async fn screencast_stops_when_dropped() {
     let (_engine, stream, page) = open_page().await;
     drop(stream);
-    // Give the stop command a beat to land.
-    tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // A second start must succeed; a stuck capture would starve it.
-    let mut second = tokio::time::timeout(Duration::from_secs(10), page.start_screencast())
-        .await
-        .expect("restart within 10 s")
-        .expect("second screencast");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let mut second = loop {
+        match page.start_screencast().await {
+            Ok(second) => break second,
+            // Only the not-yet-stopped capture may be retried; every
+            // other failure is a bug this test must surface.
+            Err(error) if error.to_string().contains("already active") => {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "the dropped capture never stopped: {error}"
+                );
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            Err(error) => panic!("second screencast failed: {error}"),
+        }
+    };
+
     let frame = tokio::time::timeout(Duration::from_secs(10), second.next_frame())
         .await
         .expect("a frame within 10 s")

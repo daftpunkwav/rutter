@@ -14,6 +14,11 @@ and the project adheres to
   launcher-style executables (Edge) and full Chrome start where
   chromiumoxide's stderr parsing and job-object spawner failed. Headed
   windows are chromeless app surfaces with a fresh per-launch profile.
+- Dropping a screencast viewer stops the capture even when the page
+  paints no further frames: the forwarding task now watches the
+  receiver directly instead of noticing the departure only on the next
+  frame, so a viewer who leaves and returns is not locked out by
+  "Screencast is already active".
 - Dashboard access handoff no longer races between rutter processes on
   one machine: the access file is written only after the bind
   succeeded and is named by the port the server actually owns

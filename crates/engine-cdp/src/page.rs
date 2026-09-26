@@ -375,6 +375,12 @@ impl rutter_engine::page::PageHandle for CdpPage {
                         )
                         .await;
                     }
+                    // A quiet page paints no frames, so the Closed arm
+                    // above may not fire for a long time; watching the
+                    // receiver directly ends the capture the moment the
+                    // viewer leaves (docs/dashboard.md: streaming stops
+                    // when the last viewer leaves).
+                    _ = sender.closed() => break,
                     else => break,
                 }
             }
