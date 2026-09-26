@@ -2,8 +2,8 @@
 //!
 //! Boundary: pure arithmetic on attempt counts. Callers decide retry
 //! policy (how many attempts, when to give up); this type only turns an
-//! attempt number into a delay. Delays are deterministic in v1; jitter
-//! is deliberately absent to keep tests exact.
+//! attempt number into a delay. Delays are deterministic; jitter is
+//! deliberately absent to keep tests exact.
 
 use std::time::Duration;
 

@@ -13,7 +13,7 @@ run the suites.
 | Golden | Snapshot builder output on fixture DOM trees | `insta` |
 | Property | Culling/folding invariants; serializer never panics | `proptest` |
 | Integration | Real headless shell: launch, navigate, act | per-crate `tests/`, `#[ignore]`d by default |
-| E2E | Full MCP client → rutter → engine round-trips (mcp, approval, http transports) | workspace `tests/` package |
+| E2E | Full client → rutter → engine round-trips (mcp, approval, http transports; open, read CLI modes) | workspace `tests/` package |
 | Benchmark | 20-site fixed corpus: navigate+snapshot success rate | harness in `scripts/` |
 
 ## 2. What pins which contract
@@ -49,6 +49,7 @@ cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored
 cargo test -p rutter-integration-tests --test open_e2e -- --ignored
+cargo test -p rutter-integration-tests --test read_e2e -- --ignored
 cargo test -p rutter-engine-cdp --test screencast -- --ignored
 ```
 
@@ -61,7 +62,8 @@ scripts/benchmark.sh     # 20-site navigate+snapshot benchmark, 90 % success bar
 
 ## 4. Quality gates
 
-CI runs on every push/PR. The quality job runs the local checks of
+CI runs on pushes to `main` and on every pull request. The quality job
+runs the local checks of
 [`CONTRIBUTING.md`](../CONTRIBUTING.md) plus a rustdoc gate:
 
 ```sh
@@ -106,8 +108,9 @@ cargo llvm-cov --locked --workspace --bins --tests \
     -- --include-ignored --test-threads=1
 ```
 
-The full run (including `open_e2e`, `mcp_e2e`, `approval_e2e`, and
-`http_e2e` driving the instrumented binary) measures **92.79 % lines**
+The full run (including `open_e2e`, `read_e2e`, `mcp_e2e`,
+`approval_e2e`, and `http_e2e` driving the instrumented binary)
+measures **92.79 % lines**
 (6356 of 6850 source lines; test targets themselves are excluded from
 the count) as of 2026-09-27. The remaining lines are headed/browse-mode
 paths (`crates/cli/src/browse.rs` accounts for all 15 of its lines),

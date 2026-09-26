@@ -113,8 +113,8 @@ Chrome for Testing 下载。
   `--app` 保留为“运行该应用”之意
   （[browser README](../../browser/README.zh.md)）。rutter 自己拉起
   浏览器进程并轮询调试端口来解析地址——启动器式可执行文件（Edge）与
-  完整 Chrome 都能启动；靠解析浏览器 stderr 或把子进程放进 job
-  object 的启动方式在 Windows 上做不到这一点。
+  完整 Chrome 都能启动；靠解析浏览器 stderr
+  的启动方式在 Windows 上做不到这一点。
 - **context 级隔离是尽力而为**：拒绝创建 context 与 target 的引擎
   （Electron 版 Rutter Browser，其唯一可见窗口即页面表面）会退回到
   默认 context 与浏览器既有的页面表面，此后 `descriptor()` 报告

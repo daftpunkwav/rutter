@@ -1,8 +1,9 @@
 //! Entry modes of the rutter binary.
 //!
-//! The modes (browse, serve, open, read) only set defaults; engine mode
-//! and the dashboard are orthogonal flags on top of them. Boundary: mode
-//! dispatch only — each mode's implementation lives in its own module
+//! The modes (browse, serve, open, read) only set defaults; the
+//! headed/headless engine choice and the optional dashboard are
+//! serve-mode flags on top of them. Boundary: mode dispatch only — each
+//! mode's implementation lives in its own module
 //! beside this one, and the CLI owns no engine logic beyond the launcher
 //! registration.
 

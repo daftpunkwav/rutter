@@ -23,8 +23,7 @@ JSON with `observe::read_from_response()`.
 
 The MCP `read` tool (docs/tool-catalog.md §4) and the
 `rutter read <url>` CLI mode consume the pipeline; both are read-only
-observation — no events, no auto-wait, no policy gate, no page
-creation.
+observation — no events, no auto-wait, no policy gate.
 
 ## 2. Reader envelope
 
@@ -98,8 +97,14 @@ as snapshots.
 
 ## 5. Guards
 
-Every guard trip sets `truncated: true` and degrades; the reader never
-throws, and the converter never fails on hostile page data.
+Guards degrade in two ways. The budget guards — node count, depth,
+markdown size, per-inline size — set `truncated: true` when they trip,
+and so do traversal failures (a failed child-node read, or a failure
+that escapes the walk). The omission guards degrade silently: hidden
+elements and site chrome are skipped without the flag, an
+unresolvable URL degrades to plain text, and an overlong title is
+clipped without the flag. The reader never throws, and the converter
+never fails on hostile page data.
 
 | Guard | Value |
 |---|---|

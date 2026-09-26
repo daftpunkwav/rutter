@@ -136,7 +136,7 @@ rutter/
 | `rutter-mcp` | MCP tool surface (rmcp) |
 | `rutter-policy` | Rule set, verdicts, approval broker |
 | `rutter-dashboard` | Local supervision dashboard (events, approvals) |
-| `rutter` (cli) | Binary entry modes: browse, serve, open |
+| `rutter` (cli) | Binary entry modes: browse, serve, open, read |
 
 ## Development
 
@@ -171,6 +171,7 @@ cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored
 cargo test -p rutter-integration-tests --test open_e2e -- --ignored
+cargo test -p rutter-integration-tests --test read_e2e -- --ignored
 ```
 
 `scripts/smoke_open.sh` drives 10 real sites through `rutter open` and

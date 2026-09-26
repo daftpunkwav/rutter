@@ -201,7 +201,7 @@ Three e2e task classes pass against the real engine
 stdio; see [testing](testing.md)):
 
 1. **Read**: `navigate` → `snapshot` shows the page's heading and
-   actionable refs.
+   actionable refs; `read` returns the page's markdown.
 2. **Interact**: on a synthetic page, `click` a button that mutates the
    DOM → the returned snapshot reflects the change.
 3. **Form**: `type` into an input (and `select_option`) → the snapshot

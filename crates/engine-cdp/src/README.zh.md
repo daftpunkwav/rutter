@@ -7,7 +7,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `launch.rs` | `CdpLauncher`：接收已解析的二进制、启动 chromiumoxide、包装为 `Engine` |
+| `launch.rs` | `CdpLauncher`：接收已解析的二进制、自行 spawn 浏览器进程、连接 chromiumoxide、包装为 `Engine` |
 | `engine.rs` | `CdpEngine`：chromiumoxide 浏览器之上的浏览器 Context（上下文） |
 | `context.rs` | `CdpContext`：target、foreign target 的发现与采纳、cookies、幂等的上下文关闭 |
 | `page.rs` | `CdpPage`：evaluate、输入、截图、带 deadline 的 screencast |

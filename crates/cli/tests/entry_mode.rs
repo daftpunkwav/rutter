@@ -1,4 +1,4 @@
-//! Tests for `EntryMode`: the three modes display by their CLI names,
+//! Tests for `EntryMode`: the modes display by their CLI names,
 //! which error messages and logs rely on.
 
 // Restriction lints are denied workspace-wide; tests may use plain

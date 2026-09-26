@@ -7,7 +7,7 @@ is `launch.rs`'s `CdpLauncher` alone.
 
 | File | Role |
 |---|---|
-| `launch.rs` | `CdpLauncher`: takes the resolved binary, launches chromiumoxide, wraps it as `Engine` |
+| `launch.rs` | `CdpLauncher`: takes the resolved binary, spawns the browser itself, attaches chromiumoxide, wraps it as `Engine` |
 | `engine.rs` | `CdpEngine`: browser contexts over chromiumoxide's browser |
 | `context.rs` | `CdpContext`: targets, foreign-target discovery and adoption, cookies, idempotent context close |
 | `page.rs` | `CdpPage`: evaluate, input, screenshots, deadline-wrapped screencast |

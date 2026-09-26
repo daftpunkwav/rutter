@@ -53,7 +53,7 @@ if [[ $failed -gt 0 ]]; then
   printf 'failed sites:\n'
   printf '  %s\n' "${failed_sites[@]}"
 fi
-# The M2 gate is a healthy navigation rate; network flakiness on any
+# The pass bar is a healthy navigation rate; network flakiness on any
 # single site is reported but does not fail the run unless it drops
 # below 90 percent.
 threshold=$(( ${#sites[@]} * 9 / 10 ))

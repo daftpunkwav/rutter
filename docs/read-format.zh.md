@@ -1,6 +1,6 @@
 # 读取格式（Read Format）
 
-English | [中文](read-format.zh.md)
+[English](read-format.md) | 中文
 
 读取管道（read pipeline）的契约：页面内 reader 产出的 JSON、它提取什么、
 省略什么，以及守卫规则。`rutter-observe` 精确实现本契约；转换单测钉住，
@@ -20,8 +20,7 @@ reader 脚本是 `rutter-observe` 的内嵌资产
 返回的 JSON 交给 `observe::read_from_response()` 转换。
 
 MCP `read` 工具（docs/tool-catalog.md §4）与 `rutter read <url>` CLI 模式
-消费这条管道；两者都是只读观察——不产生事件、不做 auto-wait、不过策略门、
-不创建页面。
+消费这条管道；两者都是只读观察——不产生事件、不做 auto-wait、不过策略门。
 
 ## 2. Reader envelope
 
@@ -88,8 +87,12 @@ truncated }`。`Display` 渲染标题行、一个空行、然后是 markdown 正
 
 ## 5. 守卫
 
-任何守卫触发都置 `truncated: true` 并降级；reader 绝不抛异常，转换器对
-敌意页面数据绝不失败。
+守卫以两种方式降级。预算类守卫——节点数、深度、markdown 大小、单次
+行内大小——触发时置 `truncated: true`；遍历本身的失败（子节点读取
+失败，或逸出整个遍历的失败）同样如此。省略类守卫则静默降级：隐藏
+元素与站点框架被跳过而不置标记，无法解析的 URL 退化为纯文本，超长
+标题被裁剪而不置标记。reader 绝不抛异常，转换器对敌意页面数据绝不
+失败。
 
 | 守卫 | 数值 |
 |---|---|

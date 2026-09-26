@@ -3,7 +3,7 @@
 //! requires approval for pointer actions, and decisions arrive through
 //! the dashboard HTTP API (docs/policy.md).
 //!
-//! `#[ignore]`d by default: the CI integration job (or a developer)
+//! `#[ignore]`d by default: the CI e2e job (or a developer)
 //! runs them once the engine is in the cache.
 
 // Restriction lints are denied workspace-wide; tests may use plain

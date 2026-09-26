@@ -7,16 +7,13 @@
 //! factory's.
 //!
 //! rutter spawns the browser process itself and attaches via the
-//! debugging port instead of letting chromiumoxide spawn it, for two
-//! Windows facts the library's spawner cannot work around:
+//! debugging port instead of letting chromiumoxide spawn it, for a
+//! Windows fact the library's spawner cannot work around:
 //!
 //! - Launcher-style executables (Edge) relay to a child process and
 //!   exit immediately, closing the stderr stream chromiumoxide parses
 //!   the websocket address from. A loopback port polled through
 //!   `json/version` is indifferent to who survives the spawn.
-//! - chromiumoxide's spawner runs children inside a job object; full
-//!   Chrome aborts startup there with exit code 21, while the headless
-//!   shell tolerates it. A plain process spawn keeps both alive.
 //!
 //! The engine owns the spawned child so a dropped engine takes the
 //! browser with it; graceful shutdown goes through the CDP

@@ -1,7 +1,8 @@
 //! Acceptance for the streamable HTTP transport (docs/architecture.md, docs/tool-catalog.md).
 //! An MCP client connects to `rutter serve --http` over HTTP, runs a
-//! navigate + snapshot round-trip, and the DNS-rebinding Host check
-//! rejects foreign hosts.
+//! navigate + snapshot round-trip, and the transport-level checks hold:
+//! the DNS-rebinding Host check rejects foreign hosts, and
+//! browser-originated requests (Origin header) are rejected.
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.

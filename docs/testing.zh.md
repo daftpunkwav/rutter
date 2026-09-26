@@ -12,7 +12,7 @@
 | Golden | fixture DOM 树上的快照构建器输出 | `insta` |
 | Property | 裁剪/折叠不变量；序列化器永不 panic | `proptest` |
 | Integration | 真实 headless shell：启动、导航、动作 | 各 crate `tests/`，默认 `#[ignore]` |
-| E2E | 完整 MCP client → rutter → 引擎往返（mcp、approval、http 传输） | 工作区 `tests/` 包 |
+| E2E | 完整 client → rutter → 引擎往返（mcp、approval、http 传输；open、read CLI 模式） | 工作区 `tests/` 包 |
 | Benchmark | 20 站点固定语料：navigate+snapshot 成功率 | `scripts/` 中的基准 |
 
 ## 2. 契约由哪些测试钉住
@@ -45,6 +45,7 @@ cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored
 cargo test -p rutter-integration-tests --test open_e2e -- --ignored
+cargo test -p rutter-integration-tests --test read_e2e -- --ignored
 cargo test -p rutter-engine-cdp --test screencast -- --ignored
 ```
 
@@ -57,7 +58,7 @@ scripts/benchmark.sh     # 20 站点 navigate+snapshot 基准，90 % 成功率�
 
 ## 4. 质量门
 
-CI 在每次 push/PR 上运行。quality job 运行
+CI 在推送到 `main` 与每个 pull request 上运行。quality job 运行
 [`CONTRIBUTING.md`](../CONTRIBUTING.md) 中的本地检查，外加 rustdoc
 门禁：
 
@@ -100,7 +101,7 @@ cargo llvm-cov --locked --workspace --bins --tests \
     -- --include-ignored --test-threads=1
 ```
 
-全量运行（含驱动插桩二进制的 `open_e2e`、`mcp_e2e`、
+全量运行（含驱动插桩二进制的 `open_e2e`、`read_e2e`、`mcp_e2e`、
 `approval_e2e`、`http_e2e`）在 2026-09-27 测得 **92.79 % 行覆盖**
 （6356/6850 源码行；测试目标本身不计入）。剩余未覆盖行属于：
 headed/browse 模式路径（`crates/cli/src/browse.rs` 的全部 15 行）、

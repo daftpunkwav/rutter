@@ -22,14 +22,15 @@ use rutter_core::action::Action;
 
 /// What approving authorizes.
 ///
-/// `PartialEq` only: the wrapped action carries floating-point fields, so
-/// a total equality would not exist.
+/// `PartialEq` only, mirroring the wrapped `Action`, which derives no
+/// stronger equality.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ApprovalEffect {
     /// One typed action from the shared vocabulary. A struct variant, not
-    /// a newtype one: an internally tagged enum cannot add its tag inside
-    /// another tagged enum.
+    /// a newtype one: a tagged newtype variant would flatten the action's
+    /// fields into this enum's object, putting its `type` tag next to this
+    /// enum's `kind` tag instead of nested under `"action"`.
     Action {
         /// The action a grant sets free.
         action: Action,

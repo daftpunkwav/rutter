@@ -11,8 +11,9 @@
 //!
 //! Locking: three guards, each with one job, and none of them held across
 //! the slow work it does not protect. The engine slot is read-mostly, the
-//! startup lock covers only the launch, and the session map covers only
-//! bookkeeping. Recovery snapshots the sessions under their lock and then
+//! startup lock covers only the launch, and the session map covers a
+//! session request from lookup to insert, one context creation included.
+//! Recovery snapshots the sessions under their lock and then
 //! rebuilds them outside it. One shared lock used to serialize all three,
 //! which let a browser launch — up to a minute of backoff while the restart
 //! breaker drains — block the dashboard from reading the event backbone.

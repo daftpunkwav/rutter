@@ -6,8 +6,8 @@
  * document, returned as a JSON envelope
  * `{ version, truncated, title, markdown }`. Site chrome (nav, aside,
  * footer, landmark roles), hidden elements, and non-content tags are
- * omitted. The script never throws: every guard degrades to
- * `truncated: true` with partial output, never an exception.
+ * omitted. The script never throws: guards degrade to skipped content
+ * or `truncated: true` with partial output, never an exception.
  *
  * The caller evaluates this script inside a page and converts the
  * returned envelope with rutter-observe. Owned by rutter-observe;

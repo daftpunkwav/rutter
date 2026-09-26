@@ -146,8 +146,7 @@ pub fn cdp_button(button: MouseButton) -> CdpMouseButton {
 }
 
 /// Builds a CDP key event for a named key. Virtual key codes are not
-/// derived in v1; sites that require them need a code table (deferred
-/// to the session layer's keyboard work).
+/// derived; sites that require them need a code table.
 pub fn key_params(event_type: DispatchKeyEventType, key: &str) -> DispatchKeyEventParams {
     let mut params = DispatchKeyEventParams::new(event_type);
     params.key = Some(key.to_owned());

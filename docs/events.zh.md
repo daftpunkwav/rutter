@@ -19,7 +19,8 @@
 }
 ```
 
-- `seq` 是进程级全局单调计数器——消费者以它排序与去重。编号、写入
+- `seq` 是事件 backbone 范围内的单调计数器（一个 backbone 服务整个
+  服务器进程）——消费者以它排序与去重。编号、写入
   ring、总线扇出在同一次加锁内完成，所以 ring 顺序与实流顺序都等于
   分配顺序，按水位去重不会丢掉未见过的事件。
 - `recorded_at` 是 RFC 3339 UTC 字符串
@@ -62,10 +63,10 @@ fire-and-forget：不等待消费者、永不失败。两条通道，两种丢�
 - **实时 bus。** tokio broadcast channel（容量 1024）。无订阅者时
   发布也成功；落后太多的订阅者会读到 `Lagged` 错误，必须经 replay
   重新同步。
-- **Per-session ring。** 每 session 一个有界 ring（容量 1000），
-  为迟到者保留每个语义事件；`replay(session)` 按最旧优先返回
-  历史。session 关闭时 ring 被丢弃，因此反复进出 session id 的
-  服务器不会无界增长该映射。
+- **Per-session ring。** 每 session 一个有界 ring（容量 1000；超出
+  容量即淘汰最旧条目），为迟到者保留语义事件；`replay(session)` 按
+  最旧优先返回历史。session 关闭时 ring 被丢弃，因此反复进出
+  session id 的服务器不会无界增长该映射。
 
 丢失契约：**语义事件存活**（经 ring）；跟不上的实时订阅者在
 replay 之前会丢信封。仪表盘演示了重同步模式

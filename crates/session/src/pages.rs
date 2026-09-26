@@ -193,8 +193,8 @@ impl PageRegistry {
     }
 
     /// Removes a tracked page, promoting the first remaining slot when the
-    /// active page was the one taken. Returns the removed slot so the
-    /// caller can close its engine page.
+    /// active page was the one taken. Returns the removed slot, if the id
+    /// was tracked.
     pub fn remove(&self, id: &PageId) -> Option<PageSlot> {
         let mut state = self.lock();
         let was_active = state

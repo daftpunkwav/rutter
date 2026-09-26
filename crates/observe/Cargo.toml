@@ -1,4 +1,5 @@
-# rutter-observe: pure DOM-JSON to Snapshot conversion.
+# rutter-observe: pure conversion from page-script responses to
+# snapshots and markdown readouts.
 
 [package]
 name = "rutter-observe"
@@ -7,7 +8,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Builds token-budgeted snapshots from serialized DOM trees"
+description = "Builds token-budgeted snapshots and markdown readouts from serialized page content"
 
 [lints]
 workspace = true

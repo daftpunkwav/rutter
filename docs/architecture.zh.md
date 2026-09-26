@@ -96,6 +96,7 @@ chrome-headless-shell (child process)   Human browser (dashboard viewer)
 | `rutter` | browse 模式：有头引擎窗口，供人类直接操作 |
 | `rutter serve` | MCP 服务器；引擎默认 headless，`--headed` 覆盖；`--dashboard PORT` 与 `--policy FILE` 挂载仪表盘与规则集 |
 | `rutter open` | 一次性诊断：导航、打印快照、退出 |
+| `rutter read <url>` | 一次性抓取：导航、将页面打印为 markdown、退出 |
 
 无参数启动映射到 browse 模式，因此直接运行二进制就能得到可用的、
 人类操作的 session，不需要任何 MCP client。引擎模式与仪表盘是

@@ -12,7 +12,7 @@ and the project adheres to
 - Headed mode launches on Windows: rutter spawns the browser itself and
   resolves the debugging endpoint by polling the port, so both
   launcher-style executables (Edge) and full Chrome start where
-  chromiumoxide's stderr parsing and job-object spawner failed. Headed
+  chromiumoxide's stderr parsing failed. Headed
   windows are chromeless app surfaces with a fresh per-launch profile.
 - Dropping a screencast viewer stops the capture even when the page
   paints no further frames: the forwarding task now watches the

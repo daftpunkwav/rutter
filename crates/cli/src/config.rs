@@ -2,15 +2,15 @@
 //!
 //! Boundary: flag and environment resolution only. The CLI is
 //! configured exclusively through flags and the environment; the
-//! policy file is passed as `--policy`. Every default is overridable;
-//! nothing is read from the network here.
+//! policy file is passed as `--policy`. Nothing is read from the
+//! network here.
 
 use std::path::PathBuf;
 use std::time::Duration;
 
 use rutter_engine::error::EngineError;
 
-/// Deadline for one navigation in `open` mode.
+/// Deadline for one navigation in the one-shot modes.
 const DEFAULT_NAVIGATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Resolved settings for one invocation.

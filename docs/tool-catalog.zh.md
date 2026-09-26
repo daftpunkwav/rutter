@@ -75,7 +75,7 @@ agent 可执行的英文提示：
   解析映射为 `ActionError::ReferenceExpired`。
 
 每个动作携带[origin](glossary.zh.md)：agent 发起的动作经过
-[策略门](policy.zh.md#3判定-url)；human 发起的动作绕过审批，
+[策略门](policy.zh.md#3-判定-url)；human 发起的动作绕过审批，
 记录在同一条时间线上。
 
 ## 4. 工具
@@ -178,7 +178,8 @@ WebSocket 消费 replay。
 三类 e2e 任务对真实引擎通过（`#[ignore]` 门控的集成测试，经
 stdio 驱动构建的二进制；见[测试](testing.zh.md)）：
 
-1. **读取**：`navigate` → `snapshot` 显示页面标题与可操作引用。
+1. **读取**：`navigate` → `snapshot` 显示页面标题与可操作引用；
+   `read` 返回页面的 markdown。
 2. **交互**：在合成页面上 `click` 一个会变异 DOM 的按钮 → 返回的
    快照反映变化。
 3. **表单**：`type` 输入框（及 `select_option`）→ 快照 value 字段

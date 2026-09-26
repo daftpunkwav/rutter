@@ -20,8 +20,8 @@ use rutter_engine_cdp::CdpLauncher;
 
 use crate::config::Settings;
 
-/// Headless diagnostic (`open`) resolves eagerly: the engine is needed
-/// immediately.
+/// Headless diagnostics (`open`, `read`) resolve eagerly: the engine
+/// is needed immediately.
 pub async fn headless_launcher(settings: &Settings) -> Result<CdpLauncher, EngineError> {
     let executable = resolve_executable(settings, Product::ChromeHeadlessShell).await?;
     Ok(

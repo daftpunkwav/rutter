@@ -132,8 +132,8 @@ Facts about the shipped backend that are visible above the trait:
   rutter spawns the browser
   process and resolves the debugging endpoint by polling the port
   itself — launcher-style executables (Edge) and full Chrome both
-  start, which a spawner that parses the browser's stderr or runs
-  children in a job object cannot guarantee on Windows.
+  start, which a spawner that parses the browser's stderr cannot
+  guarantee on Windows.
 - **Per-context isolation is best-effort**: an engine that refuses
   context and target creation (the Electron-based Rutter Browser, whose
   one visible window is the surface) gets the default context and the

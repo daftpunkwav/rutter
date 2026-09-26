@@ -1,7 +1,7 @@
 //! Binary entry: argument parsing, config, and process lifecycle.
 //!
 //! Responsibilities:
-//! - Parse the invocation into one of the three entry modes.
+//! - Parse the invocation into one of the entry modes.
 //! - Own process exit codes and top-level error reporting.
 //!
 //! Boundary: the CLI owns no engine or orchestration logic of its own;

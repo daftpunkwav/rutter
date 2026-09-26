@@ -4,7 +4,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `mod.rs` | `RutterMcp`：Session（会话）生命周期（OnceCell + 关闭后 fail-fast）、18 个工具、结果/协议错误映射 |
+| `mod.rs` | `RutterMcp`：Session（会话）生命周期（OnceCell + 关闭后 fail-fast）、19 个工具、结果/协议错误映射 |
 | `params.rs` | 纯输入类型：参数结构体、`Direction`、`SameSiteInput`、`CookieInput` → `Cookie` |
 | `tests.rs` | stub 引擎上的生命周期测试、截断标记映射（私有路径） |
 

@@ -16,5 +16,6 @@ session 通过引擎的 `evaluate` 注入。
 
 ## 契约
 
-渲染文本由 `docs/snapshot-format.md` 规定（行格式、ref 铸造、预算）。
-规范即契约；本 crate 实现它。
+渲染文本由 `docs/snapshot-format.md` 规定（行格式、ref 铸造、预算）；
+markdown readout 由 `docs/read-format.md` 规定（提取规则、guards）。
+规范即契约；本 crate 实现它们。

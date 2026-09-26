@@ -17,5 +17,6 @@ the scripts through an engine and hand the JSON back here.
 ## Contract
 
 The rendered text is specified by `docs/snapshot-format.md` (line
-format, ref minting, budgets). The spec is
-the contract; this crate implements it.
+format, ref minting, budgets); the markdown readout by
+`docs/read-format.md` (extraction rules, guards). The specs are the
+contract; this crate implements them.

@@ -1,9 +1,9 @@
-//! M1 acceptance: three e2e task classes against the real engine
+//! Acceptance: e2e task flows against the real engine
 //! (docs/tool-catalog.md §6). Each test drives the built `rutter serve`
 //! binary over stdio with an rmcp client, so the whole protocol stack
 //! runs: client -> stdio -> MCP -> session -> CDP -> engine.
 //!
-//! `#[ignore]`d by default: the CI integration job (or a developer)
+//! `#[ignore]`d by default: the CI e2e job (or a developer)
 //! runs them once the engine is in the cache.
 
 // Restriction lints are denied workspace-wide; tests may use plain

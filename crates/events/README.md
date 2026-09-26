@@ -13,8 +13,8 @@ carries — the brief only policy can build (docs/policy.md). Publishing
 is fire-and-forget: it never waits on consumers and never fails
 (docs/events.md). Backpressure: the bus may drop
 envelopes from slow subscribers (they resync from the rings), but
-semantic events are never dropped from the rings; screencast frames
-are not events at all — they flow as binary dashboard frames.
+semantic events survive in the rings, up to ring capacity; screencast
+frames are not events at all — they flow as binary dashboard frames.
 
 ## Consumers
 

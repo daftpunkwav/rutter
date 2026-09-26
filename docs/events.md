@@ -22,7 +22,8 @@ Every fact travels as an
 }
 ```
 
-- `seq` is a process-global monotonic counter — consumers sort and
+- `seq` is a monotonic counter scoped to the event backbone (one
+  backbone serves the whole server process) — consumers sort and
   deduplicate by it. Numbering, recording in the ring, and bus fan-out
   happen under one lock, so ring order and live order both equal
   allocation order and a watermark filter cannot drop an unseen event.
@@ -69,11 +70,11 @@ channels with different loss rules:
 - **Live bus.** A tokio broadcast channel (capacity 1024). Publishing
   succeeds even with no subscribers; a subscriber that falls further
   behind reads a `Lagged` error and must resync via replay.
-- **Per-session rings.** A bounded ring per session (capacity 1000)
-  keeps every semantic event for late joiners; `replay(session)`
-  returns history oldest-first. Rings are dropped when their session
-  closes, so a server that churns through session ids does not grow
-  the map without bound.
+- **Per-session rings.** A bounded ring per session (capacity 1000;
+  the oldest entry is evicted past capacity) keeps semantic events for
+  late joiners; `replay(session)` returns history oldest-first. Rings
+  are dropped when their session closes, so a server that churns
+  through session ids does not grow the map without bound.
 
 The loss contract: **semantic events survive** (through the rings);
 live subscribers that cannot keep up lose envelopes until they replay.

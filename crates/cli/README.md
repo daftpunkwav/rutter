@@ -4,9 +4,9 @@ English | [中文](README.zh.md)
 
 The `rutter` binary and the composition root: it depends on every
 workspace crate except `events`, which arrives through `session` and
-`dashboard`. Three entry modes — browse (headed
-window, no MCP), serve (MCP over stdio or `--http`, optional
-`--dashboard` and `--policy`), and open (one-shot snapshot) — all
+`dashboard`. Four entry modes — browse (headed window, no MCP), serve
+(MCP over stdio or `--http`, optional `--dashboard` and `--policy`),
+open (one-shot snapshot), and read (one-shot markdown readout) — all
 resolve flags and the environment into a `Settings` and wire the
 launcher, manager, broker, and servers.
 

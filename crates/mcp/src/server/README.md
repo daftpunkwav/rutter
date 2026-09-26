@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 | File | Role |
 |---|---|
-| `mod.rs` | `RutterMcp`: session lifecycle (OnceCell + fail-fast after close), the 18 tools, result/protocol error mapping |
+| `mod.rs` | `RutterMcp`: session lifecycle (OnceCell + fail-fast after close), the 19 tools, result/protocol error mapping |
 | `params.rs` | Pure input types: parameter structs, `Direction`, `SameSiteInput`, `CookieInput` → `Cookie` |
 | `tests.rs` | Lifecycle tests over a stub engine, truncation-marker mapping (private paths) |
 

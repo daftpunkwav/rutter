@@ -126,7 +126,7 @@ rutter/
 | `rutter-mcp` | MCP 工具面（rmcp） |
 | `rutter-policy` | 规则集、判决、审批 broker |
 | `rutter-dashboard` | 本地监督面板（事件、审批） |
-| `rutter`（cli） | 二进制入口模式：browse、serve、open |
+| `rutter`（cli） | 二进制入口模式：browse、serve、open、read |
 
 ## 开发
 
@@ -160,6 +160,7 @@ cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored
 cargo test -p rutter-integration-tests --test open_e2e -- --ignored
+cargo test -p rutter-integration-tests --test read_e2e -- --ignored
 ```
 
 `scripts/smoke_open.sh` 用 `rutter open` 驱动 10 个真实站点并打印通

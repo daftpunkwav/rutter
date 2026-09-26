@@ -104,6 +104,7 @@ chrome-headless-shell (child process)   Human browser (dashboard viewer)
 | `rutter` | Browse mode: headed engine window for direct human operation |
 | `rutter serve` | MCP server; engine headless by default, `--headed` overrides; `--dashboard PORT` and `--policy FILE` attach the dashboard and rule set |
 | `rutter open` | One-shot diagnostic: navigate, print a snapshot, exit |
+| `rutter read <url>` | One-shot scrape: navigate, print the page as markdown, exit |
 
 No-argument launch maps to browse mode, so launching the binary yields
 a usable, human-operated session without any MCP client. Engine mode
