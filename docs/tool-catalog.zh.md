@@ -134,7 +134,11 @@ agent 可执行的英文提示：
 
 ### tabs_list
 `{}` → 文本块，每页一行：`<page-id> <url>`；活动页面后缀
-` (active)`。
+` (active)`。列出前先与引擎对账：非 rutter 打开的窗口——
+`target=_blank`/`window.open` 弹窗、人类开的窗口——会以稳定的
+`target:…` id 呈现并变为可选。这类 id 的 select/close 与普通页面
+一致；属于会话自身 context 的窗口会被真正关闭，引擎自有表面
+（app 窗口）只解除跟踪。
 
 ### tabs_select
 `{ page_id: string }` → snapshot。未知 id → `invalid_params`。

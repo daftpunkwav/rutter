@@ -344,9 +344,49 @@ impl Session {
         .await
     }
 
-    /// Lists the session's pages with their last known URLs.
+    /// Lists the session's pages with their last known URLs. Before
+    /// listing, the registry is reconciled with the engine: windows
+    /// that appeared without rutter opening them (`window.open`,
+    /// `target=_blank`, a human's window) are adopted so they show up
+    /// here and become selectable, exactly the surfaces `tabs_select`
+    /// and `tabs_close` name (docs/tool-catalog.md).
     pub async fn pages(&self) -> Vec<PageInfo> {
+        self.sync_foreign_pages().await;
         self.pages.list()
+    }
+
+    /// Adopts every engine-reported page surface the registry does not
+    /// track yet. Failures degrade to the tracked-only listing: an
+    /// engine that cannot enumerate reports nothing, a surface that
+    /// vanished between listing and adopting is skipped, and recovery
+    /// owning the list blocks the whole pass.
+    async fn sync_foreign_pages(&self) {
+        if !self.pages.accepts_new_page() {
+            return;
+        }
+        let context = self.context.read().await.clone();
+        let Ok(foreign) = context.foreign_pages().await else {
+            return;
+        };
+        for surface in foreign {
+            if self.pages.contains(&surface.id) {
+                continue;
+            }
+            let Ok((id, handle)) = context.adopt_page(&surface.id).await else {
+                continue;
+            };
+            if self.pages.admit(PageSlot {
+                id: id.clone(),
+                url: surface.url,
+                handle,
+                active: false,
+            }) {
+                // A page exists that this session did not open: the
+                // timeline says so, like any other open.
+                self.backbone
+                    .publish(self.id.clone(), Event::PageOpened { page: id });
+            }
+        }
     }
 
     /// Makes another page active and returns its snapshot. No event is

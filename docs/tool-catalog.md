@@ -148,7 +148,13 @@ error reports the effective budget.
 
 ### tabs_list
 `{}` → text block, one line per page: `<page-id> <url>`; the active
-page is suffixed ` (active)`.
+page is suffixed ` (active)`. Listing first reconciles with the
+engine: windows that appeared without rutter opening them — a
+`target=_blank`/`window.open` popup, a window the human opened — are
+reported under stable `target:…` ids and become selectable. Such ids
+select and close like any other; closing one that the session's own
+context owns closes the window, while an engine-owned surface (the app
+window) is only untracked.
 
 ### tabs_select
 `{ page_id: string }` → snapshot. Unknown id → `invalid_params`.

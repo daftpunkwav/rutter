@@ -121,6 +121,21 @@ impl PageRegistry {
         true
     }
 
+    /// Registers a page that appeared in the engine without rutter
+    /// opening it (a `window.open` tab, a human's window). Never
+    /// touches the active flag: adopting a surface must not steal the
+    /// session's focus. Refused while recovery owns the list, and for
+    /// an id the registry already tracks — both callers that raced the
+    /// same discovery.
+    pub fn admit(&self, slot: PageSlot) -> bool {
+        let mut state = self.lock();
+        if state.recovering || state.slots.iter().any(|existing| existing.id == slot.id) {
+            return false;
+        }
+        state.slots.push(slot);
+        true
+    }
+
     /// The tracked URL of one page.
     pub fn url_of(&self, id: &PageId) -> Option<String> {
         self.lock()
@@ -325,6 +340,26 @@ mod tests {
             "two racing opens end with one admitted page"
         );
         assert_eq!(registry.list().len(), 1);
+    }
+
+    #[test]
+    fn admit_registers_a_foreign_page_without_touching_the_active_flag() {
+        let registry = PageRegistry::new();
+        registry.admit_active(slot("p1", "https://a.example", true));
+        assert!(registry.admit(slot("p2", "https://b.example", false)));
+        let listed = registry.list();
+        assert_eq!(listed.len(), 2);
+        assert!(listed[0].active, "the previously active page keeps focus");
+        assert!(!listed[1].active, "an adopted page never steals focus");
+        assert!(
+            !registry.admit(slot("p2", "https://b.example", false)),
+            "a duplicated discovery is refused"
+        );
+        registry.begin_recovery();
+        assert!(
+            !registry.admit(slot("p3", "https://c.example", false)),
+            "recovery owns the list"
+        );
     }
 
     #[test]

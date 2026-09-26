@@ -19,6 +19,11 @@ what happens when the engine dies under it.
   lock. Exactly one page is active, and the registry — not a caller —
   upholds it. `tabs_select` switches; `tabs_close` promotes the first
   remaining page.
+- **Pages rutter did not open join through discovery.** A `window.open`
+  tab or a human's window exists in the engine with no slot;
+  `tabs_list` adopts what the engine reports (never another session's
+  context) before listing, so those windows are visible and selectable
+  like any other.
 - **Two lookups, deliberately different.** `ensure_page` opens the
   session's first page when there is none, which is what an action needs.
   A read-only lookup answers `None` instead, and that is what the

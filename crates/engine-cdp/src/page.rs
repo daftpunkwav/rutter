@@ -107,9 +107,26 @@ impl CdpPage {
         navigation_timeout: Duration,
         screenshot_min_interval: Option<Duration>,
     ) -> Self {
+        Self::adopted(page, navigation_timeout, screenshot_min_interval, false)
+    }
+
+    /// Wraps a target this context did not create. `closable` marks the
+    /// rare case where the target still sits inside the adopting
+    /// context — a `window.open` tab of the session's own isolation —
+    /// so closing it is legitimate; every engine-owned surface (the app
+    /// window, shells without context support) stays unclosable.
+    pub fn adopted(
+        page: Page,
+        navigation_timeout: Duration,
+        screenshot_min_interval: Option<Duration>,
+        closable: bool,
+    ) -> Self {
         Self {
-            closable: false,
-            ..Self::new(page, navigation_timeout, screenshot_min_interval)
+            page,
+            navigation_timeout,
+            screenshot_min_interval,
+            last_capture: Mutex::new(None),
+            closable,
         }
     }
 

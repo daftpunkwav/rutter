@@ -24,7 +24,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use rutter_core::cookie::{Cookie, SameSite};
 use rutter_core::ids::{ContextId, PageId};
 use rutter_engine::config::ContextConfig;
-use rutter_engine::context::ContextHandle;
+use rutter_engine::context::{ContextHandle, ForeignPage};
 use rutter_engine::error::EngineError;
 use rutter_engine::page::PageHandle;
 
@@ -260,6 +260,95 @@ impl ContextHandle for CdpContext {
         Ok(())
     }
 
+    async fn foreign_pages(&self) -> Result<Vec<ForeignPage>, EngineError> {
+        let response = crate::error::with_deadline(
+            "foreign_pages",
+            crate::error::COMMAND_TIMEOUT,
+            self.browser
+                .lock()
+                .await
+                .execute(GetTargetsParams::default()),
+        )
+        .await?;
+        let tracked: Vec<String> = {
+            let pages = self.lock_pages();
+            pages
+                .values()
+                .map(|page| page.target_id().as_ref().to_owned())
+                .collect()
+        };
+        Ok(response
+            .result
+            .target_infos
+            .iter()
+            .filter(|info| is_foreign_candidate(&self.cdp_context_id, info))
+            .filter(|info| !tracked.iter().any(|id| *id == info.target_id.as_ref()))
+            .map(|info| ForeignPage {
+                id: foreign_page_id(info.target_id.as_ref()),
+                url: info.url.clone(),
+            })
+            .collect())
+    }
+
+    async fn adopt_page(&self, id: &PageId) -> Result<(PageId, Arc<dyn PageHandle>), EngineError> {
+        // Idempotent: the surface may already be tracked — opened here,
+        // or adopted by a concurrent call — and re-adopting must hand
+        // back the same handle, not attach twice.
+        if let Some(handle) = self.lock_pages().get(id).cloned() {
+            return Ok((id.clone(), handle as Arc<dyn PageHandle>));
+        }
+        // Re-list the targets and re-derive the candidate from the id:
+        // adoption only accepts surfaces the engine still reports, so a
+        // window closed between listing and adopting fails here instead
+        // of attaching to a guess.
+        let response = crate::error::with_deadline(
+            "adopt_page_list",
+            crate::error::COMMAND_TIMEOUT,
+            self.browser
+                .lock()
+                .await
+                .execute(GetTargetsParams::default()),
+        )
+        .await?;
+        let info = response
+            .result
+            .target_infos
+            .iter()
+            .find(|info| {
+                is_foreign_candidate(&self.cdp_context_id, info)
+                    && foreign_page_id(info.target_id.as_ref()) == *id
+            })
+            .ok_or_else(|| EngineError::Internal {
+                detail: format!("the engine reports no adoptable page '{id}'"),
+            })?
+            .clone();
+
+        let page = {
+            let browser = self.browser.lock().await;
+            crate::error::with_deadline(
+                "adopt_page_attach",
+                crate::error::COMMAND_TIMEOUT,
+                browser.get_page(info.target_id.clone()),
+            )
+            .await?
+        };
+        let handle = Arc::new(CdpPage::adopted(
+            page,
+            self.config.navigation_timeout,
+            Some(self.config.screenshot_min_interval),
+            adopt_closable(&self.cdp_context_id, &info),
+        ));
+        let previous = self.lock_pages().insert(id.clone(), Arc::clone(&handle));
+        if let Some(existing) = previous {
+            // A concurrent adoption won the race between the check and
+            // the insert: hand back the winner's handle and let the
+            // duplicate attachment die with this one — the target
+            // itself is untouched.
+            return Ok((id.clone(), existing as Arc<dyn PageHandle>));
+        }
+        Ok((id.clone(), handle))
+    }
+
     async fn set_cookies(&self, cookies: &[Cookie]) -> Result<(), EngineError> {
         if cookies.is_empty() {
             return Ok(());
@@ -344,6 +433,48 @@ pub(crate) fn is_not_supported(error: &EngineError) -> bool {
 /// web content cannot initiate `file://` navigations.
 fn is_toolbar_document(url: &str) -> bool {
     url.starts_with("file://") && url.ends_with("/toolbar.html")
+}
+
+/// The agent-facing id of a foreign page surface, derived from the CDP
+/// target id so one window keeps one id across listings. Pure so the
+/// shape is unit-testable.
+fn foreign_page_id(target_id: &str) -> PageId {
+    PageId::new(format!("target:{target_id}"))
+}
+
+/// Whether a listed target is a foreign page surface this context may
+/// report: a real page document, not the shell's toolbar, and living
+/// either in the default context or in this very context. Targets of
+/// other browser contexts belong to another session's isolation and
+/// are never reported. Pure so the rules are unit-testable without a
+/// browser connection.
+fn is_foreign_candidate(cdp_context_id: &Option<BrowserContextId>, info: &TargetInfo) -> bool {
+    if info.r#type != "page" || is_toolbar_document(&info.url) {
+        return false;
+    }
+    match (&info.browser_context_id, cdp_context_id) {
+        // The default context: the engine's own windows and everything
+        // a page or human opened outside any isolation.
+        (None, _) => true,
+        // This context's own isolation: a window.open tab rutter did
+        // not register (yet).
+        (Some(theirs), Some(ours)) => theirs == ours,
+        // Another context's isolation: another session's workspace.
+        (Some(_), None) => false,
+    }
+}
+
+/// Whether rutter may close an adopted target: only when it sits inside
+/// the adopting context's own isolation, where closing takes a
+/// `window.open` tab the session owns. Every engine-owned surface —
+/// the app window, shells without context support — stays unclosable,
+/// exactly like the attach fallback in `open_page`. Pure so the rules
+/// are unit-testable without a browser connection.
+fn adopt_closable(cdp_context_id: &Option<BrowserContextId>, info: &TargetInfo) -> bool {
+    match (cdp_context_id, &info.browser_context_id) {
+        (Some(ours), Some(theirs)) => ours == theirs,
+        _ => false,
+    }
 }
 
 /// Picks the target a page handle may drive: the first `page`-typed
@@ -460,6 +591,89 @@ mod tests {
             .can_access_opener(false)
             .build()
             .unwrap()
+    }
+
+    #[test]
+    fn foreign_ids_are_derived_from_the_target_id() {
+        assert_eq!(
+            foreign_page_id("ABC123"),
+            PageId::new("target:ABC123"),
+            "one window keeps one id across listings"
+        );
+    }
+
+    #[test]
+    fn foreign_candidates_are_pages_outside_or_inside_this_context() {
+        let ours = Some(BrowserContextId::new("ctx-ours"));
+        let other = Some(BrowserContextId::new("ctx-other"));
+
+        // The default context: the engine's own windows and everything
+        // a page or human opened without isolation.
+        assert!(is_foreign_candidate(
+            &ours,
+            &target("t", "page", "https://a.example")
+        ));
+        // This context's own isolation: an unregistered window.open tab.
+        let mut own = target("t", "page", "https://a.example");
+        own.browser_context_id = ours.clone();
+        assert!(is_foreign_candidate(&ours, &own));
+        // Another context's isolation: another session's workspace —
+        // never reported, with or without an adopting context here.
+        let mut theirs = target("t", "page", "https://a.example");
+        theirs.browser_context_id = other;
+        assert!(!is_foreign_candidate(&ours, &theirs));
+        assert!(!is_foreign_candidate(&None, &theirs));
+        // Context-less engines (everything in the default context)
+        // report default-context pages.
+        assert!(is_foreign_candidate(
+            &None,
+            &target("t", "page", "https://a.example")
+        ));
+    }
+
+    #[test]
+    fn foreign_candidates_exclude_shell_ui_and_non_pages() {
+        let ours = Some(BrowserContextId::new("ctx-ours"));
+        assert!(!is_foreign_candidate(
+            &ours,
+            &target("t", "page", "file:///C:/apps/rutter/toolbar.html")
+        ));
+        assert!(!is_foreign_candidate(
+            &ours,
+            &target("t", "iframe", "https://a.example")
+        ));
+        assert!(!is_foreign_candidate(
+            &ours,
+            &target("t", "service_worker", "https://a.example/sw.js")
+        ));
+    }
+
+    #[test]
+    fn adopted_targets_are_closable_only_inside_the_adopting_context() {
+        let ours = Some(BrowserContextId::new("ctx-ours"));
+        let other = Some(BrowserContextId::new("ctx-other"));
+
+        let mut own = target("t", "page", "https://a.example");
+        own.browser_context_id = ours.clone();
+        assert!(
+            adopt_closable(&ours, &own),
+            "a window.open tab of the session's own context is closable"
+        );
+
+        let mut theirs = target("t", "page", "https://a.example");
+        theirs.browser_context_id = other;
+        assert!(
+            !adopt_closable(&ours, &theirs),
+            "another session's tab is never closable"
+        );
+        assert!(
+            !adopt_closable(&ours, &target("t", "page", "https://a.example")),
+            "an engine-owned default-context window is never closable"
+        );
+        assert!(
+            !adopt_closable(&None, &target("t", "page", "https://a.example")),
+            "context-less engines own their surfaces"
+        );
     }
 
     #[test]

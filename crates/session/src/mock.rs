@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 
 use rutter_core::cookie::Cookie;
 use rutter_core::ids::{ContextId, PageId};
-use rutter_engine::context::ContextHandle;
+use rutter_engine::context::{ContextHandle, ForeignPage};
 use rutter_engine::error::EngineError;
 use rutter_engine::input::InputEvent;
 use rutter_engine::page::{ImageFormat, PageHandle, ScreencastStream, Screenshot};
@@ -198,6 +198,16 @@ struct ContextInner {
     counter: AtomicU64,
     closed: AtomicBool,
     set_cookie_calls: Mutex<Vec<Vec<Cookie>>>,
+    /// Page surfaces reported by [`ContextHandle::foreign_pages`] and
+    /// moved into `pages` by [`ContextHandle::adopt_page`], the way the
+    /// real context tracks engine-owned windows. The URL travels with
+    /// the entry because `MockPage` has no public URL getter.
+    foreign: Mutex<Vec<(PageId, String, Arc<MockPage>)>>,
+    /// Names the next planted foreign surface uniquely.
+    foreign_counter: AtomicU64,
+    /// When set, `foreign_pages` answers the way a wedged engine does —
+    /// an error — so tests can cover the degraded listing.
+    fail_foreign: AtomicBool,
 }
 
 /// A context handle whose pages are [`MockPage`]s; clones share state,
@@ -216,6 +226,9 @@ impl MockContext {
                 counter: AtomicU64::new(0),
                 closed: AtomicBool::new(false),
                 set_cookie_calls: Mutex::new(Vec::new()),
+                foreign: Mutex::new(Vec::new()),
+                foreign_counter: AtomicU64::new(0),
+                fail_foreign: AtomicBool::new(false),
             }),
         }
     }
@@ -233,6 +246,25 @@ impl MockContext {
                 .find(|(page_id, _)| *page_id == id)
                 .map(|(_, handle)| Arc::clone(handle))
         })
+    }
+
+    /// Plants a page surface the context did not open, the way a
+    /// `window.open` tab or a human's window appears in the engine.
+    /// Returns the stable foreign id `tabs_list` reports.
+    pub fn add_foreign_page(&self, url: &str) -> PageId {
+        let page = Arc::new(MockPage::new());
+        page.set_url(url);
+        let serial = self.inner.foreign_counter.fetch_add(1, Ordering::SeqCst);
+        let id = PageId::new(format!("target:foreign-{serial}"));
+        lock(&self.inner.foreign, |foreign| {
+            foreign.push((id.clone(), url.to_owned(), page))
+        });
+        id
+    }
+
+    /// Makes `foreign_pages` fail, the way a wedged engine does.
+    pub fn fail_foreign_pages(&self, fail: bool) {
+        self.inner.fail_foreign.store(fail, Ordering::SeqCst);
     }
 }
 
@@ -298,6 +330,41 @@ impl ContextHandle for MockContext {
         self.inner.closed.store(true, Ordering::SeqCst);
         lock(&self.inner.pages, |pages| pages.clear());
         Ok(())
+    }
+
+    async fn foreign_pages(&self) -> Result<Vec<ForeignPage>, EngineError> {
+        if self.inner.fail_foreign.load(Ordering::SeqCst) {
+            return Err(EngineError::Terminated);
+        }
+        Ok(lock(&self.inner.foreign, |foreign| {
+            foreign
+                .iter()
+                .map(|(id, url, _)| ForeignPage {
+                    id: id.clone(),
+                    url: url.clone(),
+                })
+                .collect()
+        }))
+    }
+
+    async fn adopt_page(&self, id: &PageId) -> Result<(PageId, Arc<dyn PageHandle>), EngineError> {
+        let adopted = lock(&self.inner.foreign, |foreign| {
+            foreign
+                .iter()
+                .position(|(foreign_id, _, _)| foreign_id == id)
+                .map(|position| foreign.remove(position))
+        });
+        match adopted {
+            Some((id, _url, page)) => {
+                lock(&self.inner.pages, |pages| {
+                    pages.push((id.clone(), Arc::clone(&page)))
+                });
+                Ok((id, page as Arc<dyn PageHandle>))
+            }
+            None => Err(EngineError::Internal {
+                detail: format!("the engine reports no adoptable page '{id}'"),
+            }),
+        }
     }
 }
 

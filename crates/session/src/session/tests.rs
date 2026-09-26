@@ -947,3 +947,146 @@ async fn an_action_during_recovery_leaves_no_untracked_page() {
         "the tracked page survived the refusal"
     );
 }
+
+#[tokio::test]
+async fn tabs_list_adopts_a_window_rutter_did_not_open() {
+    // A window.open tab (or a human's window) exists in the engine with
+    // nothing tracking it. Listing must discover it once, keep the
+    // session's focus where it was, and say so on the timeline.
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+    let (tracked_id, _) = session.active_page_for_test().await;
+
+    let foreign_id = context.add_foreign_page("https://popup.example");
+    let listed = session.pages().await;
+    assert_eq!(
+        listed.len(),
+        2,
+        "the popup shows up next to the tracked page"
+    );
+    assert_eq!(listed[0].id, tracked_id);
+    assert!(listed[0].active, "adoption never steals the active flag");
+    assert_eq!(listed[1].id, foreign_id);
+    assert!(!listed[1].active);
+    assert_eq!(listed[1].url, "https://popup.example");
+
+    // Relisting is idempotent: one discovery, one event.
+    assert_eq!(session.pages().await.len(), 2);
+    let popup_opens = session
+        .backbone()
+        .replay(&SessionId::new("s-test"))
+        .iter()
+        .filter(|envelope| {
+            matches!(
+                &envelope.event,
+                Event::PageOpened { page } if *page == foreign_id
+            )
+        })
+        .count();
+    assert_eq!(
+        popup_opens, 1,
+        "the popup opened exactly once on the timeline"
+    );
+}
+
+#[tokio::test]
+async fn a_selected_foreign_page_drives_the_window_it_names() {
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+    let _ = session.active_page_for_test().await;
+    let foreign_id = context.add_foreign_page("https://popup.example");
+    session.pages().await;
+
+    let snapshot = session
+        .select_page(foreign_id.clone())
+        .await
+        .expect("the adopted page is selectable");
+    assert_eq!(
+        snapshot.url, "https://popup.example",
+        "selection answers the adopted page's snapshot, not the old page's"
+    );
+    let listed = session.pages().await;
+    assert!(
+        listed
+            .iter()
+            .find(|page| page.id == foreign_id)
+            .is_some_and(|page| page.active),
+        "selection moves the active flag to the adopted page"
+    );
+}
+
+#[tokio::test]
+async fn an_enumeration_failure_degrades_to_the_tracked_listing() {
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+    session.active_page_for_test().await;
+    context.add_foreign_page("https://popup.example");
+    context.fail_foreign_pages(true);
+
+    let listed = session.pages().await;
+    assert_eq!(
+        listed.len(),
+        1,
+        "a wedged enumeration must not hide the tracked pages"
+    );
+    assert!(
+        listed
+            .iter()
+            .all(|page| !page.id.as_str().starts_with("target:")),
+        "no foreign page is invented when the engine would not say"
+    );
+}
+
+#[tokio::test]
+async fn adoption_waits_for_recovery_to_release_the_list() {
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+    let (tracked_id, _) = session.active_page_for_test().await;
+    context.add_foreign_page("https://popup.example");
+
+    session.registry().begin_recovery();
+    assert_eq!(
+        session.pages().await.len(),
+        1,
+        "recovery owns the list; discovery waits"
+    );
+
+    // The write-back rebuilds one tracked page; the gate lifts, and
+    // discovery resumes with the next listing — a surface the engine
+    // still reports is adopted again, one that died with the old
+    // engine (the real restart case) is simply never reported.
+    session.registry().finish_recovery(vec![PageSlot {
+        id: tracked_id.clone(),
+        url: "https://example.com".to_owned(),
+        handle: Arc::new(MockPage::new()),
+        active: true,
+    }]);
+    let listed = session.pages().await;
+    assert_eq!(listed.len(), 2, "discovery resumes after the gate lifts");
+    assert_eq!(listed[0].id, tracked_id, "the rebuilt page keeps focus");
+    assert!(listed[0].active, "the rebuilt page is the active one");
+}
+
+#[tokio::test]
+async fn closing_an_adopted_page_untracks_it_like_any_other() {
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+    session.active_page_for_test().await;
+    let foreign_id = context.add_foreign_page("https://popup.example");
+    session.pages().await;
+
+    let confirmation = session
+        .close_page(foreign_id.clone())
+        .await
+        .expect("the adopted page closes through the normal path");
+    assert!(confirmation.contains(&foreign_id.to_string()));
+    assert_eq!(session.pages().await.len(), 1);
+    assert!(
+        session
+            .backbone()
+            .replay(&SessionId::new("s-test"))
+            .iter()
+            .any(|envelope| matches!(envelope.event, Event::PageClosed { .. })),
+        "the close is announced like any other"
+    );
+}
