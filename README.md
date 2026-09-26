@@ -156,7 +156,7 @@ default; run them explicitly (they reuse the cache `rutter open`
 fills):
 
 ```sh
-cargo test -p rutter-engine-cdp --test integration -- --ignored
+cargo test -p rutter-engine-cdp --tests -- --ignored
 cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored

@@ -145,7 +145,7 @@ bash scripts/check_encoding.sh  # 跟踪的文本文件：UTF-8、LF、无 BOM
 `rutter open` 填充的缓存）：
 
 ```sh
-cargo test -p rutter-engine-cdp --test integration -- --ignored
+cargo test -p rutter-engine-cdp --tests -- --ignored
 cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored

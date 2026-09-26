@@ -40,7 +40,7 @@ cargo test --all            # unit + golden + property 套件
 （它们复用 `rutter open` 填充的缓存）：
 
 ```sh
-cargo test -p rutter-engine-cdp --test integration -- --ignored
+cargo test -p rutter-engine-cdp --tests -- --ignored
 cargo test -p rutter-integration-tests --test mcp_e2e -- --ignored
 cargo test -p rutter-integration-tests --test approval_e2e -- --ignored
 cargo test -p rutter-integration-tests --test http_e2e -- --ignored
