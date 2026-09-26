@@ -316,6 +316,27 @@ impl RutterMcp {
         }
     }
 
+    #[tool(description = "Read the cookies of this session's browser context")]
+    async fn get_cookies(&self) -> Result<CallToolResult, McpError> {
+        let session = self.session().await?;
+        match session.cookies().await {
+            Ok(cookies) => {
+                let text = if cookies.is_empty() {
+                    "no cookies\n".to_owned()
+                } else {
+                    cookies
+                        .iter()
+                        .map(cookie_line)
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                        + "\n"
+                };
+                Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
+            }
+            Err(error) => Ok(error_result(&error)),
+        }
+    }
+
     #[tool(description = "Set cookies on this session's browser context")]
     async fn set_cookies(
         &self,
@@ -390,6 +411,32 @@ impl ServerHandler for RutterMcp {
         info.server_info = implementation;
         info
     }
+}
+
+/// One cookie as a text line: `domain  name=value` plus its flags.
+fn cookie_line(cookie: &Cookie) -> String {
+    let mut line = format!("{}\t{}={}", cookie.domain, cookie.name, cookie.value);
+    if let Some(path) = &cookie.path {
+        line.push_str(&format!("; path={path}"));
+    }
+    if cookie.secure {
+        line.push_str("; secure");
+    }
+    if cookie.http_only {
+        line.push_str("; httpOnly");
+    }
+    if let Some(same_site) = cookie.same_site {
+        let label = match same_site {
+            rutter_core::cookie::SameSite::Strict => "strict",
+            rutter_core::cookie::SameSite::Lax => "lax",
+            rutter_core::cookie::SameSite::None => "none",
+        };
+        line.push_str(&format!("; sameSite={label}"));
+    }
+    if let Some(expires) = cookie.expires {
+        line.push_str(&format!("; expires={expires}"));
+    }
+    line
 }
 
 /// Snapshot text plus the truncation marker of docs/tool-catalog.md §2.

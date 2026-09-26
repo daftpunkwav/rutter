@@ -452,6 +452,15 @@ impl Session {
         Ok(format!("closed {page_id}"))
     }
 
+    /// Reads every cookie scoped to the session's context
+    /// (docs/tool-catalog.md §4: `get_cookies`). Read-only observation:
+    /// nothing is judged by the policy and no page is opened, matching
+    /// the storage-state capture that already reads these cookies.
+    pub async fn cookies(&self) -> Result<Vec<Cookie>, SessionError> {
+        let context = self.context.read().await.clone();
+        context.cookies().await.map_err(engine_error)
+    }
+
     /// Sets cookies on the session's context, subject to the policy's
     /// `cookies` class rules (approval-required by default). The approval
     /// a human sees describes a cookie write: there is no `Action` variant

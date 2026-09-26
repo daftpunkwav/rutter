@@ -1181,3 +1181,14 @@ async fn console_messages_reports_the_active_pages_entries() {
     session.close_page(page_id).await.expect("page closes");
     assert!(session.console_messages().is_empty());
 }
+
+#[tokio::test]
+async fn get_cookies_reads_the_context_without_opening_a_page() {
+    let session = session_over(Arc::new(MockContext::new()));
+    let cookies = session.cookies().await.expect("the context answers");
+    assert!(cookies.is_empty(), "the fresh context has no cookies");
+    assert!(
+        session.registry().list().is_empty(),
+        "a cookie read is observation and never opens a page"
+    );
+}

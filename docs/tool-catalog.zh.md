@@ -80,7 +80,7 @@ agent 可执行的英文提示：
 
 ## 4. 工具
 
-二十个工具。参数类型：`reference` 是快照句柄（`e17`）；
+二十一个工具。参数类型：`reference` 是快照句柄（`e17`）；
 `direction` 是 `up|down|left|right` 之一；时长单位为毫秒。
 
 **对话框。**页面调用 `alert`、`confirm`、`prompt` 或触发
@@ -159,6 +159,14 @@ auto-wait；提取规则与守卫见[读取格式](read-format.zh.md)。站点�
 `{ page_id: string }` → 文本确认。未知 id → `invalid_params`。
 关闭活动页面时提升第一个剩余页面；允许关闭最后一个页面——下一次
 `navigate` 会打开新的。
+
+### get_cookies
+`{}` → text block，session 的 context 作用域内的全部 cookie，每条一行
+`domain<TAB>name=value` 加其标志（`path=`、`secure`、`httpOnly`、
+`sameSite=`、`expires=`）。仅观察：无 auto-wait、无 snapshot；没有
+打开的页面时也能读取 context 的 cookie。写入走下方的
+[`set_cookies`](#set_cookies)；读取不需要审批，写入经过策略的
+`cookies` 类别（[policy](policy.zh.md)）。
 
 ### set_cookies
 `{ cookies: [{ name, value, domain, path?, secure?, http_only?,

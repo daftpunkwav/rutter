@@ -27,6 +27,9 @@ and the project adheres to
 
 ### Added
 
+- Cookie reads: the new `get_cookies` MCP tool returns every cookie
+  scoped to the session's browser context, complementing `set_cookies`;
+  reading is observation and needs no approval.
 - Dialog resilience: a page that opens `alert`, `confirm`, `prompt`,
   or `beforeunload` no longer wedges its session — the session
   dismisses every dialog immediately (prompts resolve to their dismiss

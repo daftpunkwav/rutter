@@ -90,7 +90,7 @@ timeline.
 
 ## 4. Tools
 
-Twenty tools. Parameter types: `reference` is a snapshot handle
+Twenty-one tools. Parameter types: `reference` is a snapshot handle
 (`e17`); `direction` is one of `up|down|left|right`; durations are
 milliseconds.
 
@@ -179,6 +179,15 @@ window) is only untracked.
 `invalid_params`. Closing the active page makes the first remaining
 page active; closing the last page is allowed — the next `navigate`
 opens a new one.
+
+### get_cookies
+`{}` → text block, every cookie scoped to the session's context, one
+line per cookie as `domain<TAB>name=value` plus its flags
+(`path=`, `secure`, `httpOnly`, `sameSite=`, `expires=`). Observation
+only: no auto-wait, no snapshot, and the context's cookies are read
+even when no page is open. Writing is [`set_cookies`](#set_cookies)
+below; reading needs no approval, writing goes through the policy's
+`cookies` class ([policy](policy.md)).
 
 ### set_cookies
 `{ cookies: [{ name, value, domain, path?, secure?, http_only?,
