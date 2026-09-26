@@ -1,7 +1,10 @@
 # Continuous integration: the release gates of docs/testing.md run on
-# every push and pull request. The integration job downloads the real
-# Chrome for Testing engine (cached by version+platform) and runs the
-# ignored engine tests.
+# every push and pull request. The engine jobs share one composite
+# action (engine cache + Linux engine dependencies); the integration
+# and e2e jobs drive the real Chrome for Testing engine, and the
+# coverage job measures the whole workspace — engine suites and e2e
+# included — against the 90 % line threshold of
+# scripts/check_coverage.sh.
 
 name: ci
 
@@ -10,14 +13,22 @@ on:
     branches: [main]
   pull_request:
 
+# An updated pull_request run cancels the superseded one; push runs
+# queue behind the running one instead, and finished jobs keep their
+# results.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   quality:
-    name: fmt, clippy, tests, gates (${{ matrix.os }})
+    name: fmt, clippy, doc, tests, gates (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -28,6 +39,8 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Doc
+        run: cargo doc --locked --no-deps
       - name: Tests
         run: cargo test --locked --all
       - name: Header gate
@@ -42,40 +55,64 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     env:
       RUTTER_CACHE_DIR: ${{ github.workspace }}/.rutter-engine-cache
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Cache the engine binary
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/.rutter-engine-cache
-          key: engine-${{ matrix.os }}-v1
-          restore-keys: engine-${{ matrix.os }}-
-      - name: Linux engine dependencies
-        if: runner.os == 'Linux'
-        run: |
-          # chrome-headless-shell links libraries the hosted image does
-          # not guarantee, and Ubuntu 24.04 blocks the Chromium
-          # namespace sandbox for unprivileged binaries that ship no
-          # AppArmor profile — the ephemeral runner can lift that for
-          # the job's lifetime.
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libasound2t64 libatspi2.0-0t64 libatk1.0-0t64 \
-            libatk-bridge2.0-0t64 libcups2t64 libdrm2 libgbm1 \
-            libglib2.0-0t64 libnspr4 libnss3 libxcomposite1 \
-            libxdamage1 libxfixes3 libxkbcommon0 libxrandr2 \
-            libpango-1.0-0 libcairo2
+      - uses: ./.github/actions/engine-setup
       - name: Integration tests
-        run: cargo test --locked -p rutter-engine-cdp --test integration -- --ignored
+        run: cargo test --locked -p rutter-engine-cdp --tests -- --ignored
+
+  e2e:
+    name: e2e acceptance suites (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      RUTTER_CACHE_DIR: ${{ github.workspace }}/.rutter-engine-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/engine-setup
+      - name: Build the binary the suites drive
+        run: cargo build --locked --bin rutter
+      - name: E2E suites
+        run: cargo test --locked -p rutter-integration-tests --tests -- --ignored
+
+  coverage:
+    name: coverage >= 90 % lines
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUTTER_CACHE_DIR: ${{ github.workspace }}/.rutter-engine-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/engine-setup
+      - name: Measure (engine suites and e2e included)
+        run: |
+          export RUTTER_BIN="$PWD/target/llvm-cov-target/debug/rutter"
+          cargo llvm-cov --locked --workspace --bins --tests --lcov \
+            --output-path target/coverage.lcov \
+            -- --include-ignored --test-threads=1
+      - name: Gate
+        run: bash scripts/check_coverage.sh target/coverage.lcov 90
 
   msrv:
     name: msrv 1.88
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
@@ -86,6 +123,7 @@ jobs:
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2

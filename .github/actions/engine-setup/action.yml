@@ -1,0 +1,28 @@
+name: engine-setup
+description: Restores the engine cache and installs the Linux engine dependencies
+runs:
+  using: composite
+  steps:
+    - name: Cache the engine binary
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/.rutter-engine-cache
+        key: engine-${{ runner.os }}-v1
+        restore-keys: engine-${{ runner.os }}-
+    - name: Linux engine dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        # chrome-headless-shell links libraries the hosted image does
+        # not guarantee, and Ubuntu 24.04 blocks the Chromium
+        # namespace sandbox for unprivileged binaries that ship no
+        # AppArmor profile — the ephemeral runner can lift that for
+        # the job's lifetime.
+        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          libasound2t64 libatspi2.0-0t64 libatk1.0-0t64 \
+          libatk-bridge2.0-0t64 libcups2t64 libdrm2 libgbm1 \
+          libglib2.0-0t64 libnspr4 libnss3 libxcomposite1 \
+          libxdamage1 libxfixes3 libxkbcommon0 libxrandr2 \
+          libpango-1.0-0 libcairo2
