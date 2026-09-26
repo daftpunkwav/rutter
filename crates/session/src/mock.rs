@@ -348,6 +348,17 @@ impl ContextHandle for MockContext {
     }
 
     async fn adopt_page(&self, id: &PageId) -> Result<(PageId, Arc<dyn PageHandle>), EngineError> {
+        // Idempotent like the real context: an id that is already tracked
+        // — adopted by a concurrent call — hands back the registered
+        // handle instead of failing or attaching twice.
+        if let Some(handle) = lock(&self.inner.pages, |pages| {
+            pages
+                .iter()
+                .find(|(page_id, _)| *page_id == *id)
+                .map(|(_, handle)| Arc::clone(handle) as Arc<dyn PageHandle>)
+        }) {
+            return Ok((id.clone(), handle));
+        }
         let adopted = lock(&self.inner.foreign, |foreign| {
             foreign
                 .iter()
@@ -531,5 +542,28 @@ mod tests {
         );
         assert!(context.pages().is_empty());
         let _ = second_handle;
+    }
+
+    #[tokio::test]
+    async fn adopting_a_foreign_page_twice_hands_back_one_handle() {
+        // The real context answers a re-adoption with the registered
+        // handle (the integration suite pins this on the engine); the
+        // mock must keep the same contract or every session test built
+        // on it diverges from production.
+        let context = MockContext::new();
+        let id = context.add_foreign_page("https://popup.example");
+        let (first_id, first) = context.adopt_page(&id).await.expect("first adopt");
+        assert_eq!(first_id, id);
+        let (again_id, again) = context.adopt_page(&id).await.expect("re-adopt");
+        assert_eq!(again_id, id);
+        assert!(
+            Arc::ptr_eq(&first, &again),
+            "re-adoption hands back the registered handle"
+        );
+        assert_eq!(context.pages(), vec![id], "the page is tracked once");
+        assert!(
+            context.foreign_pages().await.expect("list").is_empty(),
+            "an adopted surface is no longer reported as foreign"
+        );
     }
 }

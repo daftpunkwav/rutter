@@ -58,7 +58,9 @@ pub trait ContextHandle: Send + Sync {
     /// context's tracking, returning its handle. Adopting registers an
     /// existing surface; it obeys the page cap's counting but never the
     /// cap itself, because the surface exists whether or not it is
-    /// tracked. Fails for an id the engine no longer reports.
+    /// tracked. Fails for an id the engine no longer reports;
+    /// re-adopting an already-tracked id is idempotent and hands back
+    /// the registered handle.
     async fn adopt_page(&self, id: &PageId) -> Result<(PageId, Arc<dyn PageHandle>), EngineError> {
         let _ = id;
         Err(EngineError::Unsupported {
