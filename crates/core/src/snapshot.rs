@@ -3,7 +3,7 @@
 //! Boundary: pure data plus its text rendering. Building a snapshot from
 //! a serialized DOM tree lives in `rutter-observe`; culling and folding
 //! policy is specified by `docs/snapshot-format.md`. The text
-//! rendering follows the Playwright-compatible YAML style, one node per
+//! rendering follows a YAML style, one node per
 //! line: `- button "Sign in" [ref=e17]`, children indented two spaces.
 
 use std::fmt;
@@ -127,7 +127,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_playwright_style_lines() {
+    fn renders_yaml_style_lines() {
         let mut logo = node("img", Some("Logo"));
         logo.reference = Some(Reference::new("e2"));
         let mut heading = node("heading", Some("Welcome"));
