@@ -12,6 +12,9 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use chromiumoxide::Page;
 use chromiumoxide::cdp::browser_protocol::dom::SetFileInputFilesParams;
+use chromiumoxide::cdp::browser_protocol::emulation::{
+    ScreenOrientation, ScreenOrientationType, SetDeviceMetricsOverrideParams,
+};
 use chromiumoxide::cdp::browser_protocol::input::{
     DispatchKeyEventType, DispatchMouseEventType, InsertTextParams,
 };
@@ -597,6 +600,25 @@ impl rutter_engine::page::PageHandle for CdpPage {
         let mut set = SetFileInputFilesParams::new(files.to_vec());
         set.object_id = Some(object_id);
         with_deadline("set_input_files", COMMAND_TIMEOUT, self.page.execute(set))
+            .await
+            .map(|_| ())
+    }
+
+    async fn set_viewport(&self, width: u32, height: u32) -> Result<(), EngineError> {
+        let metrics = SetDeviceMetricsOverrideParams::builder()
+            .mobile(false)
+            .width(width)
+            .height(height)
+            .device_scale_factor(1.0)
+            .screen_orientation(ScreenOrientation::new(
+                ScreenOrientationType::PortraitPrimary,
+                0,
+            ))
+            .build()
+            .map_err(|error| EngineError::Internal {
+                detail: format!("viewport override params: {error}"),
+            })?;
+        with_deadline("set_viewport", COMMAND_TIMEOUT, self.page.execute(metrics))
             .await
             .map(|_| ())
     }

@@ -245,4 +245,14 @@ pub trait PageHandle: Send + Sync {
             reason: "this engine cannot set files on file inputs".to_owned(),
         })
     }
+
+    /// Overrides the page's viewport size in CSS pixels. Backends that
+    /// cannot resize a page answer [`EngineError::Unsupported`].
+    async fn set_viewport(&self, width: u32, height: u32) -> Result<(), EngineError> {
+        let _ = (self, width, height);
+        Err(EngineError::Unsupported {
+            operation: "set_viewport".to_owned(),
+            reason: "this engine cannot resize a page".to_owned(),
+        })
+    }
 }

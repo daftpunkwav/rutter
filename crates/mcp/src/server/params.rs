@@ -182,6 +182,15 @@ pub struct UploadFileParams {
 }
 
 #[derive(Debug, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
+/// Parameters of the set_viewport tool.
+pub struct ViewportParams {
+    /// Viewport width in CSS pixels (1-10 000).
+    pub width: u32,
+    /// Viewport height in CSS pixels (1-10 000).
+    pub height: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
 /// Parameters of the set_cookies tool.
 pub struct CookiesParams {
     /// Cookies to set on this session's context.

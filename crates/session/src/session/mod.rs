@@ -486,6 +486,23 @@ impl Session {
         .await
     }
 
+    /// Overrides the active page's viewport size and returns a fresh
+    /// snapshot (docs/tool-catalog.md §4: `set_viewport`). A display
+    /// change, not a page mutation: no policy judgment, matching the
+    /// observation-only tabs operations.
+    pub async fn set_viewport(&self, width: u32, height: u32) -> Result<Snapshot, SessionError> {
+        let (_, page) = self.ensure_page().await?;
+        page.set_viewport(width, height)
+            .await
+            .map_err(engine_error)?;
+        PageOps {
+            page: page.as_ref(),
+            config: &self.config,
+        }
+        .snapshot()
+        .await
+    }
+
     /// Closes a page; closing the active page promotes the first
     /// remaining page. An id the session does not track is a client
     /// error: closing it would otherwise report success and publish a

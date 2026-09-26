@@ -63,6 +63,8 @@ struct PageInner {
     dialog_answers: Mutex<Vec<(bool, Option<String>)>>,
     /// The `(reference, files)` calls `set_input_files` received, in order.
     input_files: Mutex<Vec<(String, Vec<String>)>>,
+    /// The `(width, height)` calls `set_viewport` received, in order.
+    viewport_calls: Mutex<Vec<(u32, u32)>>,
     /// What the file-input check script reports.
     file_check: Mutex<Option<Value>>,
 }
@@ -150,6 +152,11 @@ impl MockPage {
     /// multi-file input).
     pub fn set_file_check(&self, answer: Value) {
         lock(&self.inner.file_check, |check| *check = Some(answer));
+    }
+
+    /// The `(width, height)` calls `set_viewport` received, in order.
+    pub fn viewport_calls(&self) -> Vec<(u32, u32)> {
+        lock(&self.inner.viewport_calls, |calls| calls.clone())
     }
 
     fn next_resolve_answer(&self) -> Value {
@@ -277,6 +284,13 @@ impl PageHandle for MockPage {
     async fn set_input_files(&self, reference: &str, files: &[String]) -> Result<(), EngineError> {
         lock(&self.inner.input_files, |calls| {
             calls.push((reference.to_owned(), files.to_vec()))
+        });
+        Ok(())
+    }
+
+    async fn set_viewport(&self, width: u32, height: u32) -> Result<(), EngineError> {
+        lock(&self.inner.viewport_calls, |calls| {
+            calls.push((width, height))
         });
         Ok(())
     }

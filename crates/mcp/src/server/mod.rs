@@ -19,7 +19,7 @@ mod params;
 pub use params::{
     CookieInput, CookiesParams, Direction, NavigateParams, PageParams, PressKeyParams,
     ReferenceParams, SameSiteInput, ScrollParams, SelectOptionParams, TabsOpenParams, TypeParams,
-    UploadFileParams, WaitForParams,
+    UploadFileParams, ViewportParams, WaitForParams,
 };
 
 use std::sync::Arc;
@@ -249,6 +249,23 @@ impl RutterMcp {
             amount,
         })
         .await
+    }
+
+    #[tool(description = "Resize the active page's viewport and return a fresh snapshot")]
+    async fn set_viewport(
+        &self,
+        Parameters(ViewportParams { width, height }): Parameters<ViewportParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if width == 0 || width > 10_000 || height == 0 || height > 10_000 {
+            return Err(invalid_params(
+                "width and height must be between 1 and 10000".to_owned(),
+            ));
+        }
+        let session = self.session().await?;
+        match session.set_viewport(width, height).await {
+            Ok(snapshot) => Ok(snapshot_result(&snapshot)),
+            Err(error) => Ok(error_result(&error)),
+        }
     }
 
     #[tool(description = "Wait until text appears on the page, then return a snapshot")]

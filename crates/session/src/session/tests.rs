@@ -1269,3 +1269,18 @@ async fn a_denied_tabs_open_navigation_leaves_the_new_blank_page() {
     let active = listed.iter().find(|page| page.active).expect("one active");
     assert_eq!(active.url, "", "the denied page never navigated");
 }
+
+#[tokio::test]
+async fn set_viewport_resizes_the_active_page_and_returns_a_snapshot() {
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+    let (page_id, _) = session.active_page_for_test().await;
+
+    let snapshot = session
+        .set_viewport(1280, 720)
+        .await
+        .expect("the resize succeeds");
+    assert_eq!(snapshot.url, "", "a fresh snapshot comes back");
+    let mock = context.page_mock(page_id).expect("mock page");
+    assert_eq!(mock.viewport_calls(), vec![(1280, 720)]);
+}

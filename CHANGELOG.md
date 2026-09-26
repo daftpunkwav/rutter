@@ -27,6 +27,9 @@ and the project adheres to
 
 ### Added
 
+- Viewport control: the new `set_viewport` MCP tool resizes the active
+  page in CSS pixels so screenshots, snapshots, and layouts match the
+  size an agent wants to work with.
 - File uploads: the new `upload_file` MCP tool sets the files of a file
   input element through the action pipeline — auto-wait, policy
   judgment (`file_upload` class), and a fresh snapshot — with clear

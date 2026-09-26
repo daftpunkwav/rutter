@@ -90,7 +90,7 @@ timeline.
 
 ## 4. Tools
 
-Twenty-three tools. Parameter types: `reference` is a snapshot handle
+Twenty-four tools. Parameter types: `reference` is a snapshot handle
 (`e17`); `direction` is one of `up|down|left|right`; durations are
 milliseconds.
 
@@ -159,6 +159,12 @@ or a single-file input was given more than one path.
 `{ direction: up|down|left|right, amount: number, reference?: string }`
 → snapshot. Scrolls the page (no `reference`) or the resolved container
 by `amount` pixels; `amount` ≤ 0 is `invalid_params`.
+
+### set_viewport
+`{ width: number, height: number }` → snapshot. Overrides the active
+page's viewport in CSS pixels; `0` or values above 10 000 are
+`invalid_params`. A display change: no policy judgment, and the
+override survives navigations until the page closes.
 
 ### wait_for
 `{ text: string, timeout_ms?: number }` → snapshot. Polls the page's

@@ -80,7 +80,7 @@ agent 可执行的英文提示：
 
 ## 4. 工具
 
-二十三个工具。参数类型：`reference` 是快照句柄（`e17`）；
+二十四个工具。参数类型：`reference` 是快照句柄（`e17`）；
 `direction` 是 `up|down|left|right` 之一；时长单位为毫秒。
 
 **对话框。**页面调用 `alert`、`confirm`、`prompt` 或触发
@@ -142,6 +142,11 @@ auto-wait；提取规则与守卫见[读取格式](read-format.zh.md)。站点�
 `{ direction: up|down|left|right, amount: number, reference?: string }`
 → snapshot。滚动页面（无 `reference`）或解析到的容器 `amount`
 像素；`amount` ≤ 0 是 `invalid_params`。
+
+### set_viewport
+`{ width: number, height: number }` → snapshot。以 CSS 像素覆盖活动
+页面的视口；`0` 或超过 10 000 的值是 `invalid_params`。这只是一次
+显示变更：不经策略判定，覆盖在导航后保持有效，页面关闭时消失。
 
 ### wait_for
 `{ text: string, timeout_ms?: number }` → snapshot。轮询页面文本
