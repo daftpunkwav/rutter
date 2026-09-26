@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::mock::{MockPage, missing_answer, mock_box};
+use serde_json::json;
 use std::time::Duration;
 
 /// Owns everything an `Executor` borrows, so tests can build one
@@ -211,4 +212,106 @@ fn wheel_deltas_follow_directions() {
     assert_eq!(wheel_deltas(ScrollDirection::Up, 300), (0.0, -300.0));
     assert_eq!(wheel_deltas(ScrollDirection::Right, 120), (120.0, 0.0));
     assert_eq!(wheel_deltas(ScrollDirection::Left, 120), (-120.0, 0.0));
+}
+
+#[tokio::test]
+async fn setting_files_targets_the_resolved_input() {
+    let harness = Harness::new(Duration::from_secs(1), Duration::from_millis(1));
+    harness.page.set_url("https://example.com");
+    let file = std::env::temp_dir().join("rutter-upload-test.txt");
+    std::fs::write(&file, b"payload").expect("fixture file writes");
+    let path = file.to_string_lossy().into_owned();
+
+    let snapshot = harness
+        .executor()
+        .run(&Action::SetInputFiles {
+            reference: Reference::new("e1"),
+            paths: vec![path.clone()],
+        })
+        .await
+        .expect("the upload succeeds");
+    assert!(!snapshot.truncated, "a fresh snapshot comes back");
+    assert_eq!(
+        harness.page.input_files_calls(),
+        vec![("e1".to_owned(), vec![path])]
+    );
+    let _ = std::fs::remove_file(&file);
+}
+
+#[tokio::test]
+async fn setting_files_on_a_non_file_input_is_refused() {
+    let harness = Harness::new(Duration::from_secs(1), Duration::from_millis(1));
+    harness
+        .page
+        .set_file_check(json!({ "missing": false, "not_file": true }));
+    let error = harness
+        .executor()
+        .run(&Action::SetInputFiles {
+            reference: Reference::new("e1"),
+            paths: vec!["whatever.txt".to_owned()],
+        })
+        .await
+        .expect_err("a non-input is refused");
+    let SessionError::Action(ActionError::NotInteractable { reason, .. }) = error else {
+        panic!("unexpected error: {error}")
+    };
+    assert!(reason.contains("not a file input"));
+    assert!(harness.page.input_files_calls().is_empty());
+}
+
+#[tokio::test]
+async fn a_single_file_input_refuses_two_files() {
+    let harness = Harness::new(Duration::from_secs(1), Duration::from_millis(1));
+    harness.page.set_file_check(
+        json!({ "missing": false, "not_file": false, "ok": true, "multiple": false }),
+    );
+    let error = harness
+        .executor()
+        .run(&Action::SetInputFiles {
+            reference: Reference::new("e1"),
+            paths: vec!["a.txt".to_owned(), "b.txt".to_owned()],
+        })
+        .await
+        .expect_err("two files on a single input are refused");
+    let SessionError::Action(ActionError::NotInteractable { reason, .. }) = error else {
+        panic!("unexpected error: {error}")
+    };
+    assert!(reason.contains("single file"));
+    assert!(harness.page.input_files_calls().is_empty());
+}
+
+#[tokio::test]
+async fn a_missing_path_is_caller_feedback_not_an_engine_failure() {
+    let harness = Harness::new(Duration::from_secs(1), Duration::from_millis(1));
+    let error = harness
+        .executor()
+        .run(&Action::SetInputFiles {
+            reference: Reference::new("e1"),
+            paths: vec!["Z:/definitely/missing/rutter.txt".to_owned()],
+        })
+        .await
+        .expect_err("a missing file is refused");
+    let SessionError::Action(ActionError::NotInteractable { reason, .. }) = error else {
+        panic!("unexpected error: {error}")
+    };
+    assert!(reason.contains("file not found"));
+    assert!(harness.page.input_files_calls().is_empty());
+}
+
+#[tokio::test]
+async fn an_expired_reference_fails_the_upload_fast() {
+    let harness = Harness::new(Duration::from_secs(1), Duration::from_millis(1));
+    harness.page.set_file_check(json!({ "missing": true }));
+    let error = harness
+        .executor()
+        .run(&Action::SetInputFiles {
+            reference: Reference::new("e1"),
+            paths: vec!["a.txt".to_owned()],
+        })
+        .await
+        .expect_err("a missing reference is refused");
+    assert!(matches!(
+        error,
+        SessionError::Action(ActionError::ReferenceExpired { .. })
+    ));
 }
