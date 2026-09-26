@@ -40,6 +40,7 @@ use rutter_engine::page::{
 };
 
 use crate::error::{self, COMMAND_TIMEOUT, fold, fold_navigation, with_deadline, with_deadline_by};
+use crate::keys;
 
 /// Budget for the page's URL query. The query is an untyped oneshot
 /// into the chromiumoxide handler: if the handler died (browser crash
@@ -345,13 +346,13 @@ impl rutter_engine::page::PageHandle for CdpPage {
                     .map(|_| ());
             }
             InputEvent::KeyPressed { key } => {
-                let params = error::key_params(DispatchKeyEventType::KeyDown, &key);
+                let params = keys::key_params(DispatchKeyEventType::KeyDown, &key);
                 return with_deadline("dispatch_key", COMMAND_TIMEOUT, self.page.execute(params))
                     .await
                     .map(|_| ());
             }
             InputEvent::KeyReleased { key } => {
-                let params = error::key_params(DispatchKeyEventType::KeyUp, &key);
+                let params = keys::key_params(DispatchKeyEventType::KeyUp, &key);
                 return with_deadline("dispatch_key", COMMAND_TIMEOUT, self.page.execute(params))
                     .await
                     .map(|_| ());

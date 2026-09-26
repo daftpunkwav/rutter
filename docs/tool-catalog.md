@@ -139,9 +139,10 @@ snapshot.
 
 ### press_key
 `{ key: string }` → snapshot. Key names follow engine notation
-(`a`, `Enter`, `Tab`). v1 limitation: key events carry the key name
-but no virtual key codes; sites that ignore code-less key events are a
-documented gap.
+(`a`, `Enter`, `Tab`, `ArrowLeft`, `F5`, …). Known keys carry their
+physical code and virtual key code, and printable keys insert their
+character into the focused element; unknown keys degrade to a
+name-only event.
 
 ### select_option
 `{ reference: string, values: string[] }` → snapshot. Auto-wait, then

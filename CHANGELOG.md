@@ -24,6 +24,11 @@ and the project adheres to
   succeeded and is named by the port the server actually owns
   (`<cache-dir>/dashboard-access-<port>.url`), which also fixes the
   URL reported under `--dashboard 0`.
+- `press_key` now sends full key events: physical codes and Windows
+  virtual key codes for known keys (letters, digits, punctuation,
+  `Enter`, arrows, function keys, …) plus the text that makes
+  printable keys land in focused inputs. Sites that ignored the
+  previous name-only events respond correctly now.
 
 ### Added
 

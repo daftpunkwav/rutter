@@ -124,8 +124,8 @@ auto-wait；提取规则与守卫见[读取格式](read-format.zh.md)。站点�
 
 ### press_key
 `{ key: string }` → snapshot。键名遵循引擎记法（`a`、`Enter`、
-`Tab`）。v1 限制：按键事件只携带键名、没有虚拟键码；忽略无码
-按键事件的站点是已记录的缺口。
+`Tab`、`ArrowLeft`、`F5` 等）。已知键携带物理码与虚拟键码，可打印
+字符会插入焦点元素；未知键退化为只带键名的事件。
 
 ### select_option
 `{ reference: string, values: string[] }` → snapshot。auto-wait，

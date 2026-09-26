@@ -145,14 +145,6 @@ pub fn cdp_button(button: MouseButton) -> CdpMouseButton {
     }
 }
 
-/// Builds a CDP key event for a named key. Virtual key codes are not
-/// derived; sites that require them need a code table.
-pub fn key_params(event_type: DispatchKeyEventType, key: &str) -> DispatchKeyEventParams {
-    let mut params = DispatchKeyEventParams::new(event_type);
-    params.key = Some(key.to_owned());
-    params
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,11 +213,5 @@ mod tests {
             cdp_button(MouseButton::Right),
             CdpMouseButton::Right
         ));
-    }
-
-    #[test]
-    fn key_params_carry_the_key_name() {
-        let params = key_params(DispatchKeyEventType::KeyDown, "Enter");
-        assert_eq!(params.key.as_deref(), Some("Enter"));
     }
 }

@@ -17,6 +17,7 @@
 mod context;
 mod engine;
 mod error;
+mod keys;
 mod launch;
 mod page;
 
