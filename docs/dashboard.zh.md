@@ -33,7 +33,9 @@ UI 字符串来自 `frontend/i18n/en.json` 目录。
   `…/?token=…`；管道（MCP client 拉起 `rutter serve`）只拿到监听
   地址与交接文件路径，拿不到 URL 或令牌——那个 client 正是 rutter
   要监管的进程——URL 写入
-  `<cache-dir>/dashboard-access.url`，Unix 上以仅属主可读创建。既无
+  `<cache-dir>/dashboard-access-<port>.url`，Unix 上以仅属主可读创建。
+  文件只在绑定成功后写入，文件名取服务器实际绑定的端口：`--dashboard 0`
+  落在真实端口名下，同机两个 rutter 进程写不同文件，互不覆盖。既无
   终端又无该路径时，dashboard 拒绝启动，而不是退回打印令牌。
 - **这换到什么、换不到什么。** rutter 与 client 同机同用户，该用户
   账户下的进程能读到 rutter 自己缓存里的任何文件。交接消除的是

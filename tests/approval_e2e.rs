@@ -55,8 +55,8 @@ async fn engine_executable() -> Result<std::path::PathBuf, Box<dyn std::error::E
 /// owns the child. Both paths keep the tests independent of each other:
 /// the engine executable is named explicitly, so the child can run
 /// against a private cache dir, and the dashboard hands its access URL
-/// to `<cache-dir>/dashboard-access.url` — serves sharing the user
-/// cache would race on that one file, the losers refusing to bind.
+/// to a per-port file `<cache-dir>/dashboard-access-<port>.url`, so
+/// serves sharing a cache never race over one hand-off file.
 async fn connect(
     engine: &std::path::Path,
     policy: &std::path::Path,

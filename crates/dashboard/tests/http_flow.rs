@@ -8,7 +8,6 @@
 
 mod common;
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -37,8 +36,7 @@ async fn serve() -> Serving {
     let port = listener.local_addr().expect("local addr").port();
     drop(listener);
 
-    let access_dir = tempfile::tempdir().expect("temp dir for the access file");
-    let access_file: PathBuf = access_dir.path().join("access.url");
+    let access_dir = tempfile::tempdir().expect("temp dir for the access files");
     let manager = Arc::new(SessionManager::new(
         FlowLauncher::new(),
         LaunchMode::Headless,
@@ -47,7 +45,11 @@ async fn serve() -> Serving {
         Arc::new(ApprovalBroker::new()),
         None,
     ));
-    let server = DashboardServer::new(Arc::clone(&manager), port, Some(access_file));
+    let server = DashboardServer::new(
+        Arc::clone(&manager),
+        port,
+        Some(access_dir.path().to_path_buf()),
+    );
     let token = server.token();
     tokio::spawn(async move {
         let _ = server.run().await;

@@ -56,12 +56,14 @@ pub async fn run(
 
     if let Some(port) = dashboard_port {
         // When stderr is a pipe — the MCP client's case — the dashboard
-        // hands its access URL to this file instead of printing it, so
-        // the supervised process does not read the token by inheritance
+        // hands its access URL to a per-port file under the cache root
+        // instead of printing it, so the supervised process does not
+        // read the token by inheritance and two rutter processes on one
+        // machine never race over one hand-off file
         // (docs/dashboard.md §2).
-        let access_file = Some(settings.cache_root.join("dashboard-access.url"));
+        let access_dir = Some(settings.cache_root.clone());
         let dashboard =
-            rutter_dashboard::DashboardServer::new(Arc::clone(&manager), port, access_file);
+            rutter_dashboard::DashboardServer::new(Arc::clone(&manager), port, access_dir);
         tokio::spawn(async move {
             if let Err(error) = dashboard.run().await {
                 eprintln!("rutter: {error}");

@@ -37,7 +37,11 @@ Every endpoint, including the WebSocket upgrade, passes the same gate
   `rutter serve` — gets the listening address and the hand-off file
   path, never the URL or token, because that client
   is the process rutter exists to supervise; the URL goes to
-  `<cache-dir>/dashboard-access.url`, created owner-only on Unix. With
+  `<cache-dir>/dashboard-access-<port>.url`, created owner-only on
+  Unix. The file is written only after the bind succeeded and is named
+  by the port the server actually owns, so `--dashboard 0` lands under
+  its real port and two rutter processes on one machine write
+  different files — neither hand-off can clobber the other's. With
   neither a terminal nor that path available the dashboard refuses to
   start rather than fall back to printing the token.
 - **What this does not buy.** rutter and its client share one machine

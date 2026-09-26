@@ -71,23 +71,25 @@ pub struct DashboardServer {
     /// Minted once, in [`DashboardServer::new`]: every reader must be
     /// handed the value the server actually accepts.
     token: String,
-    /// Where the access URL lands when stderr is not a terminal.
-    access_file: Option<PathBuf>,
+    /// Where the access URL's hand-off file lands when stderr is not a
+    /// terminal. The file is named inside `run`, after the bind, so the
+    /// name carries the port the server actually owns.
+    access_dir: Option<PathBuf>,
 }
 
 impl DashboardServer {
     /// Binds the dashboard to a port. Approval decisions always go
     /// through the manager's broker — the one the sessions park on — so
-    /// it is derived here, never passed in. `access_file` is the private
-    /// hand-off path for the access URL; it is required whenever stderr
-    /// has no terminal (see `hand_off`).
-    pub fn new(manager: Arc<SessionManager>, port: u16, access_file: Option<PathBuf>) -> Self {
+    /// it is derived here, never passed in. `access_dir` is the private
+    /// hand-off directory for the access URL; it is required whenever
+    /// stderr has no terminal (see `hand_off`).
+    pub fn new(manager: Arc<SessionManager>, port: u16, access_dir: Option<PathBuf>) -> Self {
         Self {
             broker: manager.broker(),
             token: generate_token(),
             manager,
             port,
-            access_file,
+            access_dir,
         }
     }
 
@@ -96,13 +98,21 @@ impl DashboardServer {
         self.token.clone()
     }
 
-    /// Serves until the process exits.
+    /// Serves until the process exits. The listener binds before the
+    /// hand-off so the URL and its file name carry the port the server
+    /// actually owns: `--dashboard 0` names its real port, and an
+    /// instance that lost the bind race never touches the hand-off file
+    /// of the instance that won it.
     pub async fn run(self) -> Result<(), String> {
-        let hand_off = self.hand_off()?;
-        eprintln!(
-            "rutter: dashboard on http://127.0.0.1:{} — {hand_off}",
-            self.port
-        );
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", self.port))
+            .await
+            .map_err(|error| format!("cannot bind 127.0.0.1:{}: {error}", self.port))?;
+        let bound_port = listener
+            .local_addr()
+            .map_err(|error| format!("cannot read the dashboard bind: {error}"))?
+            .port();
+        let hand_off = self.hand_off(bound_port)?;
+        eprintln!("rutter: dashboard on http://127.0.0.1:{bound_port} — {hand_off}");
         let state = Dashboard {
             manager: self.manager,
             broker: self.broker,
@@ -119,9 +129,6 @@ impl DashboardServer {
             .fallback(not_found)
             .with_state(state);
 
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", self.port))
-            .await
-            .map_err(|error| format!("cannot bind 127.0.0.1:{}: {error}", self.port))?;
         axum::serve(listener, app)
             .await
             .map_err(|error| format!("dashboard server failed: {error}"))
@@ -134,23 +141,27 @@ impl DashboardServer {
     /// as it is. A pipe means a process did — and over the MCP transport
     /// that process is the very client rutter exists to supervise, so
     /// the token never travels that way: it lands in an owner-only file
-    /// and the printed line names the path instead.
+    /// and the printed line names the path instead. The file is named
+    /// per bound port, so two rutter processes on one machine — the
+    /// multi-instance deployment — write different files and neither
+    /// hand-off can clobber the other (docs/dashboard.md §2).
     ///
     /// This is defence in depth, not isolation. A supervised process
     /// running as the same user can still read that file; a deployment
     /// needing a channel the agent cannot observe has to run the
     /// dashboard outside the agent's account (docs/dashboard.md §2).
-    fn hand_off(&self) -> Result<String, String> {
-        let url = format!("http://127.0.0.1:{}/?token={}", self.port, self.token);
+    fn hand_off(&self, bound_port: u16) -> Result<String, String> {
+        let url = format!("http://127.0.0.1:{bound_port}/?token={}", self.token);
         if std::io::stderr().is_terminal() {
             return Ok(format!("open {url}"));
         }
-        let Some(path) = self.access_file.as_ref() else {
+        let Some(dir) = self.access_dir.as_ref() else {
             return Err(
                 "stderr is no terminal and no access hand-off path was configured".to_owned(),
             );
         };
-        write_private(path, &url)?;
+        let path = dir.join(format!("dashboard-access-{bound_port}.url"));
+        write_private(&path, &url)?;
         Ok(format!(
             "access URL in {}; open it from a terminal you control",
             path.display()
@@ -364,6 +375,46 @@ mod tests {
             std::fs::read_to_string(&path).expect("read back"),
             "second\n",
             "one launch's URL per file, never two appended"
+        );
+    }
+
+    #[test]
+    fn the_hand_off_file_names_the_port_the_server_actually_owns() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let server = DashboardServer::new(
+            Arc::new(SessionManager::new(
+                Arc::new(UnsupportedLauncher),
+                rutter_engine::config::LaunchMode::Headless,
+                rutter_session::config::SessionConfig::default(),
+                Arc::new(rutter_policy::RuleSet::default_set()),
+                Arc::new(rutter_policy::ApprovalBroker::new()),
+                None,
+            )),
+            7700,
+            Some(dir.path().to_path_buf()),
+        );
+
+        // The bound port names the file and the URL: `--dashboard 0`
+        // lands under its real port, and an instance that lost the bind
+        // race (bound port taken) never writes at all.
+        let message = server.hand_off(7701).expect("hand-off");
+        let path = dir.path().join("dashboard-access-7701.url");
+        assert!(
+            message.contains(&path.display().to_string()),
+            "the printed line names the file: {message}"
+        );
+        let written = std::fs::read_to_string(&path).expect("read back");
+        assert!(
+            written.contains("http://127.0.0.1:7701/?token="),
+            "the URL carries the bound port: {written}"
+        );
+        assert!(
+            written.contains(&server.token()),
+            "the URL carries this launch's token: {written}"
+        );
+        assert!(
+            !dir.path().join("dashboard-access-7700.url").exists(),
+            "the configured port never names the file"
         );
     }
 
