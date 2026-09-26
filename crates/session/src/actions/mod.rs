@@ -11,10 +11,13 @@ use std::time::{Duration, Instant};
 use rutter_core::action::{Action, ScrollDirection};
 use rutter_core::error::{ActionError, WaitPhase};
 use rutter_core::ids::{PageId, SessionId};
+use rutter_core::readout::Readout;
 use rutter_core::reference::Reference;
 use rutter_core::snapshot::Snapshot;
 use rutter_events::Backbone;
-use rutter_observe::{focus_script, select_script, serializer_script, wait_for_script};
+use rutter_observe::{
+    focus_script, reader_script, select_script, serializer_script, wait_for_script,
+};
 
 use crate::config::SessionConfig;
 use crate::error::SessionError;
@@ -310,6 +313,16 @@ impl PageOps<'_> {
             .await
             .map_err(SessionError::Engine)?;
         Ok(rutter_observe::snapshot_from_response(&url, &raw))
+    }
+
+    /// Extracts the current page's readable content as a readout.
+    pub async fn read(&self) -> Result<Readout, SessionError> {
+        let raw = self
+            .page
+            .evaluate(reader_script())
+            .await
+            .map_err(SessionError::Engine)?;
+        Ok(rutter_observe::read_from_response(&raw))
     }
 
     /// Polls the page text until `needle` appears within `budget`.

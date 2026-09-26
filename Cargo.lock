@@ -1768,6 +1768,7 @@ dependencies = [
  "futures",
  "rutter-core",
  "rutter-engine",
+ "rutter-observe",
  "serde_json",
  "tokio",
 ]

@@ -27,6 +27,11 @@ and the project adheres to
 
 ### Added
 
+- Markdown readouts: the `read` MCP tool and the `rutter read <url>`
+  CLI mode return a page's readable content as a markdown document —
+  headings, paragraphs, lists, GFM tables, code fences, and links with
+  absolute URLs — while site chrome and hidden content are omitted
+  (docs/read-format.md).
 - Tabs discovery and adoption: windows the engine opens without rutter
   — a `window.open` popup, a human's window — are reported by the
   engine, adopted into the session's context on `tabs_list`, and are

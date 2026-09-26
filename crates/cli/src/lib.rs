@@ -3,7 +3,7 @@
 //!
 //! Responsibilities:
 //! - Resolve flags and the environment into runtime [`config::Settings`].
-//! - Dispatch the three entry modes ([`entry`]): browse, serve, open.
+//! - Dispatch the entry modes ([`entry`]): browse, serve, open, read.
 //! - Own user-facing error presentation ([`error::CliError`] hints).
 //!
 //! Boundary: the CLI owns no engine or orchestration logic of its own;
@@ -24,4 +24,5 @@ pub mod error;
 mod browse;
 mod launcher;
 mod open;
+mod read;
 mod serve;

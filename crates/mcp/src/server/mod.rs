@@ -2,9 +2,9 @@
 //!
 //! Responsibilities:
 //! - Expose the docs/tool-catalog.md tool surface as rmcp tools.
-//! - Return snapshots as text, screenshots as image blocks, and action
-//!   failures as `isError` results carrying the error plus its hint
-//!   (`docs/tool-catalog.md` §2).
+//! - Return snapshots and readouts as text, screenshots as image
+//!   blocks, and action failures as `isError` results carrying the
+//!   error plus its hint (`docs/tool-catalog.md` §2).
 //!
 //! Boundary: protocol mapping only. All semantics live in
 //! `rutter-session`; this module validates parameters against the spec
@@ -123,6 +123,15 @@ impl RutterMcp {
         let session = self.session().await?;
         match session.snapshot().await {
             Ok(snapshot) => Ok(snapshot_result(&snapshot)),
+            Err(error) => Ok(error_result(&error)),
+        }
+    }
+
+    #[tool(description = "Read the active page as a markdown document")]
+    async fn read(&self) -> Result<CallToolResult, McpError> {
+        let session = self.session().await?;
+        match session.read().await {
+            Ok(readout) => Ok(read_result(&readout)),
             Err(error) => Ok(error_result(&error)),
         }
     }
@@ -370,6 +379,15 @@ impl ServerHandler for RutterMcp {
 fn snapshot_result(snapshot: &rutter_core::snapshot::Snapshot) -> CallToolResult {
     let mut text = snapshot.to_string();
     if snapshot.truncated {
+        text.push_str("… truncated\n");
+    }
+    CallToolResult::success(vec![ContentBlock::text(text)])
+}
+
+/// Readout text plus the truncation marker of docs/tool-catalog.md §2.
+fn read_result(readout: &rutter_core::readout::Readout) -> CallToolResult {
+    let mut text = readout.to_string();
+    if readout.truncated {
         text.push_str("… truncated\n");
     }
     CallToolResult::success(vec![ContentBlock::text(text)])

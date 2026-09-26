@@ -1,6 +1,6 @@
 //! Entry modes of the rutter binary.
 //!
-//! The three modes (browse, serve, open) only set defaults; engine mode
+//! The modes (browse, serve, open, read) only set defaults; engine mode
 //! and the dashboard are orthogonal flags on top of them. Boundary: mode
 //! dispatch only — each mode's implementation lives in its own module
 //! beside this one, and the CLI owns no engine logic beyond the launcher
@@ -26,6 +26,11 @@ pub enum EntryMode {
         /// URL to navigate to.
         url: String,
     },
+    /// One-shot scrape: navigate, print the page as markdown, exit.
+    Read {
+        /// URL to navigate to.
+        url: String,
+    },
 }
 
 impl std::fmt::Display for EntryMode {
@@ -34,6 +39,7 @@ impl std::fmt::Display for EntryMode {
             Self::Browse => f.write_str("browse"),
             Self::Serve { .. } => f.write_str("serve"),
             Self::Open { .. } => f.write_str("open"),
+            Self::Read { .. } => f.write_str("read"),
         }
     }
 }
@@ -50,6 +56,7 @@ pub async fn run(
     match mode {
         EntryMode::Browse => crate::browse::run(settings).await,
         EntryMode::Open { url } => crate::open::run(settings, &url).await,
+        EntryMode::Read { url } => crate::read::run(settings, &url).await,
         EntryMode::Serve { headed } => {
             crate::serve::run(
                 settings,

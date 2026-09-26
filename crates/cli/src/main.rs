@@ -71,6 +71,11 @@ enum Command {
         /// URL to navigate to.
         url: String,
     },
+    /// One-shot scrape: navigate, print the page as markdown, exit.
+    Read {
+        /// URL to navigate to.
+        url: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -79,6 +84,7 @@ fn main() -> ExitCode {
         None => EntryMode::Browse,
         Some(Command::Serve { headed }) => EntryMode::Serve { headed },
         Some(Command::Open { url }) => EntryMode::Open { url },
+        Some(Command::Read { url }) => EntryMode::Read { url },
     };
 
     let settings = match Settings::resolve(cli.engine_executable, cli.cache_dir, cli.engine_args) {

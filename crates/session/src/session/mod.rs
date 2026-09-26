@@ -16,6 +16,7 @@ use rutter_core::action::{Action, Origin};
 use rutter_core::cookie::Cookie;
 use rutter_core::error::ActionError;
 use rutter_core::ids::{PageId, SessionId};
+use rutter_core::readout::Readout;
 use rutter_core::snapshot::Snapshot;
 use rutter_engine::context::ContextHandle;
 use rutter_engine::error::EngineError;
@@ -305,6 +306,19 @@ impl Session {
             config: &self.config,
         }
         .snapshot()
+        .await
+    }
+
+    /// Extracts the active page's readable content as a markdown
+    /// readout; like [`Session::snapshot`], observation only — no
+    /// events, no auto-wait, no URL refresh.
+    pub async fn read(&self) -> Result<Readout, SessionError> {
+        let (_, page) = self.ensure_page().await?;
+        PageOps {
+            page: page.as_ref(),
+            config: &self.config,
+        }
+        .read()
         .await
     }
 

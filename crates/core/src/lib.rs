@@ -2,7 +2,7 @@
 //!
 //! Responsibilities:
 //! - Define the canonical types every layer speaks: actions, snapshots,
-//!   references, identifiers, and the action error taxonomy.
+//!   readouts, references, identifiers, and the action error taxonomy.
 //! - Keep those types stable and self-contained so higher layers can be
 //!   changed or replaced without touching the vocabulary.
 //!
@@ -19,5 +19,6 @@ pub mod action;
 pub mod cookie;
 pub mod error;
 pub mod ids;
+pub mod readout;
 pub mod reference;
 pub mod snapshot;

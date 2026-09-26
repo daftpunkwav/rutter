@@ -173,6 +173,33 @@ fn truncated_snapshots_carry_the_spec_marker() {
     );
 }
 
+#[test]
+fn truncated_readouts_carry_the_spec_marker() {
+    // Same contract as snapshots (docs/tool-catalog.md §2): a cropped
+    // readout must say so, or the agent trusts a partial document.
+    let full = rutter_core::readout::Readout {
+        title: "Example".to_owned(),
+        markdown: "# Example".to_owned(),
+        truncated: false,
+    };
+    let text = first_text_block(&read_result(&full));
+    assert!(
+        !text.contains("truncated"),
+        "an intact readout carries no marker: {text}"
+    );
+
+    let cropped = rutter_core::readout::Readout {
+        title: "Example".to_owned(),
+        markdown: "# Example".to_owned(),
+        truncated: true,
+    };
+    let text = first_text_block(&read_result(&cropped));
+    assert!(
+        text.ends_with("… truncated\n"),
+        "the marker must close the result text: {text:?}"
+    );
+}
+
 /// First text block of a tool result (test helper).
 fn first_text_block(result: &CallToolResult) -> String {
     result

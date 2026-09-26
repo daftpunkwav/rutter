@@ -29,5 +29,8 @@ tokio = { workspace = true, features = ["process"] }
 # browser-context creation the way the Electron engine does; it rides
 # the same websocket stack the real connection uses.
 async-tungstenite = { version = "0.32", features = ["tokio-runtime", "handshake"] }
+# The read test converts the reader script's response with the pure
+# observation layer.
+rutter-observe = { workspace = true }
 # TcpListener for the fake endpoint.
 tokio = { workspace = true, features = ["net"] }

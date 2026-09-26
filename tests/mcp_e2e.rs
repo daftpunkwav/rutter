@@ -92,6 +92,43 @@ async fn read_task_navigate_and_snapshot() {
     client.cancel().await.expect("shutdown");
 }
 
+/// Task class 1b (read): navigate, then read the page as markdown.
+#[tokio::test]
+#[ignore = "requires the engine binary in the cache"]
+async fn read_task_read_returns_markdown() {
+    let client = connect().await;
+
+    let page = concat!(
+        "data:text/html,<title>Doc</title><h1>Heading One</h1>",
+        "<p>Intro with <a href=\"https://example.com/x\">a link</a>.</p>",
+        "<nav>chrome</nav>"
+    );
+    let result = call(&client, "navigate", json!({ "url": page })).await;
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "navigate failed: {:?}",
+        first_text(&result)
+    );
+
+    let read = call(&client, "read", json!({})).await;
+    assert!(
+        !read.is_error.unwrap_or(false),
+        "read failed: {:?}",
+        first_text(&read)
+    );
+
+    let text = first_text(&read);
+    assert!(text.starts_with("Doc\n\n"), "title line first: {text:?}");
+    assert!(text.contains("# Heading One"), "heading: {text}");
+    assert!(
+        text.contains("[a link](https://example.com/x)"),
+        "absolute link: {text}"
+    );
+    assert!(!text.contains("chrome"), "site chrome is omitted: {text}");
+
+    client.cancel().await.expect("shutdown");
+}
+
 /// Task class 2 (interact): click a button that mutates the page and
 /// verify the returned snapshot reflects the change.
 #[tokio::test]
