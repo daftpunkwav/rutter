@@ -17,6 +17,7 @@ for sensitive operations.
 | [`docs/glossary.md`](docs/glossary.md) | The normative domain vocabulary |
 | [`docs/tool-catalog.md`](docs/tool-catalog.md) | The MCP tool surface: transport, semantics, auto-wait, error mapping |
 | [`docs/snapshot-format.md`](docs/snapshot-format.md) | The snapshot contract: serialization, references, token budget |
+| [`docs/read-format.md`](docs/read-format.md) | The read contract: markdown extraction, guards |
 | [`docs/engine-supervision.md`](docs/engine-supervision.md) | Engine trait, binary acquisition, supervisor, CDP notes |
 | [`docs/sessions.md`](docs/sessions.md) | Session model, action path, storage state, recovery |
 | [`docs/events.md`](docs/events.md) | Event vocabulary, backbone semantics, replay |
@@ -41,6 +42,9 @@ the two languages are updated together.
 ```sh
 # One-shot diagnostic: navigate and print a YAML snapshot to stdout.
 rutter open https://example.com
+
+# One-shot scrape: navigate and print the page as markdown.
+rutter read https://example.com
 
 # MCP server over stdio: connect any MCP client (engine headless;
 # --headed runs a visible window instead).

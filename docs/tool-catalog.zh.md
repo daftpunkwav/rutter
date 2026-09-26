@@ -80,7 +80,7 @@ agent 可执行的英文提示：
 
 ## 4. 工具
 
-十八个工具。参数类型：`reference` 是快照句柄（`e17`）；
+十九个工具。参数类型：`reference` 是快照句柄（`e17`）；
 `direction` 是 `up|down|left|right` 之一；时长单位为毫秒。
 
 ### navigate
@@ -93,6 +93,12 @@ agent 可执行的英文提示：
 
 ### snapshot
 `{}` → snapshot。无 auto-wait；渲染当前合成 DOM。
+
+### read
+`{}` → text block，页面可读内容组成的 markdown 文档：标题行，然后是
+标题、段落、列表、GFM 表格、代码围栏，以及带绝对 URL 的链接。无
+auto-wait；提取规则与守卫见[读取格式](read-format.zh.md)。站点框架与
+隐藏内容被省略；守卫裁剪了文档时，文本以 `… truncated` 标记结尾。
 
 ### screenshot
 `{}` → `image` content block（PNG，base64）。遵守 context 的

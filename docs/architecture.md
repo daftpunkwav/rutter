@@ -159,6 +159,7 @@ rate only):
 | [Glossary](glossary.md) | The normative domain vocabulary; one concept, one term |
 | [Tool catalog](tool-catalog.md) | The MCP tool surface: transport, semantics, auto-wait, error mapping |
 | [Snapshot format](snapshot-format.md) | The observation pipeline: serializer envelope, references, token budget |
+| [Read format](read-format.md) | The read pipeline: reader envelope, extraction rules, guards |
 | [Engine supervision](engine-supervision.md) | Engine trait, binary acquisition, supervisor, CDP notes |
 | [Sessions](sessions.md) | Session model, action execution path, storage state, recovery |
 | [Events](events.md) | Event vocabulary, backbone semantics, replay |

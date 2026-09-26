@@ -15,6 +15,7 @@
 | [`docs/glossary.md`](docs/glossary.md) | 规范领域词汇表 |
 | [`docs/tool-catalog.md`](docs/tool-catalog.md) | MCP 工具面：传输、语义、auto-wait、错误映射 |
 | [`docs/snapshot-format.md`](docs/snapshot-format.md) | 快照契约：序列化、引用、token 预算 |
+| [`docs/read-format.md`](docs/read-format.md) | 读取契约：markdown 提取、守卫 |
 | [`docs/engine-supervision.md`](docs/engine-supervision.md) | 引擎 trait、二进制获取、supervisor、CDP 说明 |
 | [`docs/sessions.md`](docs/sessions.md) | session 模型、动作执行路径、storage state、恢复 |
 | [`docs/events.md`](docs/events.md) | 事件词汇、backbone 语义、replay |
@@ -37,6 +38,9 @@
 ```sh
 # 一次性诊断：导航到指定 URL 并把 YAML 快照打印到 stdout。
 rutter open https://example.com
+
+# 一次性抓取：导航到指定 URL 并把页面打印为 markdown。
+rutter read https://example.com
 
 # stdio 上的 MCP server：连接任意 MCP 客户端（引擎无头；--headed
 # 改为可见窗口）。

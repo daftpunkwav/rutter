@@ -6,12 +6,13 @@ English | [中文](README.zh.md)
 |---|---|
 | `lib.rs` | Library root: every module below is declared here; `config`, `entry`, and `error` are the public surface |
 | `main.rs` | clap definitions and process entry (a thin shell over `rutter_cli`) |
-| `entry.rs` | `EntryMode` enum: browse / serve / open |
+| `entry.rs` | `EntryMode` enum: browse / serve / open / read |
 | `config.rs` | `Settings::resolve`: flags + environment → runtime settings |
 | `launcher.rs` | Engine launcher selection: cached CdpLauncher or explicit binary |
 | `serve.rs` | MCP serving (stdio/HTTP) + dashboard/policy wiring; every exit path shuts the engine down |
 | `browse.rs` | Headed, human-driven mode; Ctrl-C stops the supervisor |
 | `open.rs` | One-shot: navigate once, print snapshot, exit |
+| `read.rs` | One-shot scrape: navigate once, print markdown, exit |
 | `error.rs` | `CliError` presentation: hints for engine, signal, transport failures |
 
 This crate wires; it does not implement. New behavior belongs in a

@@ -1,10 +1,11 @@
-# rutter-observe/ — 快照构建
+# rutter-observe/ — 快照构建与 markdown 读取
 
 [English](README.md) | 中文
 
 把序列化后的 DOM 树变成带 token 预算的 Accessibility Snapshot（快
-照）。拥有页内 JavaScript（serializer、resolver、wait、storage 辅助
-脚本），由 session 通过引擎的 `evaluate` 注入。
+照），把页面可读内容变成 markdown readout。拥有页内 JavaScript
+（serializer、reader、resolver、wait、storage 辅助脚本），由
+session 通过引擎的 `evaluate` 注入。
 
 ## 边界
 

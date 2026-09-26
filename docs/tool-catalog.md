@@ -90,7 +90,7 @@ timeline.
 
 ## 4. Tools
 
-Eighteen tools. Parameter types: `reference` is a snapshot handle
+Nineteen tools. Parameter types: `reference` is a snapshot handle
 (`e17`); `direction` is one of `up|down|left|right`; durations are
 milliseconds.
 
@@ -104,6 +104,14 @@ timeout; failure → `ActionError::NavigationFailed`.
 
 ### snapshot
 `{}` → snapshot. No auto-wait; renders the current composed DOM.
+
+### read
+`{}` → text block, the page's readable content as a markdown document:
+title line, then headings, paragraphs, lists, GFM tables, code fences,
+and links with absolute URLs. No auto-wait; extraction rules and
+guards are specified in [read format](read-format.md). Site chrome and
+hidden content are omitted; the text ends with a `… truncated` marker
+when a guard cropped the document.
 
 ### screenshot
 `{}` → `image` content block (PNG, base64). Honors the context's

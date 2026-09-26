@@ -143,6 +143,7 @@ chrome-headless-shell (child process)   Human browser (dashboard viewer)
 | [术语表](glossary.zh.md) | 规范领域词汇；一个概念一个词 |
 | [工具目录](tool-catalog.zh.md) | MCP 工具面：传输、语义、auto-wait、错误映射 |
 | [快照格式](snapshot-format.zh.md) | 观测管线：序列化器信封、引用、token 预算 |
+| [读取格式](read-format.zh.md) | 读取管线：reader 信封、提取规则、守卫 |
 | [引擎监管](engine-supervision.zh.md) | 引擎 trait、二进制获取、supervisor、CDP 说明 |
 | [Sessions](sessions.zh.md) | session 模型、动作执行路径、storage state、恢复 |
 | [事件](events.zh.md) | 事件词汇、backbone 语义、replay |
