@@ -9,9 +9,9 @@ rutter 如何决定哪些动作直接运行、哪些被拒绝、哪些等待人�
 
 ## 1. 分类与 verdict
 
-动作被分为六类（[`class.rs`](../crates/policy/src/class.rs)）：
-`navigation`、`pointer`、`keyboard`、`selection`、`scroll`、
-`cookies`。
+动作被分为七类（[`class.rs`](../crates/policy/src/class.rs)）：
+`navigation`、`pointer`、`keyboard`、`selection`、`file_upload`、
+`scroll`、`cookies`。
 
 每类映射到三个 verdict 之一：
 

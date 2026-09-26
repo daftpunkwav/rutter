@@ -61,6 +61,10 @@ struct PageInner {
     observations: Mutex<Option<tokio::sync::mpsc::Sender<PageObservation>>>,
     /// The dialog answers `handle_dialog` received, in order.
     dialog_answers: Mutex<Vec<(bool, Option<String>)>>,
+    /// The `(reference, files)` calls `set_input_files` received, in order.
+    input_files: Mutex<Vec<(String, Vec<String>)>>,
+    /// What the file-input check script reports.
+    file_check: Mutex<Option<Value>>,
 }
 
 /// A scriptable page handle. Queued resolve answers are consumed one per
@@ -137,6 +141,17 @@ impl MockPage {
         })
     }
 
+    /// The `(reference, files)` calls `set_input_files` received, in order.
+    pub fn input_files_calls(&self) -> Vec<(String, Vec<String>)> {
+        lock(&self.inner.input_files, |calls| calls.clone())
+    }
+
+    /// Sets what the file-input check script reports (default: a ready
+    /// multi-file input).
+    pub fn set_file_check(&self, answer: Value) {
+        lock(&self.inner.file_check, |check| *check = Some(answer));
+    }
+
     fn next_resolve_answer(&self) -> Value {
         lock(&self.inner.resolve_answers, |answers| {
             if self.inner.cycle.load(Ordering::SeqCst) && !answers.is_empty() {
@@ -183,6 +198,12 @@ impl PageHandle for MockPage {
         // first.
         if expression.contains("var VALUES = ") {
             Ok(json!({ "missing": false, "not_select": false, "matched": 1 }))
+        } else if expression.contains("not_file") {
+            Ok(lock(&self.inner.file_check, |check| {
+                check.clone().unwrap_or_else(
+                    || json!({ "missing": false, "not_file": false, "ok": true, "multiple": true }),
+                )
+            }))
         } else if expression.contains("var REF = ") {
             Ok(self.next_resolve_answer())
         } else if expression.contains("var NEEDLE = ") {
@@ -249,6 +270,13 @@ impl PageHandle for MockPage {
     ) -> Result<(), EngineError> {
         lock(&self.inner.dialog_answers, |answers| {
             answers.push((accept, prompt_text.map(str::to_owned)))
+        });
+        Ok(())
+    }
+
+    async fn set_input_files(&self, reference: &str, files: &[String]) -> Result<(), EngineError> {
+        lock(&self.inner.input_files, |calls| {
+            calls.push((reference.to_owned(), files.to_vec()))
         });
         Ok(())
     }

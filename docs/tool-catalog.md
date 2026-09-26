@@ -90,7 +90,7 @@ timeline.
 
 ## 4. Tools
 
-Twenty-two tools. Parameter types: `reference` is a snapshot handle
+Twenty-three tools. Parameter types: `reference` is a snapshot handle
 (`e17`); `direction` is one of `up|down|left|right`; durations are
 milliseconds.
 
@@ -147,6 +147,13 @@ documented gap.
 `{ reference: string, values: string[] }` → snapshot. Auto-wait, then
 selects options whose `value` is in `values` and dispatches
 `input`/`change`. Fails with `NotInteractable` on non-select elements.
+
+### upload_file
+`{ reference: string, paths: string[] }` → snapshot. Auto-wait, then
+sets the files of the file input `reference` points to. `paths` are
+resolved by the machine the engine runs on; a path that does not exist
+→ `NotInteractable`. Other refusals: the element is not a file input,
+or a single-file input was given more than one path.
 
 ### scroll
 `{ direction: up|down|left|right, amount: number, reference?: string }`

@@ -27,6 +27,11 @@ and the project adheres to
 
 ### Added
 
+- File uploads: the new `upload_file` MCP tool sets the files of a file
+  input element through the action pipeline — auto-wait, policy
+  judgment (`file_upload` class), and a fresh snapshot — with clear
+  refusals for non-file inputs, single-file inputs given several paths,
+  and paths that do not exist.
 - Explicit tab opening: the new `tabs_open` MCP tool opens a page in
   the session's context, makes it active, and optionally navigates it
   through the same policy judgment as a `navigate` action.

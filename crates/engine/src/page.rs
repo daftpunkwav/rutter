@@ -232,4 +232,17 @@ pub trait PageHandle: Send + Sync {
             reason: "this engine cannot answer page dialogs".to_owned(),
         })
     }
+
+    /// Sets the files of the file input a snapshot reference points to.
+    /// Paths are resolved by the machine the engine runs on; a missing
+    /// path fails here. Fails with [`EngineError::ReferenceExpired`]
+    /// when the reference no longer resolves. Backends that cannot set
+    /// files answer [`EngineError::Unsupported`].
+    async fn set_input_files(&self, reference: &str, files: &[String]) -> Result<(), EngineError> {
+        let _ = (self, reference, files);
+        Err(EngineError::Unsupported {
+            operation: "set_input_files".to_owned(),
+            reason: "this engine cannot set files on file inputs".to_owned(),
+        })
+    }
 }

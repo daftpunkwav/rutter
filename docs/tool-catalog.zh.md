@@ -80,7 +80,7 @@ agent 可执行的英文提示：
 
 ## 4. 工具
 
-二十二个工具。参数类型：`reference` 是快照句柄（`e17`）；
+二十三个工具。参数类型：`reference` 是快照句柄（`e17`）；
 `direction` 是 `up|down|left|right` 之一；时长单位为毫秒。
 
 **对话框。**页面调用 `alert`、`confirm`、`prompt` 或触发
@@ -131,6 +131,12 @@ auto-wait；提取规则与守卫见[读取格式](read-format.zh.md)。站点�
 `{ reference: string, values: string[] }` → snapshot。auto-wait，
 然后选中 `value` 在 `values` 中的选项并派发 `input`/`change`。
 非 select 元素以 `NotInteractable` 失败。
+
+### upload_file
+`{ reference: string, paths: string[] }` → snapshot。auto-wait，然后
+为 `reference` 指向的文件输入元素设置文件。`paths` 由引擎所在的机器
+解析；不存在的路径 → `NotInteractable`。其他拒绝情形：元素不是文件
+输入，或向单文件输入给了多个路径。
 
 ### scroll
 `{ direction: up|down|left|right, amount: number, reference?: string }`

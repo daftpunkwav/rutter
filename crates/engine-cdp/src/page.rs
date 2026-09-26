@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use chromiumoxide::Page;
+use chromiumoxide::cdp::browser_protocol::dom::SetFileInputFilesParams;
 use chromiumoxide::cdp::browser_protocol::input::{
     DispatchKeyEventType, DispatchMouseEventType, InsertTextParams,
 };
@@ -569,6 +570,33 @@ impl rutter_engine::page::PageHandle for CdpPage {
         let mut params = HandleJavaScriptDialogParams::new(accept);
         params.prompt_text = prompt_text.map(str::to_owned);
         with_deadline("handle_dialog", COMMAND_TIMEOUT, self.page.execute(params))
+            .await
+            .map(|_| ())
+    }
+
+    async fn set_input_files(&self, reference: &str, files: &[String]) -> Result<(), EngineError> {
+        // The element resolves through the same page-side reference
+        // store every snapshot script uses (rutter-observe owns that
+        // contract); the element comes back as a remote object handle,
+        // which the file operation targets. A stale reference answers
+        // `null` and carries no object id.
+        let mut params = EvaluateParams::new(rutter_observe::element_script(reference));
+        params.return_by_value = Some(false);
+        let result = with_deadline("set_input_files_resolve", COMMAND_TIMEOUT, async {
+            self.page.evaluate_expression(params).await
+        })
+        .await?;
+        let object_id =
+            result
+                .object()
+                .object_id
+                .clone()
+                .ok_or_else(|| EngineError::ReferenceExpired {
+                    reference: reference.to_owned(),
+                })?;
+        let mut set = SetFileInputFilesParams::new(files.to_vec());
+        set.object_id = Some(object_id);
+        with_deadline("set_input_files", COMMAND_TIMEOUT, self.page.execute(set))
             .await
             .map(|_| ())
     }

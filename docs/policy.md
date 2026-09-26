@@ -10,9 +10,9 @@ self-declaration; that is the point of supervision.
 
 ## 1. Classes and verdicts
 
-Actions are classified into six classes
+Actions are classified into seven classes
 ([`class.rs`](../crates/policy/src/class.rs)): `navigation`, `pointer`,
-`keyboard`, `selection`, `scroll`, `cookies`.
+`keyboard`, `selection`, `file_upload`, `scroll`, `cookies`.
 
 Every class maps to one of three verdicts:
 

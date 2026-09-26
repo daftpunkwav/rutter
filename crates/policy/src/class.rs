@@ -15,6 +15,8 @@ pub enum ActionClass {
     Keyboard,
     /// Selecting options on form controls.
     Selection,
+    /// Setting files on file input elements.
+    FileUpload,
     /// Scrolling.
     Scroll,
     /// Cookie manipulation; sensitive by default (docs/policy.md).
@@ -29,6 +31,7 @@ impl ActionClass {
             "pointer" => Some(Self::Pointer),
             "keyboard" => Some(Self::Keyboard),
             "selection" => Some(Self::Selection),
+            "file_upload" => Some(Self::FileUpload),
             "scroll" => Some(Self::Scroll),
             "cookies" => Some(Self::Cookies),
             _ => None,
@@ -42,6 +45,7 @@ impl ActionClass {
             Self::Pointer => "pointer",
             Self::Keyboard => "keyboard",
             Self::Selection => "selection",
+            Self::FileUpload => "file_upload",
             Self::Scroll => "scroll",
             Self::Cookies => "cookies",
         }
@@ -57,6 +61,7 @@ pub fn class_of(action: &Action) -> ActionClass {
         Action::Click { .. } | Action::Hover { .. } => ActionClass::Pointer,
         Action::Type { .. } | Action::PressKey { .. } => ActionClass::Keyboard,
         Action::SelectOption { .. } => ActionClass::Selection,
+        Action::SetInputFiles { .. } => ActionClass::FileUpload,
         Action::Scroll { .. } => ActionClass::Scroll,
     }
 }
@@ -73,6 +78,7 @@ mod tests {
             ActionClass::Pointer,
             ActionClass::Keyboard,
             ActionClass::Selection,
+            ActionClass::FileUpload,
             ActionClass::Scroll,
             ActionClass::Cookies,
         ] {
@@ -100,10 +106,17 @@ mod tests {
         );
         assert_eq!(
             class_of(&Action::SelectOption {
-                reference,
+                reference: reference.clone(),
                 values: vec!["a".to_owned()]
             }),
             ActionClass::Selection
+        );
+        assert_eq!(
+            class_of(&Action::SetInputFiles {
+                reference: reference.clone(),
+                paths: vec!["report.pdf".to_owned()]
+            }),
+            ActionClass::FileUpload
         );
     }
 }

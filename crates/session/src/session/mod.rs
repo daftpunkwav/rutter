@@ -853,6 +853,9 @@ pub(crate) fn as_action_error(session: &SessionId, error: &SessionError) -> Acti
                 url: url.clone(),
                 cause: cause.clone(),
             },
+            EngineError::ReferenceExpired { reference } => ActionError::ReferenceExpired {
+                reference: rutter_core::reference::Reference::new(reference),
+            },
             EngineError::Timeout { elapsed, .. } => ActionError::TimedOut {
                 phase: rutter_core::error::WaitPhase::Act,
                 elapsed: *elapsed,

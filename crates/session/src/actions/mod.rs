@@ -14,9 +14,11 @@ use rutter_core::ids::{PageId, SessionId};
 use rutter_core::readout::Readout;
 use rutter_core::reference::Reference;
 use rutter_core::snapshot::Snapshot;
+use rutter_engine::error::EngineError;
 use rutter_events::Backbone;
 use rutter_observe::{
-    focus_script, reader_script, select_script, serializer_script, wait_for_script,
+    files_check_script, focus_script, reader_script, select_script, serializer_script,
+    wait_for_script,
 };
 
 use crate::config::SessionConfig;
@@ -164,6 +166,65 @@ impl Executor<'_> {
                     })
                     .await
                     .map_err(SessionError::Engine)?;
+                self.settle_snapshot().await
+            }
+            Action::SetInputFiles { reference, paths } => {
+                if paths.is_empty() {
+                    return Err(SessionError::Action(ActionError::NotInteractable {
+                        reference: reference.clone(),
+                        reason: "no files were given".to_owned(),
+                    }));
+                }
+                self.auto_wait(reference).await?;
+                let check = self
+                    .page
+                    .evaluate(&files_check_script(reference.as_str()))
+                    .await
+                    .map_err(SessionError::Engine)?;
+                if check.get("missing") == Some(&serde_json::Value::Bool(true)) {
+                    return Err(expired(reference.as_str()));
+                }
+                if check.get("not_file") == Some(&serde_json::Value::Bool(true)) {
+                    return Err(SessionError::Action(ActionError::NotInteractable {
+                        reference: reference.clone(),
+                        reason: "the element is not a file input".to_owned(),
+                    }));
+                }
+                let multiple = check
+                    .get("multiple")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                if !multiple && paths.len() > 1 {
+                    return Err(SessionError::Action(ActionError::NotInteractable {
+                        reference: reference.clone(),
+                        reason: "the file input accepts a single file".to_owned(),
+                    }));
+                }
+                // The engine resolves paths on this machine; a path
+                // that does not exist is caller feedback, not an
+                // engine failure.
+                for path in paths {
+                    let exists = std::path::Path::new(path).try_exists().unwrap_or(false);
+                    if !exists {
+                        return Err(SessionError::Action(ActionError::NotInteractable {
+                            reference: reference.clone(),
+                            reason: format!("file not found: {path}"),
+                        }));
+                    }
+                }
+                self.page
+                    .set_input_files(reference.as_str(), paths)
+                    .await
+                    .map_err(|error| match error {
+                        // The element vanished between the check and
+                        // the file handoff: same answer as above.
+                        EngineError::ReferenceExpired { reference } => {
+                            SessionError::Action(ActionError::ReferenceExpired {
+                                reference: Reference::new(&reference),
+                            })
+                        }
+                        other => SessionError::Engine(other),
+                    })?;
                 self.settle_snapshot().await
             }
         }

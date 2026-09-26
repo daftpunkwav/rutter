@@ -81,6 +81,14 @@ pub enum EngineError {
         /// What went wrong while resolving or fetching the binary.
         detail: String,
     },
+
+    /// The snapshot reference an operation resolved no longer maps to a
+    /// live element; agents re-snapshot and retry with a fresh handle.
+    #[error("reference '{reference}' no longer resolves to a live element")]
+    ReferenceExpired {
+        /// The reference that went stale.
+        reference: String,
+    },
 }
 
 impl EngineError {

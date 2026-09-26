@@ -86,6 +86,14 @@ pub enum Action {
         /// Distance to scroll, in pixels.
         amount: u32,
     },
+    /// Sets the files of a file input element.
+    SetInputFiles {
+        /// Reference to the file input element.
+        reference: Reference,
+        /// Paths of the files to set, as understood by the machine the
+        /// engine runs on.
+        paths: Vec<String>,
+    },
 }
 
 /// Direction of an [`Action::Scroll`] operation.

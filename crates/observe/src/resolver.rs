@@ -29,12 +29,8 @@ pub fn focus_script(reference: &str) -> String {
 /// `values_json` (a JSON array literal) and dispatches `input` and
 /// `change`. Returns `{ missing }`, `{ not_select }`, or `{ matched }`.
 pub fn select_script(reference: &str, values_json: &str) -> String {
-    let sanitized: String = reference
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .collect();
     SELECT_TEMPLATE
-        .replace("__REF__", &sanitized)
+        .replace("__REF__", &sanitized(reference))
         .replace("__VALUES__", values_json)
 }
 
@@ -44,13 +40,33 @@ pub fn wait_for_script(text_json: &str) -> String {
     WAIT_TEMPLATE.replace("__TEXT__", text_json)
 }
 
-fn resolve_template(reference: &str, focus: &str) -> String {
-    let sanitized: String = reference
+/// Builds a script that resolves one reference to the element itself.
+/// Evaluate it with `returnByValue` **off**: the consumer needs the
+/// remote object handle of the element, not a serialized copy. The page
+/// answers `null` when the reference is gone.
+pub fn element_script(reference: &str) -> String {
+    ELEMENT_TEMPLATE.replace("__REF__", &sanitized(reference))
+}
+
+/// Builds a file-input check script. Returns `{ missing }`,
+/// `{ not_file }`, or `{ ok: true, multiple }` — the shape the upload
+/// action needs before handing files to the backend.
+pub fn files_check_script(reference: &str) -> String {
+    FILE_CHECK_TEMPLATE.replace("__REF__", &sanitized(reference))
+}
+
+/// Strips a reference to its alphanumeric core; the only form that may
+/// be embedded into a page script.
+fn sanitized(reference: &str) -> String {
+    reference
         .chars()
         .filter(char::is_ascii_alphanumeric)
-        .collect();
+        .collect()
+}
+
+fn resolve_template(reference: &str, focus: &str) -> String {
     RESOLVER_TEMPLATE
-        .replace("__REF__", &sanitized)
+        .replace("__REF__", &sanitized(reference))
         .replace("__FOCUS__", focus)
 }
 
@@ -119,6 +135,36 @@ const WAIT_TEMPLATE: &str = r#"(function () {
   var NEEDLE = __TEXT__;
   var body = document.body;
   return { found: Boolean(body) && body.innerText.indexOf(NEEDLE) !== -1 };
+})();
+"#;
+
+/// Element template: returns the live element for one reference, for
+/// consumers that operate on the remote object rather than a value.
+const ELEMENT_TEMPLATE: &str = r#"(function () {
+  'use strict';
+  var store = window.__rutterRefStore;
+  if (!store || !store.reverse) return null;
+  var weak = store.reverse.get("__REF__");
+  var el = weak && weak.deref ? weak.deref() : null;
+  if (!el || !el.isConnected) return null;
+  return el;
+})();
+"#;
+
+/// File-input check template: reports `missing`, `not_file`, or the
+/// element's readiness with its `multiple` flag.
+const FILE_CHECK_TEMPLATE: &str = r#"(function () {
+  'use strict';
+  var REF = "__REF__";
+  var store = window.__rutterRefStore;
+  if (!store || !store.reverse) return { missing: true };
+  var weak = store.reverse.get(REF);
+  var el = weak && weak.deref ? weak.deref() : null;
+  if (!el || !el.isConnected) return { missing: true };
+  if (el.tagName !== 'INPUT' || String(el.type).toLowerCase() !== 'file') {
+    return { not_file: true };
+  }
+  return { missing: false, not_file: false, ok: true, multiple: Boolean(el.multiple) };
 })();
 "#;
 

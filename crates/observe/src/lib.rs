@@ -31,8 +31,8 @@ mod response;
 
 pub use read::read_from_response;
 pub use resolver::{
-    focus_script, resolver_script, select_script, storage_dump_script, storage_restore_script,
-    wait_for_script,
+    element_script, files_check_script, focus_script, resolver_script, select_script,
+    storage_dump_script, storage_restore_script, wait_for_script,
 };
 pub use response::snapshot_from_response;
 

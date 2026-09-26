@@ -19,7 +19,7 @@ mod params;
 pub use params::{
     CookieInput, CookiesParams, Direction, NavigateParams, PageParams, PressKeyParams,
     ReferenceParams, SameSiteInput, ScrollParams, SelectOptionParams, TabsOpenParams, TypeParams,
-    WaitForParams,
+    UploadFileParams, WaitForParams,
 };
 
 use std::sync::Arc;
@@ -208,6 +208,23 @@ impl RutterMcp {
         self.run_action(Action::SelectOption {
             reference: Reference::new(reference),
             values,
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Set the files of a file input element a snapshot reference points to, returning a fresh snapshot"
+    )]
+    async fn upload_file(
+        &self,
+        Parameters(UploadFileParams { reference, paths }): Parameters<UploadFileParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if paths.is_empty() {
+            return Err(invalid_params("paths must not be empty".to_owned()));
+        }
+        self.run_action(Action::SetInputFiles {
+            reference: Reference::new(reference),
+            paths,
         })
         .await
     }

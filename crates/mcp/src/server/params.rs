@@ -173,6 +173,15 @@ pub struct TabsOpenParams {
 }
 
 #[derive(Debug, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
+/// Parameters of the upload_file tool.
+pub struct UploadFileParams {
+    /// Reference to the file input element.
+    pub reference: String,
+    /// Paths of the files to set, on the machine the engine runs on.
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
 /// Parameters of the set_cookies tool.
 pub struct CookiesParams {
     /// Cookies to set on this session's context.
