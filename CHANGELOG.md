@@ -27,6 +27,14 @@ and the project adheres to
 
 ### Added
 
+- Dialog resilience: a page that opens `alert`, `confirm`, `prompt`,
+  or `beforeunload` no longer wedges its session — the session
+  dismisses every dialog immediately (prompts resolve to their dismiss
+  values), records the dismissal as a `DialogAutoDismissed` event, and
+  keeps serving tools while the page continues.
+- Console visibility: page console output and uncaught exceptions are
+  captured per page, and the new `console_messages` MCP tool returns
+  the active page's entries, oldest first.
 - Markdown readouts: the `read` MCP tool and the `rutter read <url>`
   CLI mode return a page's readable content as a markdown document —
   headings, paragraphs, lists, GFM tables, code fences, and links with

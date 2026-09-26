@@ -15,19 +15,25 @@ use chromiumoxide::cdp::browser_protocol::input::{
     DispatchKeyEventType, DispatchMouseEventType, InsertTextParams,
 };
 use chromiumoxide::cdp::browser_protocol::page::{
-    EventFrameNavigated, EventScreencastFrame, GetNavigationHistoryParams, NavigateParams,
+    EventFrameNavigated, EventJavascriptDialogOpening, EventScreencastFrame,
+    GetNavigationHistoryParams, HandleJavaScriptDialogParams, NavigateParams,
     NavigateToHistoryEntryParams, ScreencastFrameAckParams, StartScreencastFormat,
     StartScreencastParams, StopScreencastParams,
 };
 use chromiumoxide::cdp::browser_protocol::target::TargetId;
-use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
+use chromiumoxide::cdp::js_protocol::runtime::{
+    EvaluateParams, EventConsoleApiCalled, EventExceptionThrown, RemoteObject,
+};
 use chromiumoxide::error::CdpError;
 use chromiumoxide::page::ScreenshotParams;
 use serde_json::Value;
 
 use rutter_engine::error::EngineError;
 use rutter_engine::input::InputEvent;
-use rutter_engine::page::{ImageFormat, ScreencastFrame, ScreencastStream, Screenshot};
+use rutter_engine::page::{
+    ConsoleLevel, DialogKind, ImageFormat, ObservationStream, PageObservation, ScreencastFrame,
+    ScreencastStream, Screenshot,
+};
 
 use crate::error::{self, COMMAND_TIMEOUT, fold, fold_navigation, with_deadline, with_deadline_by};
 
@@ -47,6 +53,81 @@ fn screencast_params() -> StartScreencastParams {
         .max_width(1024)
         .every_nth_frame(1)
         .build()
+}
+
+/// Cap on one observation's text: a hostile or chatty page must not be
+/// able to bloat the event ring or a console feed with one call.
+const OBSERVATION_TEXT_CAP: usize = 2_000;
+
+/// Bounds an observation text at [`OBSERVATION_TEXT_CAP`] characters.
+fn cap_text(text: String) -> String {
+    if text.chars().count() <= OBSERVATION_TEXT_CAP {
+        return text;
+    }
+    let mut capped: String = text.chars().take(OBSERVATION_TEXT_CAP).collect();
+    capped.push('…');
+    capped
+}
+
+/// Maps a protocol dialog kind onto the engine vocabulary.
+fn dialog_kind(kind: &str) -> DialogKind {
+    match kind {
+        "confirm" => DialogKind::Confirm,
+        "prompt" => DialogKind::Prompt,
+        "beforeunload" => DialogKind::Beforeunload,
+        _ => DialogKind::Alert,
+    }
+}
+
+/// Maps a protocol console call type onto the engine severity; the
+/// grouped and structured calls count as ordinary log output.
+fn console_level(call_type: &str) -> ConsoleLevel {
+    match call_type {
+        "debug" => ConsoleLevel::Debug,
+        "info" => ConsoleLevel::Info,
+        "warning" => ConsoleLevel::Warning,
+        "error" | "assert" => ConsoleLevel::Error,
+        _ => ConsoleLevel::Log,
+    }
+}
+
+/// Formats one console argument the way a developer console would: a
+/// string argument verbatim, other values as JSON, and a type-name
+/// placeholder when the value carried neither.
+fn console_argument(argument: &RemoteObject) -> String {
+    if let Some(value) = argument.value.as_ref() {
+        return match value {
+            Value::String(text) => text.clone(),
+            other => other.to_string(),
+        };
+    }
+    if let Some(description) = argument.description.as_deref() {
+        return description.to_owned();
+    }
+    format!("[{}]", argument.r#type.as_ref())
+}
+
+/// Formats a console call's text from its arguments, joined with
+/// spaces like a developer console's default formatting.
+fn console_text(arguments: &[RemoteObject]) -> String {
+    let joined = arguments
+        .iter()
+        .map(console_argument)
+        .collect::<Vec<_>>()
+        .join(" ");
+    cap_text(joined)
+}
+
+/// Formats an uncaught exception's text: the thrown value's
+/// description when the protocol carried one, otherwise the bare
+/// exception text.
+fn exception_text(details: &chromiumoxide::cdp::js_protocol::runtime::ExceptionDetails) -> String {
+    let text = details
+        .exception
+        .as_ref()
+        .and_then(|exception| exception.description.as_deref())
+        .unwrap_or(details.text.as_str());
+    cap_text(text.to_owned())
 }
 
 /// Resolves the instant the next capture may run and records it as the
@@ -75,6 +156,10 @@ pub struct CdpPage {
     /// disables the rate limit.
     screenshot_min_interval: Option<Duration>,
     last_capture: Mutex<Option<Instant>>,
+    /// Whether the page's observation feed has been handed out; the
+    /// feed is single-consumer, so a second `observe` call fails
+    /// instead of silently splitting the observations.
+    observation_claimed: Mutex<bool>,
     /// Whether closing this page may close the underlying target.
     /// Pages attached to a target that already existed (the Electron
     /// engine's one visible surface, created by its own UI) outlive
@@ -95,6 +180,7 @@ impl CdpPage {
             navigation_timeout,
             screenshot_min_interval,
             last_capture: Mutex::new(None),
+            observation_claimed: Mutex::new(false),
             closable: true,
         }
     }
@@ -126,6 +212,7 @@ impl CdpPage {
             navigation_timeout,
             screenshot_min_interval,
             last_capture: Mutex::new(None),
+            observation_claimed: Mutex::new(false),
             closable,
         }
     }
@@ -394,6 +481,111 @@ impl rutter_engine::page::PageHandle for CdpPage {
 
         Ok(ScreencastStream::new(receiver))
     }
+
+    async fn observe(&self) -> Result<ObservationStream, EngineError> {
+        use futures::StreamExt;
+
+        {
+            let mut claimed = self
+                .observation_claimed
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if *claimed {
+                return Err(EngineError::Unsupported {
+                    operation: "observe".to_owned(),
+                    reason: "this page's observation feed already has a consumer".to_owned(),
+                });
+            }
+            *claimed = true;
+        }
+
+        // Register the listeners before returning so observations from
+        // the first ticks are not lost.
+        let mut dialogs = self
+            .page
+            .event_listener::<EventJavascriptDialogOpening>()
+            .await
+            .map_err(fold)?;
+        let mut console = self
+            .page
+            .event_listener::<EventConsoleApiCalled>()
+            .await
+            .map_err(fold)?;
+        let mut exceptions = self
+            .page
+            .event_listener::<EventExceptionThrown>()
+            .await
+            .map_err(fold)?;
+
+        let (sender, receiver) = tokio::sync::mpsc::channel::<PageObservation>(64);
+        // The forwarding task owns the feed: observations hand off
+        // without awaiting, so a stalled consumer loses observations
+        // instead of piling backlog into the chromiumoxide listeners,
+        // which are an unbounded queue (same rule as the screencast).
+        // Every observation is droppable; the feed ends when the page
+        // or the consumer goes away.
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    Some(event) = dialogs.next() => {
+                        let observation = PageObservation::DialogOpened {
+                            kind: dialog_kind(event.r#type.as_ref()),
+                            message: cap_text(event.message.clone()),
+                        };
+                        if !try_forward(&sender, observation) {
+                            break;
+                        }
+                    }
+                    Some(event) = console.next() => {
+                        let observation = PageObservation::ConsoleEmitted {
+                            level: console_level(event.r#type.as_ref()),
+                            text: console_text(&event.args),
+                        };
+                        if !try_forward(&sender, observation) {
+                            break;
+                        }
+                    }
+                    Some(event) = exceptions.next() => {
+                        let observation = PageObservation::UncaughtException {
+                            text: exception_text(&event.exception_details),
+                        };
+                        if !try_forward(&sender, observation) {
+                            break;
+                        }
+                    }
+                    else => break,
+                }
+            }
+        });
+
+        Ok(ObservationStream::new(receiver))
+    }
+
+    async fn handle_dialog(
+        &self,
+        accept: bool,
+        prompt_text: Option<&str>,
+    ) -> Result<(), EngineError> {
+        let mut params = HandleJavaScriptDialogParams::new(accept);
+        params.prompt_text = prompt_text.map(str::to_owned);
+        with_deadline("handle_dialog", COMMAND_TIMEOUT, self.page.execute(params))
+            .await
+            .map(|_| ())
+    }
+}
+
+/// Hands one observation to the feed's consumer; `false` means the
+/// consumer is gone and the forwarding task should end.
+fn try_forward(
+    sender: &tokio::sync::mpsc::Sender<PageObservation>,
+    observation: PageObservation,
+) -> bool {
+    match sender.try_send(observation) {
+        Ok(()) => true,
+        // A stalled consumer loses observations, not memory.
+        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => true,
+        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => false,
+    }
 }
 
 #[cfg(test)]
@@ -439,5 +631,90 @@ mod tests {
     fn zero_interval_never_waits() {
         let now = Instant::now();
         assert_eq!(capture_due(Some(now), Duration::ZERO, now), now);
+    }
+
+    #[test]
+    fn dialog_kinds_map_by_wire_name_with_alert_as_the_default() {
+        assert_eq!(dialog_kind("alert"), DialogKind::Alert);
+        assert_eq!(dialog_kind("confirm"), DialogKind::Confirm);
+        assert_eq!(dialog_kind("prompt"), DialogKind::Prompt);
+        assert_eq!(dialog_kind("beforeunload"), DialogKind::Beforeunload);
+        assert_eq!(dialog_kind("AccountChooser"), DialogKind::Alert);
+    }
+
+    #[test]
+    fn console_severities_map_by_call_type() {
+        assert_eq!(console_level("log"), ConsoleLevel::Log);
+        assert_eq!(console_level("dir"), ConsoleLevel::Log);
+        assert_eq!(console_level("table"), ConsoleLevel::Log);
+        assert_eq!(console_level("debug"), ConsoleLevel::Debug);
+        assert_eq!(console_level("info"), ConsoleLevel::Info);
+        assert_eq!(console_level("warning"), ConsoleLevel::Warning);
+        assert_eq!(console_level("error"), ConsoleLevel::Error);
+        assert_eq!(console_level("assert"), ConsoleLevel::Error);
+    }
+
+    #[test]
+    fn console_arguments_format_like_a_developer_console() {
+        use chromiumoxide::cdp::js_protocol::runtime::{RemoteObject, RemoteObjectType};
+        let bare_object = |r#type: RemoteObjectType| RemoteObject {
+            r#type,
+            subtype: None,
+            class_name: None,
+            value: None,
+            unserializable_value: None,
+            description: None,
+            deep_serialized_value: None,
+            object_id: None,
+            preview: None,
+            custom_preview: None,
+        };
+        let string_argument = RemoteObject {
+            value: Some(Value::String("careful".to_owned())),
+            ..bare_object(RemoteObjectType::String)
+        };
+        let object_argument = RemoteObject {
+            value: Some(serde_json::json!({ "a": 1 })),
+            ..bare_object(RemoteObjectType::Object)
+        };
+        assert_eq!(console_argument(&string_argument), "careful");
+        assert_eq!(console_argument(&object_argument), r#"{"a":1}"#);
+
+        let opaque = RemoteObject {
+            description: Some("function click() {}".to_owned()),
+            ..bare_object(RemoteObjectType::Function)
+        };
+        assert_eq!(console_argument(&opaque), "function click() {}");
+
+        let bare = bare_object(RemoteObjectType::Symbol);
+        assert_eq!(console_argument(&bare), "[symbol]");
+
+        let joined = console_text(&[string_argument, object_argument]);
+        assert_eq!(joined, "careful {\"a\":1}");
+    }
+
+    #[test]
+    fn observation_text_is_capped_for_hostile_pages() {
+        let short = cap_text("short".to_owned());
+        assert_eq!(short, "short");
+
+        let huge: String = "x".repeat(OBSERVATION_TEXT_CAP * 2);
+        let capped = cap_text(huge);
+        assert_eq!(capped.chars().count(), OBSERVATION_TEXT_CAP + 1);
+        assert!(capped.ends_with('…'));
+    }
+
+    #[test]
+    fn a_feed_consumer_leaving_ends_the_forwarding_decision() {
+        let (sender, receiver) = tokio::sync::mpsc::channel::<PageObservation>(1);
+        let observation = PageObservation::UncaughtException {
+            text: "boom".to_owned(),
+        };
+        assert!(try_forward(&sender, observation.clone()));
+        drop(receiver);
+        assert!(
+            !try_forward(&sender, observation),
+            "a closed feed ends the task"
+        );
     }
 }

@@ -90,9 +90,16 @@ timeline.
 
 ## 4. Tools
 
-Nineteen tools. Parameter types: `reference` is a snapshot handle
+Twenty tools. Parameter types: `reference` is a snapshot handle
 (`e17`); `direction` is one of `up|down|left|right`; durations are
 milliseconds.
+
+**Dialogs.** A page that calls `alert`, `confirm`, `prompt`, or
+triggers a `beforeunload` confirmation never wedges the session: the
+session dismisses every dialog immediately (a `prompt` resolves to its
+dismiss value, `confirm` to `false`) and records the dismissal on the
+event timeline ([events](events.md)); the page cannot block tools
+waiting on it.
 
 ### navigate
 `{ url: string }` → snapshot. Navigates the active page (opening the
@@ -179,6 +186,14 @@ same_site? }] }` → text confirmation. Cookies apply to the session's
 context (context isolation, [glossary](glossary.md)). `same_site` is
 `strict|lax|none`; persistence across restarts works through storage
 state ([sessions](sessions.md#3-storage-state)).
+
+### console_messages
+`{}` → text block, the console output the active page produced —
+`console.*` calls and uncaught exceptions — one `[level] text` line per
+entry, oldest first. A bounded buffer keeps the most recent entries per
+page; a closed page's entries go with it. Observation only: no
+auto-wait, no snapshot, and a session with no page reports none instead
+of opening one.
 
 ### close_session
 `{}` → text confirmation. Closes the session's pages and context and

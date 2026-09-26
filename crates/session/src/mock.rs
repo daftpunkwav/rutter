@@ -18,7 +18,9 @@ use rutter_core::ids::{ContextId, PageId};
 use rutter_engine::context::{ContextHandle, ForeignPage};
 use rutter_engine::error::EngineError;
 use rutter_engine::input::InputEvent;
-use rutter_engine::page::{ImageFormat, PageHandle, ScreencastStream, Screenshot};
+use rutter_engine::page::{
+    ImageFormat, ObservationStream, PageHandle, PageObservation, ScreencastStream, Screenshot,
+};
 
 fn lock<T, R>(mutex: &Mutex<T>, f: impl FnOnce(&mut T) -> R) -> R {
     let mut guard = mutex
@@ -54,6 +56,11 @@ struct PageInner {
     url: Mutex<String>,
     found: AtomicBool,
     inputs: Mutex<Vec<InputEvent>>,
+    /// The observation feed's sender while a consumer holds the stream;
+    /// `emit` drops observations when no consumer took the feed.
+    observations: Mutex<Option<tokio::sync::mpsc::Sender<PageObservation>>>,
+    /// The dialog answers `handle_dialog` received, in order.
+    dialog_answers: Mutex<Vec<(bool, Option<String>)>>,
 }
 
 /// A scriptable page handle. Queued resolve answers are consumed one per
@@ -102,6 +109,32 @@ impl MockPage {
     /// The input events dispatched so far, in order.
     pub fn inputs(&self) -> Vec<InputEvent> {
         lock(&self.inner.inputs, |inputs| inputs.clone())
+    }
+
+    /// Delivers one page observation to the feed's consumer, when one
+    /// holds the stream; without a consumer the observation is dropped,
+    /// like a stalled real consumer would lose it.
+    pub fn emit(&self, observation: PageObservation) {
+        let sender = lock(&self.inner.observations, |observations| {
+            observations.clone()
+        });
+        if let Some(sender) = sender {
+            let _ = sender.try_send(observation);
+        }
+    }
+
+    /// The dialog answers `handle_dialog` received, in order.
+    pub fn dialog_answers(&self) -> Vec<(bool, Option<String>)> {
+        lock(&self.inner.dialog_answers, |answers| answers.clone())
+    }
+
+    /// Whether a consumer has taken the observation feed; tests wait on
+    /// this before emitting, so observations cannot race the feed's
+    /// start-up.
+    pub fn feed_claimed(&self) -> bool {
+        lock(&self.inner.observations, |observations| {
+            observations.is_some()
+        })
     }
 
     fn next_resolve_answer(&self) -> Value {
@@ -189,6 +222,35 @@ impl PageHandle for MockPage {
     async fn start_screencast(&self) -> Result<ScreencastStream, EngineError> {
         let (_sender, receiver) = tokio::sync::mpsc::channel(1);
         Ok(ScreencastStream::new(receiver))
+    }
+
+    async fn observe(&self) -> Result<ObservationStream, EngineError> {
+        let (sender, receiver) = tokio::sync::mpsc::channel(16);
+        let claimed = lock(&self.inner.observations, |observations| {
+            observations.is_some()
+        });
+        if claimed {
+            // The feed is single-consumer, like the real backends'.
+            return Err(EngineError::Unsupported {
+                operation: "observe".to_owned(),
+                reason: "this page's observation feed already has a consumer".to_owned(),
+            });
+        }
+        lock(&self.inner.observations, |observations| {
+            *observations = Some(sender)
+        });
+        Ok(ObservationStream::new(receiver))
+    }
+
+    async fn handle_dialog(
+        &self,
+        accept: bool,
+        prompt_text: Option<&str>,
+    ) -> Result<(), EngineError> {
+        lock(&self.inner.dialog_answers, |answers| {
+            answers.push((accept, prompt_text.map(str::to_owned)))
+        });
+        Ok(())
     }
 }
 

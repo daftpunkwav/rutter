@@ -335,6 +335,23 @@ impl RutterMcp {
         }
     }
 
+    #[tool(
+        description = "Show the console output and uncaught exceptions the active page produced, oldest first"
+    )]
+    async fn console_messages(&self) -> Result<CallToolResult, McpError> {
+        let session = self.session().await?;
+        let entries = session.console_messages();
+        let text = if entries.is_empty() {
+            "no console output on the active page\n".to_owned()
+        } else {
+            entries
+                .iter()
+                .map(|entry| format!("[{}] {}\n", entry.level, entry.text))
+                .collect()
+        };
+        Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
+    }
+
     #[tool(description = "Close this session's pages and context")]
     async fn close_session(&self) -> Result<CallToolResult, McpError> {
         self.manager.close_session(&self.session_id).await;

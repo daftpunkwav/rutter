@@ -27,10 +27,12 @@ pub(crate) mod mock;
 pub mod session;
 pub mod storage;
 
-// The element resolver, the polling loop, and the page registry are the
-// executor's mechanics; the orchestration surface above never sees them.
-// Only the registry's client-facing view (`PageInfo`) escapes.
+// The element resolver, the polling loop, the page registry, and the
+// observation feeds are the orchestration's mechanics; the surface above
+// never sees them. Only the registry's client-facing view (`PageInfo`)
+// and the feeds' entries (`Session::console_messages`) escape.
 mod audit;
+mod observations;
 mod pages;
 mod resolve;
 mod wait;
@@ -43,9 +45,11 @@ pub use session::Session;
 pub use storage::StorageState;
 
 // Engine types this crate's own API exposes (the manager constructor,
-// `Session::screencast`/`screenshot`, `SessionError::Engine`).
-// Consumers depend on `rutter-session` alone; the engine layer stays an
-// implementation detail behind the orchestration surface.
+// `Session::screencast`/`screenshot`, `SessionError::Engine`,
+// `Session::console_messages`). Consumers depend on `rutter-session`
+// alone; the engine layer stays an implementation detail behind the
+// orchestration surface.
 pub use rutter_engine::{
-    EngineError, EngineLauncher, ImageFormat, LaunchMode, ScreencastStream, Screenshot,
+    ConsoleEntry, ConsoleLevel, EngineError, EngineLauncher, ImageFormat, LaunchMode,
+    ScreencastStream, Screenshot,
 };

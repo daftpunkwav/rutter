@@ -99,6 +99,19 @@ pub enum Event {
         /// Whether the action may proceed.
         granted: bool,
     },
+    /// A page opened a JavaScript dialog and the session dismissed it.
+    /// Unanswered dialogs wedge a page, so sessions answer every dialog
+    /// (dismiss; a prompt keeps its default text) and the dismissal is
+    /// recorded like any other page fact (docs/tool-catalog.md §4).
+    DialogAutoDismissed {
+        /// The page that opened the dialog.
+        page: PageId,
+        /// The dialog kind, in its lowercase wire form
+        /// (`alert|confirm|prompt|beforeunload`).
+        kind: String,
+        /// The message the dialog showed.
+        message: String,
+    },
 }
 
 #[cfg(test)]

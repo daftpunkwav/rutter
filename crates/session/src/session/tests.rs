@@ -1090,3 +1090,94 @@ async fn closing_an_adopted_page_untracks_it_like_any_other() {
         "the close is announced like any other"
     );
 }
+
+#[tokio::test]
+async fn a_page_dialog_is_dismissed_and_lands_on_the_timeline() {
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+    let (page_id, _) = session.active_page_for_test().await;
+    let mock = context.page_mock(page_id.clone()).expect("mock page");
+
+    // The feed starts with the page; wait for its claim so the emitted
+    // observation cannot race the feed's start-up.
+    crate::wait::poll_until(
+        || async { mock.feed_claimed().then_some(()) },
+        Duration::from_secs(5),
+        Duration::from_millis(20),
+    )
+    .await
+    .expect("the feed claims the page's stream");
+
+    mock.emit(rutter_engine::PageObservation::DialogOpened {
+        kind: rutter_engine::DialogKind::Confirm,
+        message: "leave?".to_owned(),
+    });
+
+    crate::wait::poll_until(
+        || async { (!mock.dialog_answers().is_empty()).then_some(()) },
+        Duration::from_secs(5),
+        Duration::from_millis(20),
+    )
+    .await
+    .expect("the dialog is answered");
+    assert_eq!(mock.dialog_answers(), vec![(false, None)]);
+    assert!(
+        session
+            .backbone()
+            .replay(&SessionId::new("s-test"))
+            .iter()
+            .any(|envelope| matches!(
+                envelope.event,
+                Event::DialogAutoDismissed { ref kind, ref message, .. }
+                    if kind == "confirm" && message == "leave?"
+            )),
+        "the dismissal is announced on the backbone"
+    );
+}
+
+#[tokio::test]
+async fn console_messages_reports_the_active_pages_entries() {
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+    let (page_id, _) = session.active_page_for_test().await;
+    let mock = context.page_mock(page_id.clone()).expect("mock page");
+
+    assert!(
+        session.console_messages().is_empty(),
+        "a page with no console output reports none"
+    );
+
+    crate::wait::poll_until(
+        || async { mock.feed_claimed().then_some(()) },
+        Duration::from_secs(5),
+        Duration::from_millis(20),
+    )
+    .await
+    .expect("the feed claims the page's stream");
+
+    mock.emit(rutter_engine::PageObservation::ConsoleEmitted {
+        level: rutter_engine::ConsoleLevel::Warning,
+        text: "careful".to_owned(),
+    });
+    mock.emit(rutter_engine::PageObservation::UncaughtException {
+        text: "boom".to_owned(),
+    });
+
+    crate::wait::poll_until(
+        || async { (!session.console_messages().is_empty()).then_some(()) },
+        Duration::from_secs(5),
+        Duration::from_millis(20),
+    )
+    .await
+    .expect("the entries land");
+    let entries = session.console_messages();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].level, rutter_engine::ConsoleLevel::Warning);
+    assert_eq!(entries[0].text, "careful");
+    assert_eq!(entries[1].level, rutter_engine::ConsoleLevel::Error);
+    assert_eq!(entries[1].text, "boom");
+
+    // A closed page's entries go with it.
+    session.close_page(page_id).await.expect("page closes");
+    assert!(session.console_messages().is_empty());
+}

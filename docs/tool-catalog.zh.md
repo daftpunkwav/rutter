@@ -80,8 +80,14 @@ agent 可执行的英文提示：
 
 ## 4. 工具
 
-十九个工具。参数类型：`reference` 是快照句柄（`e17`）；
+二十个工具。参数类型：`reference` 是快照句柄（`e17`）；
 `direction` 是 `up|down|left|right` 之一；时长单位为毫秒。
+
+**对话框。**页面调用 `alert`、`confirm`、`prompt` 或触发
+`beforeunload` 确认时，session 永远不会被卡住：session 立即关闭每个
+对话框（`prompt` 按取消解析、`confirm` 按否解析），并把这次关闭
+记录到事件时间线（[events](events.zh.md)）上；页面无法阻塞
+等待它的工具。
 
 ### navigate
 `{ url: string }` → snapshot。导航活动页面（需要时打开第一个
@@ -160,6 +166,13 @@ same_site? }] }` → 文本确认。cookie 应用到 session 的 context
 （context 隔离，见[术语表](glossary.zh.md)）。`same_site` 是
 `strict|lax|none`；跨重启的持久化经由 storage state 完成
 （[sessions](sessions.zh.md#3-storage-state)）。
+
+### console_messages
+`{}` → text block，活动页面产生的控制台输出——`console.*` 调用与
+未捕获异常——每条一行 `[level] text`，从旧到新。每页面维护一个有界
+缓冲，保留最近的条目；页面关闭时其条目随之消失。仅观察：无
+auto-wait、无 snapshot；没有页面的 session 直接报告为空，不会打开
+新页面。
 
 ### close_session
 `{}` → 文本确认。关闭 session 的页面与 context 并释放引擎引用。

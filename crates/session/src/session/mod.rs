@@ -30,6 +30,7 @@ use crate::actions::{Executor, PageOps};
 use crate::audit::{self, ApprovalAudit};
 use crate::config::SessionConfig;
 use crate::error::SessionError;
+use crate::observations::ObservationFeeds;
 use crate::pages::{PageInfo, PageRegistry, PageSlot};
 use crate::storage::StorageState;
 
@@ -51,6 +52,9 @@ pub struct Session {
     /// The approval audit trail; a session with no state directory writes
     /// nothing (docs/policy.md).
     audit: ApprovalAudit,
+    /// Per-page observation feeds (dialogs answered, console kept);
+    /// spawned with each tracked page, docs/tool-catalog.md §4.
+    feeds: Arc<ObservationFeeds>,
     last_storage: Mutex<StorageState>,
     /// Whether the persistence file currently reflects `last_storage`;
     /// a failed write forces a rewrite on the next capture even when
@@ -78,6 +82,7 @@ impl Session {
             context: tokio::sync::RwLock::new(context),
             pages: PageRegistry::new(),
             audit: ApprovalAudit::beside_storage(state_path.as_deref()),
+            feeds: Arc::new(ObservationFeeds::default()),
             state_path,
             last_storage: Mutex::new(StorageState::default()),
             last_persist_ok: Mutex::new(false),
@@ -192,6 +197,7 @@ impl Session {
             handle: Arc::clone(&handle),
             active: true,
         }) {
+            self.start_feed(&page_id, &handle);
             self.backbone.publish(
                 self.id.clone(),
                 Event::PageOpened {
@@ -392,11 +398,12 @@ impl Session {
             if self.pages.admit(PageSlot {
                 id: id.clone(),
                 url: surface.url,
-                handle,
+                handle: Arc::clone(&handle),
                 active: false,
             }) {
                 // A page exists that this session did not open: the
                 // timeline says so, like any other open.
+                self.start_feed(&id, &handle);
                 self.backbone
                     .publish(self.id.clone(), Event::PageOpened { page: id });
             }
@@ -435,6 +442,7 @@ impl Session {
         // Only after the engine agreed: a page still open in the browser
         // must stay tracked, or it becomes an uncounted live tab.
         self.pages.remove(&page_id);
+        self.feeds.remove(&page_id);
         self.backbone.publish(
             self.id.clone(),
             Event::PageClosed {
@@ -527,6 +535,9 @@ impl Session {
     /// never showed, and the page cap never counted.
     pub(crate) async fn recover(&self, context: Arc<dyn ContextHandle>) {
         let saved = self.pages.begin_recovery();
+        // The old engine's pages are gone; their feeds die with them and
+        // the restored pages get fresh feeds.
+        self.feeds.clear();
         let state = self.lock_last_storage().clone();
 
         let shared = Arc::clone(&context);
@@ -564,9 +575,10 @@ impl Session {
             restored.push(PageSlot {
                 id: id.clone(),
                 url: slot.url,
-                handle,
+                handle: Arc::clone(&handle),
                 active: was_active,
             });
+            self.start_feed(&id, &handle);
             self.backbone
                 .publish(self.id.clone(), Event::PageOpened { page: id });
         }
@@ -623,6 +635,30 @@ impl Session {
         let context = self.context.read().await.clone();
         let _ = context.close().await;
         self.pages.clear();
+        self.feeds.clear();
+    }
+
+    /// The active page's console output and uncaught exceptions, oldest
+    /// first (docs/tool-catalog.md §4: `console_messages`). A session
+    /// with no page has none; this is a read-only probe and never opens
+    /// one.
+    pub fn console_messages(&self) -> Vec<rutter_engine::ConsoleEntry> {
+        match self.pages.active() {
+            Some((page_id, _)) => self.feeds.entries(&page_id),
+            None => Vec::new(),
+        }
+    }
+
+    /// Starts the observation feed for a tracked page: dialogs the page
+    /// opens are dismissed and recorded (docs/tool-catalog.md §4), its
+    /// console lines land in the page's buffer.
+    fn start_feed(&self, page_id: &PageId, handle: &Arc<dyn PageHandle>) {
+        self.feeds.spawn(
+            self.id.clone(),
+            page_id.clone(),
+            Arc::clone(handle),
+            Arc::clone(&self.backbone),
+        );
     }
 
     /// The page registry, for tests that seed tracked pages without going
