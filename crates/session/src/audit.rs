@@ -149,10 +149,18 @@ fn append_line(path: &Path, line: &str) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(path)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.append(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Mode applies at creation: the trail records judged URLs, whose
+        // query strings can carry secrets, so the file never exists with
+        // the umask default (group/world readable) — matching the
+        // storage state file written next to it.
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
     file.write_all(line.as_bytes())?;
     file.write_all(b"\n")
 }
@@ -301,6 +309,33 @@ mod tests {
             std::time::Duration::ZERO,
         );
         assert!(path.exists(), "append creates the tree on first use");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_trail_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("approvals.jsonl");
+        let audit = ApprovalAudit::new(Some(path.clone()));
+        audit.record(
+            &SessionId::new("s1"),
+            &PageId::new("p1"),
+            "apr-1",
+            &brief(VerdictBasis::SetDefault),
+            GRANTED,
+            std::time::Duration::ZERO,
+        );
+        let mode = std::fs::metadata(&path)
+            .expect("metadata")
+            .permissions()
+            .mode();
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "judged URLs can carry secrets in their queries; the trail must not be group or world readable"
+        );
     }
 
     #[test]
