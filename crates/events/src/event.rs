@@ -140,4 +140,21 @@ mod tests {
         // names an action through its `type` field (snake_case tag).
         assert!(json.contains(r#""type":"click""#), "tagged action: {json}");
     }
+
+    #[test]
+    fn the_dialog_dismissal_event_round_trips_through_json() {
+        let event = Event::DialogAutoDismissed {
+            page: PageId::new("ctx-1:page-0"),
+            kind: "prompt".to_owned(),
+            message: "enter a value".to_owned(),
+        };
+
+        let json = serde_json::to_string(&event).expect("serialize");
+        let back: Event = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, event);
+        assert!(
+            json.contains(r#""type":"dialog_auto_dismissed""#),
+            "tagged enum: {json}"
+        );
+    }
 }
