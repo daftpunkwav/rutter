@@ -19,6 +19,11 @@
   var VERSION = 1;
   var MAX_NODES = 50000;
   var MAX_DEPTH = 200;
+  // Counted in UTF-16 code units (String.prototype.length): astral-plane
+  // characters (emoji, CJK extensions) cost two units, so this guard
+  // stops somewhat earlier than 100 000 characters on such pages. The
+  // converter's own clamp is character-counted and authoritative
+  // (docs/read-format.md section 5).
   var MAX_CHARS = 100000;
   var MAX_INLINE_CHARS = 20000;
   var TITLE_LIMIT = 200;
@@ -148,9 +153,11 @@
         continue;
       }
       if (tag === 'IMG') {
-        var alt = collapse(attribute(node, 'alt') || '');
         var src = absoluteUrl(attribute(node, 'src') || '');
-        if (alt && src) out += '![' + alt.replace(/\]/g, '\\]') + '](' + src + ')';
+        if (src) {
+          var alt = collapse(attribute(node, 'alt') || '');
+          out += '![' + alt.replace(/\]/g, '\\]') + '](' + src + ')';
+        }
         continue;
       }
       if (tag === 'CODE' || tag === 'KBD' || tag === 'SAMP') {
@@ -376,18 +383,55 @@
     emitChildren(el, depth);
   }
 
+  // Inline elements that belong to the paragraph around them instead of
+  // forming a block of their own. Anything unlisted that does not
+  // compute to an inline display starts a new block, like before.
+  var INLINE_TAGS = {
+    A: 1, ABBR: 1, B: 1, BDI: 1, BDO: 1, BR: 1, CITE: 1, CODE: 1,
+    DATA: 1, DFN: 1, EM: 1, I: 1, IMG: 1, KBD: 1, MARK: 1, PICTURE: 1,
+    Q: 1, RP: 1, RT: 1, RUBY: 1, S: 1, SAMP: 1, SMALL: 1, SPAN: 1,
+    STRONG: 1, SUB: 1, SUP: 1, TIME: 1, U: 1, VAR: 1, WBR: 1
+  };
+
+  function isInlineLevel(el) {
+    if (INLINE_TAGS[tagName(el)]) return true;
+    try {
+      var display = window.getComputedStyle(el).display;
+      return typeof display === 'string' && display.indexOf('inline') === 0;
+    } catch (err) {
+      return false;
+    }
+  }
+
   function emitChildren(el, depth) {
     var nodes = childNodesOf(el);
+    // Consecutive inline children accumulate into ONE paragraph: a
+    // `<div>Hello <b>world</b> again</div>` is one sentence, not three
+    // (docs/read-format.md section 3: stray block text renders as plain,
+    // whitespace-collapsed paragraphs). Only a block-level child breaks
+    // the run.
+    var pending = '';
     for (var i = 0; i < nodes.length; i += 1) {
-      if (state.truncated) return;
+      if (state.truncated) break;
       var node = nodes[i];
       if (!node) continue;
       if (node.nodeType === 3) {
-        pushParagraph(String(node.nodeValue || ''));
+        pending += ' ' + String(node.nodeValue || '');
         continue;
       }
-      if (node.nodeType === 1) emitBlock(node, depth + 1);
+      if (node.nodeType !== 1) continue;
+      if (isInlineLevel(node)) {
+        // Through inlineNodes, not inlineOf: the element itself must
+        // hit its own branch, so a link renders as [text](href) and
+        // emphasis as **bold** even outside a `<p>`.
+        pending += ' ' + inlineNodes([node], 0);
+        continue;
+      }
+      pushParagraph(pending);
+      pending = '';
+      emitBlock(node, depth + 1);
     }
+    pushParagraph(pending);
   }
 
   function joinBlocks() {

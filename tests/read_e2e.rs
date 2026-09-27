@@ -23,6 +23,30 @@ async fn run_read(url: &str) -> std::process::Output {
 
 #[tokio::test]
 #[ignore = "requires the engine binary in the cache"]
+async fn read_renders_mixed_inline_content_as_one_paragraph() {
+    // docs/read-format.md section 3: stray block text renders as plain
+    // paragraphs. A container of mixed inline children used to emit one
+    // paragraph per text node, tearing every sentence apart.
+    let output = run_read(
+        "data:text/html,<title>read-e2e</title>\
+         <div>Hello <b>bold</b> and <a href=\"https://example.com/x\">a link</a> again.</div>",
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "read must exit 0, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("Hello **bold** and [a link](https://example.com/x) again."),
+        "one paragraph with inline markup preserved: {stdout:?}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires the engine binary in the cache"]
 async fn read_prints_markdown_and_exits() {
     let output = run_read(
         "data:text/html,<title>read-e2e</title><h1>Heading One</h1>\
