@@ -37,7 +37,13 @@ the payload vocabulary.
 - **Action failures are results, not protocol errors.** A failed
   action returns `isError: true` whose text carries the `ActionError`
   message plus its actionable hint on a second line (`hint: …`).
-  Agents read them as data.
+  Agents read them as data. Validation rejections (`amount` <= 0, a
+  viewport out of range) are `invalid_params` protocol errors whose
+  message names the rule; those values are typed signed in the schemas
+  precisely so rmcp's deserializer never answers them with its own
+  hint-less error text. Only a body that does not deserialize at all
+  (a wrong-typed field) surfaces that deserializer text, without a
+  hint.
 - Protocol-level failures (unknown session, engine dead beyond the
   breaker) are JSON-RPC errors with code `-32000` and the same
   message-plus-hint text.
