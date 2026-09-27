@@ -193,7 +193,13 @@
   }
 
   function refFor(el, store) {
-    if (!store) return null;
+    if (!store) {
+      // Without a ref store no element can be named in a follow-up
+      // action; that is an omission the snapshot must own up to
+      // (docs/snapshot-format.md section 2), never a silent one.
+      state.truncated = true;
+      return null;
+    }
     try {
       var existing = store.map.get(el);
       if (existing) return existing;
@@ -203,6 +209,7 @@
       store.reverse.set(ref, new WeakRef(el));
       return ref;
     } catch (err) {
+      state.truncated = true;
       return null;
     }
   }
