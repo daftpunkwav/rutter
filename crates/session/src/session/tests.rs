@@ -91,6 +91,148 @@ async fn close_closes_the_context_even_when_the_context_errors() {
 }
 
 #[tokio::test]
+async fn a_grant_does_not_follow_a_page_that_moved_mid_park() {
+    // The window the approval opens: `execute` takes &self, so a
+    // concurrent navigation (or a page-side redirect) can move the page
+    // while a click sits parked. The grant answers for the page the
+    // human was shown; re-validation must send the click back through
+    // review, which now reads the denied host and refuses.
+    let context = MockContext::new();
+    let session = Arc::new(session_with_policy(
+        Arc::new(context.clone()),
+        RuleSet::new(
+            vec![
+                rutter_policy::rules::PolicyRule {
+                    action_class: Some("pointer".to_owned()),
+                    url_pattern: rutter_policy::Pattern::parse("https://denied.example/*").ok(),
+                    verdict: Verdict::Deny,
+                },
+                rutter_policy::rules::PolicyRule {
+                    action_class: Some("pointer".to_owned()),
+                    url_pattern: None,
+                    verdict: Verdict::RequireApproval,
+                },
+            ],
+            Verdict::Allow,
+        )
+        .with_approval_timeout(Duration::from_secs(5)),
+    ));
+    let (page_id, _) = session.active_page_for_test().await;
+    let page = context.page_mock(page_id).expect("the active page");
+    page.set_url("https://a.example/start");
+
+    let running = tokio::spawn({
+        let session = Arc::clone(&session);
+        async move {
+            session
+                .execute(
+                    Action::Click {
+                        reference: rutter_core::reference::Reference::new("e1"),
+                    },
+                    Origin::Agent,
+                )
+                .await
+        }
+    });
+    let request_id = pending_request_id(&session).await;
+
+    // The page moves while the click is parked, and the human grants
+    // what they were shown.
+    page.set_url("https://denied.example/pay");
+    assert!(
+        session.broker().decide(
+            &rutter_policy::ApprovalId::new(request_id),
+            rutter_policy::Decision::Grant
+        ),
+        "the grant is accepted"
+    );
+
+    let outcome = running
+        .await
+        .expect("the action task joins")
+        .expect_err("the moved page invalidates the grant");
+    assert!(
+        matches!(
+            outcome,
+            SessionError::Action(ActionError::ApprovalDenied { .. })
+        ),
+        "the re-review denies the page the human never approved: {outcome:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_grant_survives_a_move_to_a_url_the_rules_allow() {
+    // Re-validation re-judges, it does not refuse: a page that moved to
+    // a host no rule objects to proceeds under the new verdict.
+    let context = MockContext::new();
+    let session = Arc::new(session_with_policy(
+        Arc::new(context.clone()),
+        RuleSet::new(
+            vec![rutter_policy::rules::PolicyRule {
+                action_class: Some("pointer".to_owned()),
+                url_pattern: rutter_policy::Pattern::parse("https://a.example/*").ok(),
+                verdict: Verdict::RequireApproval,
+            }],
+            Verdict::Allow,
+        )
+        .with_approval_timeout(Duration::from_secs(5)),
+    ));
+    let (page_id, _) = session.active_page_for_test().await;
+    let page = context.page_mock(page_id).expect("the active page");
+    page.set_url("https://a.example/start");
+
+    let running = tokio::spawn({
+        let session = Arc::clone(&session);
+        async move {
+            session
+                .execute(
+                    Action::Click {
+                        reference: rutter_core::reference::Reference::new("e1"),
+                    },
+                    Origin::Agent,
+                )
+                .await
+        }
+    });
+    let request_id = pending_request_id(&session).await;
+
+    page.set_url("https://b.example/other");
+    assert!(
+        session.broker().decide(
+            &rutter_policy::ApprovalId::new(request_id),
+            rutter_policy::Decision::Grant
+        ),
+        "the grant is accepted"
+    );
+
+    running
+        .await
+        .expect("the action task joins")
+        .expect("the moved page re-reviews as allowed");
+}
+
+/// Waits until the session's backbone shows a parked request and
+/// returns its id.
+async fn pending_request_id(session: &Session) -> String {
+    crate::wait::poll_until(
+        || async {
+            session
+                .backbone()
+                .replay(&SessionId::new("s-test"))
+                .iter()
+                .find_map(|envelope| match &envelope.event {
+                    Event::ApprovalRequested { request_id, .. } => Some(request_id.clone()),
+                    _ => None,
+                })
+        },
+        Duration::from_secs(5),
+        Duration::from_millis(20),
+    )
+    .await
+    .expect("the operation parks")
+}
+
+#[tokio::test]
 async fn close_page_removes_the_page_and_promotes_a_remaining_one() {
     let context = MockContext::new();
     let session = session_over(Arc::new(context.clone()));

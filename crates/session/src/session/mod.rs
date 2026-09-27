@@ -122,12 +122,28 @@ impl Session {
         &self,
         effect: ApprovalEffect,
         raw_url: Option<&str>,
+        page: &Arc<dyn PageHandle>,
         page_id: &PageId,
     ) -> Result<(), SessionError> {
-        match self.policy.review(effect.clone(), raw_url) {
-            Review::Allowed => Ok(()),
-            Review::Denied => Err(approval_denied(&effect)),
-            Review::NeedsApproval(brief) => self.park(brief, &effect, page_id).await,
+        // Owned so a moved-page re-review can hand the loop its fresh
+        // URL without the borrow outliving the iteration.
+        let mut raw_url = raw_url.map(str::to_owned);
+        loop {
+            match self.policy.review(effect.clone(), raw_url.as_deref()) {
+                Review::Allowed => return Ok(()),
+                Review::Denied => return Err(approval_denied(&effect)),
+                Review::NeedsApproval(brief) => {
+                    match self.park(brief, &effect, page, page_id).await? {
+                        ParkVerdict::Proceed => return Ok(()),
+                        // The grant answered for the page the human was
+                        // shown; the page has moved since, so the moved
+                        // page is re-reviewed from scratch (which may
+                        // deny it, or ask the human about it as it now
+                        // is).
+                        ParkVerdict::PageMoved(current) => raw_url = current,
+                    }
+                }
+            }
         }
     }
 
@@ -139,8 +155,9 @@ impl Session {
         &self,
         brief: Box<ApprovalBrief>,
         effect: &ApprovalEffect,
+        page: &Arc<dyn PageHandle>,
         page_id: &PageId,
-    ) -> Result<(), SessionError> {
+    ) -> Result<ParkVerdict, SessionError> {
         let (request_id, receiver) = self.broker.open();
         let mut ticket = ParkTicket {
             session: self,
@@ -164,7 +181,30 @@ impl Session {
                 .await,
         );
         match ticket.outcome {
-            Some(ApprovalOutcome::Granted) => Ok(()),
+            Some(ApprovalOutcome::Granted) => {
+                // A navigation's target rides inside the effect, so the
+                // grant and the execution cannot drift apart. For
+                // everything else the judgment URL was the page — and a
+                // concurrent call (execute takes &self) or a page-side
+                // redirect can move it during the window, up to the
+                // configured 24 h. The human approved a click on the
+                // page they were shown, so the page is re-read before
+                // the action lands.
+                if effect.target_url().is_some() {
+                    return Ok(ParkVerdict::Proceed);
+                }
+                let current = PageOps {
+                    page: page.as_ref(),
+                    config: &self.config,
+                }
+                .url()
+                .await;
+                if ticket.brief.judged_at(current.as_deref()) {
+                    Ok(ParkVerdict::Proceed)
+                } else {
+                    Ok(ParkVerdict::PageMoved(current))
+                }
+            }
             Some(ApprovalOutcome::Denied) => Err(approval_denied(effect)),
             // No broker answer means the window closed, or the sender went
             // away with the manager; either way the agent sees a timeout.
@@ -241,6 +281,7 @@ impl Session {
                     action: action.clone(),
                 },
                 policy_url.as_deref(),
+                &page,
                 &page_id,
             )
             .await?;
@@ -465,6 +506,7 @@ impl Session {
                     action: Action::Navigate { url: url.clone() },
                 },
                 Some(&url),
+                &handle,
                 &page_id,
             )
             .await?;
@@ -556,6 +598,7 @@ impl Session {
                 count: cookies.len(),
             },
             url.as_deref(),
+            &page,
             &page_id,
         )
         .await?;
@@ -800,6 +843,15 @@ fn action_reference(action: &Action) -> rutter_core::reference::Reference {
         } => reference.clone(),
         _ => rutter_core::reference::Reference::new(""),
     }
+}
+
+/// What a settled park lets the caller do.
+enum ParkVerdict {
+    /// The grant stands; the action may execute.
+    Proceed,
+    /// Granted, but the page the brief was judged at moved during the
+    /// window; the caller re-reviews the page as it now is.
+    PageMoved(Option<String>),
 }
 
 /// One parked approval, from the question to its resolution.

@@ -39,8 +39,31 @@ Supervision enters through
 [`RuleSet::review`](../crates/policy/src/rules.rs): it takes the
 operation and its raw URL, canonicalizes that URL itself, and answers
 with a `Review` — allowed, denied, or parked together with the brief a
-human decides from. `evaluate` remains for class-only questions, so no
+human decides from. A `Navigate` effect carries its own target, and
+that target is always what gets judged, regardless of the URL the
+caller pairs with it — what is judged and what a grant authorizes
+cannot be separated. `evaluate` remains for class-only questions, so no
 caller reaches a verdict while skipping canonicalization.
+
+A grant is checked against the page one more time before the action
+executes. A navigation needs no re-check (its target rides inside the
+effect); for everything else the judgment URL was the page, and a
+concurrent call or a page-side redirect can move it during the
+approval window. A page that moved goes back through review: the new
+URL may be denied outright, or park again and ask the human about the
+page as it now is. The grant never follows a page the human was not
+shown.
+
+## 3.1 URL pattern wildcards
+
+`*` consumes any run of bytes, host-label dots and `/` included. Only
+a literal `/` after a wildcard pins it to the host it names, so
+[`Pattern::parse`](../crates/policy/src/pattern.rs) rejects a
+wildcard that sits in the authority with no later `/` anywhere after
+it: `https://bank.example*` would also match
+`bank.example.evil.com`, which anyone can register. Write
+`https://bank.example/*` instead. Bare patterns without a scheme
+(`*`) name no host and stay legal as explicit catch-alls.
 
 ## 3. The judgment URL
 
@@ -51,9 +74,10 @@ where it comes from:
 - Every other class is judged on the canonicalized current page URL.
 
 Canonicalization runs the WHATWG parser
-([`canonical_url`](../crates/policy/src/canonical.rs)): host case and
-default ports normalize away, and patterns cannot be slipped past with
-textual tricks.
+([`canonical_url`](../crates/policy/src/canonical.rs)): host case,
+default ports, and the trailing root dot (`https://bank.example./`)
+normalize away, and patterns cannot be slipped past with textual
+tricks.
 
 **Fail-closed.** When no usable URL exists — an unreadable page, a
 target that is not a URL at all, or a target embedding credentials
@@ -141,5 +165,6 @@ verdict      = "require_approval"
 [`parse_policy`](../crates/policy/src/config.rs) rejects: unknown
 verdict or class names, a rule with neither `action_class` nor
 `url_pattern`, a blank `url_pattern` (it would silently widen the rule
-to every URL), and windows above 24 h. TOML syntax errors carry the
-TOML position; the rejections above are reported as messages.
+to every URL), an unanchored authority wildcard (§3.1), and windows
+above 24 h. TOML syntax errors carry the TOML position; the
+rejections above are reported as messages.

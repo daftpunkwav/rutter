@@ -35,8 +35,26 @@ rutter 如何决定哪些动作直接运行、哪些被拒绝、哪些等待人�
 监管入口是
 [`RuleSet::review`](../crates/policy/src/rules.rs)：它接受操作与其
 原始 URL，自行完成 URL 规范化，返回一个 `Review`——放行、拒绝，或
-连同人类据以决策的简报一起搁置。`evaluate` 留给只问类别的场合。判
-定经过 `review` 就无法跳过规范化这一步。
+连同人类据以决策的简报一起搁置。`Navigate` effect 自带目标 URL，
+被判定的永远是这个目标，与调用方随附的 URL 无关——「被判定的东
+西」与「授权执行的东西」不可能分离。`evaluate` 留给只问类别的场
+合。判定经过 `review` 就无法跳过规范化这一步。
+
+批准在动作执行之前会对页面再核验一次。导航无需复验（目标就在
+effect 里）；其余动作的判定 URL 是当时的页面，而并发调用或页面自
+身的跳转都可能在批准窗口内把页面换掉。移动过的页面回到 review 重
+新判定：新 URL 可能被直接拒绝，也可能再次搁置、就页面当前的样子
+重新询问人类。批准永不跟随一个人类没有见过的页面。
+
+## 3.1 URL 模式通配符
+
+`*` 匹配任意字节序列，包括主机标签分隔点与 `/`。只有通配符之后的
+字面量 `/` 能把它钉在所命名的主机上，因此
+[`Pattern::parse`](../crates/policy/src/pattern.rs) 拒绝位于
+authority 内、且其后再无任何 `/` 的通配符写法：
+`https://bank.example*` 同样匹配 `bank.example.evil.com`——谁都能
+注册的域名。请写成 `https://bank.example/*`。不带 scheme 的裸模式
+（`*`）不指名主机，作为显式全匹配仍然合法。
 
 ## 3. 判定 URL
 
@@ -47,7 +65,8 @@ rutter 如何决定哪些动作直接运行、哪些被拒绝、哪些等待人�
 
 规范化运行 WHATWG 解析器
 （[`canonical_url`](../crates/policy/src/canonical.rs)）：主机大小
-写与默认端口被归一化，文本技巧无法绕过模式匹配。
+写、默认端口与结尾的根点（`https://bank.example./`）被归一化，文
+本技巧无法绕过模式匹配。
 
 **Fail-closed。** 当不存在可用 URL——页面不可读、目标根本不是
 URL、或目标内嵌凭据
@@ -126,7 +145,7 @@ verdict      = "require_approval"
 ```
 
 [`parse_policy`](../crates/policy/src/config.rs) 拒绝：未知的
-verdict 或类名、既无 `action_class` 也无 `url_pattern` 的规则、
-空白 `url_pattern`（它会静默把规则放宽到所有 URL）、以及超过
-24 h 的窗口。TOML 语法错误携带 TOML 位置；上述拒绝以消息文本
-报告。
+verdict 或 class 名称、既无 `action_class` 也无 `url_pattern` 的规
+则、空白 `url_pattern`（它会静默把规则放宽到每个 URL）、未锚定的
+authority 通配符（§3.1）、以及超过 24 小时的窗口。TOML 语法错误
+携带 TOML 位置；上述拒绝以消息形式报告。
