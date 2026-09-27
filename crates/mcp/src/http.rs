@@ -1,9 +1,9 @@
-//! Streamable HTTP transport for the MCP server (docs/tool-catalog.md
-//! §1: stdio is the default transport; HTTP is opt-in via `--http`).
+//! Streamable HTTP transport for the MCP server (stdio is the default
+//! transport; HTTP is opt-in via `--http`).
 //!
 //! Boundary: transport mapping only. rmcp's `StreamableHttpService`
 //! validates inbound `Host` headers against a loopback allowlist by
-//! default (DNS rebinding, dashboard-grade checks; docs/dashboard.md), and Origin
+//! default (DNS rebinding, dashboard-grade checks), and Origin
 //! enforcement rejects every browser-originated request; each MCP
 //! connection mints its own rutter session through the shared manager.
 //! Binding stays on the address the caller passes.

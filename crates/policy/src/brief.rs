@@ -1,4 +1,4 @@
-//! The brief a human decides from (docs/policy.md).
+//! The brief a human decides from.
 //!
 //! Responsibility: describe one parked operation in the same terms the
 //! verdict was reached in — the class it fell under, the canonical URL it
@@ -95,7 +95,7 @@ pub enum VerdictBasis {
     SetDefault,
     /// The set would have allowed the operation on an empty URL; the
     /// verdict was upgraded because no usable URL existed. The fail-closed
-    /// path (docs/policy.md).
+    /// path.
     MissingUrl,
 }
 

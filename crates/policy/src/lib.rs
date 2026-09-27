@@ -3,7 +3,7 @@
 //! Responsibilities:
 //! - Reach a verdict for one operation as a pure function: classify it,
 //!   canonicalize the judgment URL, match the rule set, and answer with
-//!   [`rules::Review`] (docs/policy.md).
+//! [`rules::Review`].
 //! - Build the [`brief::ApprovalBrief`] a human decides from whenever the
 //!   answer is to ask one — the class, the URL judged, the rule that
 //!   spoke, and the effect a grant authorizes.
@@ -15,7 +15,7 @@
 //! Boundary: pure computation plus parked-future bookkeeping. Rule and
 //! verdict data have no I/O; dangerousness is decided by rutter's rules,
 //! never by the agent's self-declaration — that is the point of
-//! supervision (docs/policy.md). File reading and event publishing live
+//! supervision. File reading and event publishing live
 //! in the callers.
 
 // Restriction lints are denied workspace-wide; tests may use plain

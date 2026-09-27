@@ -1,7 +1,7 @@
 //! CDP implementation of page-scoped operations.
 //!
 //! Boundary: one CDP target per handle. Every operation carries a
-//! timeout (docs/architecture.md); navigation uses the context's configured
+//! timeout; navigation uses the context's configured
 //! budget, the others a fixed bound so no call can wait forever.
 //! Chromiumoxide types are implementation details and never appear in
 //! the public `rutter-engine` trait signatures.
@@ -406,7 +406,7 @@ impl rutter_engine::page::PageHandle for CdpPage {
         use futures::StreamExt;
 
         // Register the listeners before starting so early frames are
-        // not lost (docs/dashboard.md: correct ack loop).
+        // not lost (correct ack loop).
         let mut frames = self
             .page
             .event_listener::<EventScreencastFrame>()
@@ -428,7 +428,7 @@ impl rutter_engine::page::PageHandle for CdpPage {
         let (sender, receiver) = tokio::sync::mpsc::channel::<ScreencastFrame>(4);
         let task_page = self.page.clone();
         // The forwarding task owns the capture lifecycle: acks every
-        // frame (docs/dashboard.md), restarts after navigations where CDP
+        // frame, restarts after navigations where CDP
         // stops the capture on its own, and stops when the viewer drops
         // the stream. Every CDP call inside stays under a deadline so a
         // dead browser ends the stream instead of parking the task.
@@ -436,8 +436,8 @@ impl rutter_engine::page::PageHandle for CdpPage {
         // Frames are handed off without awaiting: a stalled viewer must
         // never block this task, because the backlog would then pile up
         // in the chromiumoxide event listener, which is an unbounded
-        // queue. Frames are droppable (docs/events.md, latest-wins
-        // backpressure); over a full channel the newest frames are
+        // queue. Frames are droppable (latest-wins backpressure); over
+        // a full channel the newest frames are
         // dropped and the memory stays bounded by the channel capacity.
         tokio::spawn(async move {
             loop {
@@ -474,8 +474,8 @@ impl rutter_engine::page::PageHandle for CdpPage {
                     // A quiet page paints no frames, so the Closed arm
                     // above may not fire for a long time; watching the
                     // receiver directly ends the capture the moment the
-                    // viewer leaves (docs/dashboard.md: streaming stops
-                    // when the last viewer leaves).
+                    // viewer leaves (streaming stops when the last
+                    // viewer leaves).
                     _ = sender.closed() => break,
                     else => break,
                 }

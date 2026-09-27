@@ -39,8 +39,8 @@ pub use response::snapshot_from_response;
 /// Returns the embedded serializer script for evaluation inside a page.
 ///
 /// The script walks the composed DOM including shadow roots, mints
-/// element references, and returns the envelope described in
-/// `docs/snapshot-format.md`. Evaluate it with a page's `evaluate` and
+/// element references, and returns the snapshot envelope. Evaluate it
+/// with a page's `evaluate` and
 /// pass the result to [`snapshot_from_response`].
 pub fn serializer_script() -> &'static str {
     assets::SERIALIZER_JS
@@ -50,8 +50,8 @@ pub fn serializer_script() -> &'static str {
 ///
 /// The script extracts the page's readable content as a markdown
 /// document (site chrome and hidden elements omitted) and returns the
-/// envelope described in `docs/read-format.md`. Evaluate it with a
-/// page's `evaluate` and pass the result to [`read_from_response`].
+/// markdown envelope. Evaluate it with a page's `evaluate` and pass
+/// the result to [`read_from_response`].
 pub fn reader_script() -> &'static str {
     assets::READER_JS
 }

@@ -1,4 +1,4 @@
-//! Access control for every dashboard endpoint (docs/dashboard.md): the
+//! Access control for every dashboard endpoint : the
 //! `Host` header must name loopback (DNS rebinding), a present `Origin`
 //! must name loopback too (cross-site request forgery; the `Host` check
 //! alone cannot see who sent the request), and the request must carry
@@ -22,8 +22,8 @@ fn loopback_name(name: &str) -> bool {
     name == "127.0.0.1" || name.eq_ignore_ascii_case("localhost") || name == "::1"
 }
 
-/// Host header validation: only loopback names pass (docs/dashboard.md,
-/// DNS rebinding). The host name is compared after stripping any port;
+/// Host header validation: only loopback names pass (the DNS
+/// rebinding defense). The host name is compared after stripping any port;
 /// a prefix match would let `127.0.0.1.evil.com` through, and the
 /// check runs on every endpoint, including the WebSocket upgrade.
 fn host_allowed(headers: &HeaderMap) -> bool {
@@ -77,8 +77,8 @@ fn token_ok(state: &Dashboard, headers: &HeaderMap, provided: Option<&String>) -
 }
 
 /// Name of the HttpOnly cookie carrying the dashboard token after the
-/// first visit (docs/dashboard.md: the query token is exchanged for a
-/// cookie on first connect).
+/// first visit (the query token is exchanged for a cookie on first
+/// connect).
 const TOKEN_COOKIE: &str = "rutter_token";
 
 /// Extracts the token cookie from `Cookie` headers, if present.

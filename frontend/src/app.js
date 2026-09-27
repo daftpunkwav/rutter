@@ -9,7 +9,7 @@
   'use strict';
   var I18N = {};
   // First visit carries the token in the query; the server exchanges it
-  // for an HttpOnly session cookie (docs/dashboard.md), so page scripts
+  // for an HttpOnly session cookie, so page scripts
   // never store or read it. Requests below fall back to the cookie
   // when no query token is present (a refresh, a bookmarked path).
   var token = new URLSearchParams(window.location.search).get('token');
@@ -65,7 +65,7 @@
       if (envelope.type === 'note') { append(envelope.text); return; }
       if (envelope.type === 'decision-ack') { return; }
       if (envelope.type === 'screencast-ack') {
-        // A refusal carries its reason (docs/dashboard.md section 5);
+        // A refusal carries its reason;
         // silence would leave the operator a blank live view.
         if (envelope.reason) { append(t('screencastRefused') + ' ' + envelope.reason); }
         return;

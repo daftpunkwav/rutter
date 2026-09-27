@@ -82,7 +82,7 @@ impl PageRegistry {
 
     /// The active page, if one exists. Never opens anything: this is the
     /// lookup an observation has to use, because opening a tab is an
-    /// effect (docs/architecture.md: the dashboard executes no actions).
+    /// effect (the dashboard executes no actions).
     pub fn active(&self) -> Option<(PageId, Arc<dyn PageHandle>)> {
         let state = self.lock();
         if state.recovering {

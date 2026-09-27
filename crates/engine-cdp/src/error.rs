@@ -3,7 +3,7 @@
 //! Boundary: one place maps third-party errors onto the engine error
 //! contract and bounds every CDP call with a deadline, so the rest of
 //! the crate stays mapping-free, no CDP error type escapes into a
-//! public signature, and no call can wait forever (docs/architecture.md).
+//! public signature, and no call can wait forever.
 
 use std::future::Future;
 use std::time::{Duration, Instant};
@@ -92,7 +92,7 @@ pub fn fold(error: CdpError) -> EngineError {
 /// This is the only place the `net::ERR_*` spellings are read. They belong
 /// to Chromium; a caller above this crate that matched on them would start
 /// answering `connection failed` for every DNS lookup the moment a
-/// different engine took over (docs/architecture.md).
+/// different engine took over.
 fn transport_cause(detail: &str) -> TransportCause {
     if detail.contains("ERR_TIMED_OUT") || detail.contains("ERR_CONNECTION_TIMED_OUT") {
         TransportCause::TimedOut

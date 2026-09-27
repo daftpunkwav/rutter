@@ -1,4 +1,4 @@
-//! Canonical URL form for policy judgment (docs/policy.md).
+//! Canonical URL form for policy judgment.
 //!
 //! Rules match on the URL the browser will actually load, and
 //! agent-supplied navigation targets are raw strings: host case, a

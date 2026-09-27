@@ -1,5 +1,5 @@
 //! Acceptance: e2e task flows against the real engine
-//! (docs/tool-catalog.md §6). Each test drives the built `rutter serve`
+//!. Each test drives the built `rutter serve`
 //! binary over stdio with an rmcp client, so the whole protocol stack
 //! runs: client -> stdio -> MCP -> session -> CDP -> engine.
 //!
@@ -271,7 +271,7 @@ async fn wait_for_resolves_and_times_out() {
 /// Close is terminal for the connection: a live session closes
 /// cleanly, and every later tool call on the same connection fails at
 /// the protocol level naming the closed session instead of silently
-/// reopening it (docs/tool-catalog.md §4).
+/// reopening it.
 #[tokio::test]
 #[ignore = "requires the engine binary in the cache"]
 async fn close_session_fails_fast_after_closing() {
@@ -295,7 +295,7 @@ async fn close_session_fails_fast_after_closing() {
     );
 
     // Every later tool call fails fast instead of resurrecting the
-    // closed session (docs/tool-catalog.md: close is terminal for the connection).
+    // closed session (close is terminal for the connection).
     // The server rejects the call at the protocol level (invalid_params),
     // so the raw call result is matched against the expected message.
     let params: CallToolRequestParams = serde_json::from_value(json!({

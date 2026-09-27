@@ -2,8 +2,8 @@
 //!
 //! Boundary: numeric policy for one process. The auto-wait defaults
 //! (phase budget, stability interval, settle) are pinned by
-//! `docs/tool-catalog.md` §3; the `wait_for` budget default is
-//! pinned by the MCP tool layer (docs/tool-catalog.md §4), not here. The approval
+//! decided here; the `wait_for` budget default is pinned by the MCP
+//! tool layer, not here. The approval
 //! window lives on the policy's [`rutter_policy::RuleSet`], which the
 //! session reads directly.
 
@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use rutter_engine::config::ContextConfig;
 
-/// Defaults for one server process (docs/tool-catalog.md tool semantics).
+/// Defaults for one server process.
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
     /// Maximum pages per session context.

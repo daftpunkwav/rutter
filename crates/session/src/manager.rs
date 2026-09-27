@@ -2,12 +2,12 @@
 //!
 //! Boundary: session lifecycle, engine ownership, supervision wiring,
 //! and recovery. The engine starts lazily on the first session request
-//! (docs/architecture.md) and shuts down when the manager does; every session
+//! and shuts down when the manager does; every session
 //! evaluates the shared policy and parks approvals on the shared broker
-//! (docs/policy.md). When the supervisor replaces a dead engine, a
+//!. When the supervisor replaces a dead engine, a
 //! recovery task rebuilds each session: fresh context, storage-state
 //! replay, page restoration, and an `EngineRestarted` event per session
-//! (docs/sessions.md).
+//!.
 //!
 //! Locking: three guards, each with one job, and none of them held across
 //! the slow work it does not protect. The engine slot is read-mostly, the
@@ -267,7 +267,7 @@ async fn start_running(inner: &Arc<Inner>) -> Result<Running, EngineError> {
 
 /// Watches for engine replacements and rebuilds every session:
 /// fresh context, storage-state replay, page restoration, and an
-/// `EngineRestarted` event per session (docs/sessions.md).
+/// `EngineRestarted` event per session.
 fn spawn_recovery(inner: &Arc<Inner>, mut watcher: tokio::sync::watch::Receiver<u64>) {
     let weak = Arc::downgrade(inner);
     tokio::spawn(async move {

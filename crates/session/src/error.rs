@@ -10,7 +10,7 @@ use thiserror::Error;
 /// Why a session operation failed.
 #[derive(Debug, Error)]
 pub enum SessionError {
-    /// A typed action failure from the docs/tool-catalog.md §2 taxonomy.
+    /// A typed action failure from the shared action taxonomy.
     #[error("{0}")]
     Action(#[from] ActionError),
 
@@ -30,7 +30,7 @@ pub enum SessionError {
     /// The session has no open page to observe. Distinct from an engine
     /// failure: nothing is wrong with the browser, there is simply no tab
     /// yet — and opening one would be an action, which an observation must
-    /// never take (docs/architecture.md: the dashboard executes none).
+    /// never take (the dashboard executes none).
     #[error("no open page to observe")]
     NoOpenPage,
 

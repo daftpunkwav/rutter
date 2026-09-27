@@ -147,8 +147,8 @@ async fn session_is_created_once_per_connection() {
 
 #[test]
 fn truncated_snapshots_carry_the_spec_marker() {
-    // docs/tool-catalog.md §2: a truncated snapshot must tell the agent it only
-    // sees part of the page, or the agent trusts a cropped view.
+    // a truncated snapshot must tell the agent it only sees part of
+    // the page, or the agent trusts a cropped view.
     let button = rutter_core::snapshot::SnapshotNode::leaf("button");
     let full = rutter_core::snapshot::Snapshot {
         url: "https://example.com".to_owned(),
@@ -175,7 +175,7 @@ fn truncated_snapshots_carry_the_spec_marker() {
 
 #[test]
 fn truncated_readouts_carry_the_spec_marker() {
-    // Same contract as snapshots (docs/tool-catalog.md §2): a cropped
+    // Same contract as snapshots : a cropped
     // readout must say so, or the agent trusts a partial document.
     let full = rutter_core::readout::Readout {
         title: "Example".to_owned(),
@@ -211,8 +211,8 @@ fn first_text_block(result: &CallToolResult) -> String {
 
 #[tokio::test]
 async fn tabs_close_unknown_page_is_invalid_params() {
-    // docs/tool-catalog.md §4: a page id names an open page, so an unknown id is
-    // invalid_params as in tabs_select — not an action failure whose
+    // a page id names an open page, so an unknown id is invalid_params
+    // as in tabs_select — not an action failure whose
     // hint would tell the agent to re-snapshot and pick an element.
     let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
     let error = match mcp
@@ -230,8 +230,8 @@ async fn tabs_close_unknown_page_is_invalid_params() {
 
 #[tokio::test]
 async fn scroll_zero_and_negatives_are_invalid_params() {
-    // docs/tool-catalog.md section 4: `amount` <= 0 is invalid_params —
-    // one rejection path for both. The u32 schema used to send negatives
+    // `amount` <= 0 is invalid_params — one rejection path for both.
+    // The u32 schema used to send negatives
     // through rmcp's deserializer instead, whose error text carries no
     // `hint:` line; signed now keeps them on this check.
     let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
@@ -275,8 +275,8 @@ async fn scroll_zero_and_negatives_are_invalid_params() {
 
 #[tokio::test]
 async fn close_session_is_terminal_for_the_connection() {
-    // docs/tool-catalog.md §4: later tool calls on a closed connection
-    // fail with invalid_params naming the closed session — including a
+    // later tool calls on a closed connection fail with invalid_params
+    // naming the closed session — including a
     // repeated close, which used to answer success twice.
     let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
     // Open the session first: the terminality gate guards connections
@@ -319,8 +319,8 @@ async fn close_session_on_an_unused_connection_creates_nothing() {
 
 #[tokio::test]
 async fn protocol_failures_surface_as_server_errors_carrying_hints() {
-    // docs/tool-catalog.md §2: protocol-level failures are JSON-RPC errors with
-    // code -32000, carrying the same message-plus-hint text an isError
+    // protocol-level failures are JSON-RPC errors with code -32000,
+    // carrying the same message-plus-hint text an isError
     // result would. The wiring is exercised for real through
     // `session()`: a zero-session cap fails the first session request
     // after the stub engine starts, with no engine I/O.
@@ -356,8 +356,8 @@ async fn protocol_failures_surface_as_server_errors_carrying_hints() {
 
 #[test]
 fn action_failures_carry_the_message_plus_hint_contract() {
-    // docs/tool-catalog.md §2: an action failure is an isError result whose text
-    // holds the error message and, on its own second line, the
+    // an action failure is an isError result whose text holds the error
+    // message and, on its own second line, the
     // actionable hint (`hint: …`). Agents read the hint as data, so a
     // merged or dropped hint line breaks them silently.
     let error = SessionError::Action(rutter_core::error::ActionError::Internal {
@@ -790,8 +790,8 @@ async fn tabs_list_with_no_pages_says_so() {
 
 #[tokio::test]
 async fn tabs_select_unknown_page_is_invalid_params() {
-    // docs/tool-catalog.md §4: mirrors tabs_close — an unknown id is
-    // invalid_params, not an action failure.
+    // mirrors tabs_close — an unknown id is invalid_params, not an
+    // action failure.
     let mcp = RutterMcp::new(scripted_manager(), SessionId::new("s1"));
     mcp.navigate(Parameters(NavigateParams {
         url: "https://example.com".to_owned(),
@@ -815,7 +815,7 @@ async fn tabs_select_unknown_page_is_invalid_params() {
 async fn set_cookies_maps_inputs_and_reports_failures() {
     let mcp = RutterMcp::new(scripted_manager(), SessionId::new("s1"));
     // A real URL keeps the review from failing closed on a missing page
-    // URL (docs/policy.md); the test targets the handler, not the gate.
+    // URL; the test targets the handler, not the gate.
     mcp.navigate(Parameters(NavigateParams {
         url: "https://example.com".to_owned(),
     }))

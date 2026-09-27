@@ -48,7 +48,7 @@ pub trait ContextHandle: Send + Sync {
     async fn close_page(&self, id: PageId) -> Result<(), EngineError>;
 
     /// The page surfaces the engine already shows that this context did
-    /// not open (docs/tool-catalog.md: `tabs_list` discovery). Engines
+    /// not open (`tabs_list` discovery). Engines
     /// that cannot enumerate surfaces report none.
     async fn foreign_pages(&self) -> Result<Vec<ForeignPage>, EngineError> {
         Ok(Vec::new())
@@ -74,7 +74,7 @@ pub trait ContextHandle: Send + Sync {
     async fn set_cookies(&self, cookies: &[Cookie]) -> Result<(), EngineError>;
 
     /// Reads every cookie scoped to this context (storage state
-    /// capture, docs/sessions.md).
+    /// capture).
     async fn cookies(&self) -> Result<Vec<Cookie>, EngineError>;
 
     /// Closes the context and every page inside it. Idempotent: closing

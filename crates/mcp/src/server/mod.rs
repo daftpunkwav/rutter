@@ -1,10 +1,11 @@
-//! The MCP server: rmcp host mapping docs/tool-catalog.md onto the session layer.
+//! The MCP server: the rmcp host mapping of the tool surface onto the
+//! session layer.
 //!
 //! Responsibilities:
-//! - Expose the docs/tool-catalog.md tool surface as rmcp tools.
+//! - Expose the tool surface as rmcp tools.
 //! - Return snapshots and readouts as text, screenshots as image
 //!   blocks, and action failures as `isError` results carrying the
-//!   error plus its hint (`docs/tool-catalog.md` §2).
+//! error plus its hint.
 //!
 //! Boundary: protocol mapping only. All semantics live in
 //! `rutter-session`; this module validates parameters against the spec
@@ -41,11 +42,11 @@ use rutter_session::manager::SessionManager;
 use rutter_session::session::Session;
 
 /// Server error code for engine-level failures beyond a tool result
-/// (`docs/tool-catalog.md` §2).
+/// .
 const SERVER_ERROR_CODE: i32 = -32000;
 
 /// Default `wait_for` budget when the caller sends no timeout
-/// (`docs/tool-catalog.md` §4: 10 000 ms).
+/// (10 000 ms).
 const WAIT_FOR_DEFAULT_BUDGET: Duration = Duration::from_secs(10);
 
 /// The per-connection MCP server.
@@ -239,8 +240,8 @@ impl RutterMcp {
         }): Parameters<ScrollParams>,
     ) -> Result<CallToolResult, McpError> {
         // One rejection path for every bad amount, negative or zero
-        // (docs/tool-catalog.md section 4: `amount` <= 0 is
-        // invalid_params). The u32 schema used to let rmcp's
+        // (`amount` <= 0 is invalid_params). The u32 schema used to
+        // let rmcp's
         // deserializer answer negatives, whose error text carries no
         // hint line.
         if amount <= 0 {
@@ -327,8 +328,7 @@ impl RutterMcp {
         Parameters(PageParams { page_id }): Parameters<PageParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
-        // docs/tool-catalog.md §4: an unknown page id is invalid_params, not an
-        // action failure.
+        // an unknown page id is invalid_params, not an action failure.
         if !session
             .pages()
             .await
@@ -363,7 +363,7 @@ impl RutterMcp {
         Parameters(PageParams { page_id }): Parameters<PageParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
-        // docs/tool-catalog.md §4: a page id names an open page, so an unknown id is
+        // a page id names an open page, so an unknown id is
         // invalid_params as in tabs_select, not an action failure.
         if !session
             .pages()
@@ -454,8 +454,8 @@ impl RutterMcp {
 
     #[tool(description = "Close this session's pages and context")]
     async fn close_session(&self) -> Result<CallToolResult, McpError> {
-        // The call is terminal for the connection (docs/tool-catalog.md
-        // section 4): it goes through the same closed-session gate as
+        // The call is terminal for the connection: it goes through the
+        // same closed-session gate as
         // every other tool, so a second close fails with invalid_params
         // instead of answering success twice. A connection that never
         // opened a session skips the gate — the gate's lazy
@@ -528,7 +528,7 @@ fn cookie_line(cookie: &Cookie) -> String {
     line
 }
 
-/// Snapshot text plus the truncation marker of docs/tool-catalog.md §2.
+/// Snapshot text plus the truncation marker.
 fn snapshot_result(snapshot: &rutter_core::snapshot::Snapshot) -> CallToolResult {
     let mut text = snapshot.to_string();
     if snapshot.truncated {
@@ -537,7 +537,7 @@ fn snapshot_result(snapshot: &rutter_core::snapshot::Snapshot) -> CallToolResult
     CallToolResult::success(vec![ContentBlock::text(text)])
 }
 
-/// Readout text plus the truncation marker of docs/tool-catalog.md §2.
+/// Readout text plus the truncation marker.
 fn read_result(readout: &rutter_core::readout::Readout) -> CallToolResult {
     let mut text = readout.to_string();
     if readout.truncated {
@@ -546,7 +546,7 @@ fn read_result(readout: &rutter_core::readout::Readout) -> CallToolResult {
     CallToolResult::success(vec![ContentBlock::text(text)])
 }
 
-/// An action failure as a result: message plus hint (docs/tool-catalog.md §2).
+/// An action failure as a result: message plus hint.
 fn error_result(error: &SessionError) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(format!(
         "{error}\nhint: {}",
@@ -559,8 +559,8 @@ fn invalid_params(message: String) -> McpError {
 }
 
 fn protocol_error(error: SessionError) -> McpError {
-    // docs/tool-catalog.md §2: protocol-level failures carry the same
-    // message-plus-hint text as isError results.
+    // protocol-level failures carry the same message-plus-hint text as
+    // isError results.
     McpError::new(
         ErrorCode(SERVER_ERROR_CODE),
         format!("{error}\nhint: {}", error.hint()),

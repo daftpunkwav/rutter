@@ -1,11 +1,11 @@
 //! One session: a client's context, its pages, and its events.
 //!
 //! Boundary: the orchestration surface the MCP tools call. The session
-//! owns exactly one context (docs/architecture.md), tracks its open pages and
+//! owns exactly one context, tracks its open pages and
 //! their URLs, executes actions through the [`crate::actions`]
-//! executor, enforces the policy with approvals (docs/policy.md), and persists
+//! executor, enforces the policy with approvals, and persists
 //! its storage state after every change so a supervisor restart can
-//! rebuild it (docs/sessions.md). Recovery swaps in a fresh context and replays.
+//! rebuild it. Recovery swaps in a fresh context and replays.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -42,18 +42,18 @@ pub struct Session {
     policy: Arc<RuleSet>,
     broker: Arc<ApprovalBroker>,
     /// Swappable so recovery can install a fresh context after an
-    /// engine restart (docs/sessions.md).
+    /// engine restart.
     context: tokio::sync::RwLock<Arc<dyn ContextHandle>>,
     /// The tracked pages and their active flag, behind the registry's own
-    /// lock (docs/sessions.md).
+    /// lock.
     pages: PageRegistry,
     /// Where the storage state persists; `None` disables persistence.
     state_path: Option<PathBuf>,
     /// The approval audit trail; a session with no state directory writes
-    /// nothing (docs/policy.md).
+    /// nothing.
     audit: ApprovalAudit,
     /// Per-page observation feeds (dialogs answered, console kept);
-    /// spawned with each tracked page, docs/tool-catalog.md §4.
+    /// spawned with each tracked page.
     feeds: Arc<ObservationFeeds>,
     last_storage: Mutex<StorageState>,
     /// Whether the persistence file currently reflects `last_storage`;
@@ -107,7 +107,7 @@ impl Session {
 
     /// Reviews one operation against the rule set and, when the answer is
     /// to ask a human, publishes the request and parks until someone
-    /// answers or the window closes (docs/policy.md).
+    /// answers or the window closes.
     ///
     /// Policy owns the whole judgment: `raw_url` is canonicalized inside
     /// [`RuleSet::review`], so no caller can reach a verdict while skipping
@@ -221,7 +221,7 @@ impl Session {
     /// While recovery owns the list this fails with `Terminated`: the
     /// engine was just replaced and is being rebuilt, and opening a page
     /// into a list that is about to be written back would leave a live tab
-    /// no one tracks (docs/sessions.md).
+    /// no one tracks.
     async fn ensure_page(&self) -> Result<(PageId, Arc<dyn PageHandle>), SessionError> {
         if let Some(found) = self.pages.active() {
             return Ok(found);
@@ -258,12 +258,11 @@ impl Session {
     /// Executes one action with the given origin and returns the fresh
     /// snapshot; requested/completed/failed land on the event backbone.
     /// After every attempt, successful or not, the tracked page URL and
-    /// the storage state are refreshed (docs/sessions.md: persist on
-    /// change).
+    /// the storage state are refreshed (persist on change).
     pub async fn execute(&self, action: Action, origin: Origin) -> Result<Snapshot, SessionError> {
         let (page_id, page) = self.ensure_page().await?;
 
-        // Supervision gate (docs/policy.md): agent-origin actions are
+        // Supervision gate : agent-origin actions are
         // judged at the URL the action leads to — a navigation at its
         // target, everything else at the page it acts on. Human-origin
         // actions bypass approval and are recorded identically.
@@ -325,8 +324,8 @@ impl Session {
         };
 
         // Refresh the tracked URL of the page the action ran on, then
-        // persist the changed state (docs/sessions.md: persist per session
-        // on change). Filtering by id, not by the current active flag: a
+        // persist the changed state (persist per session on change).
+        // Filtering by id, not by the current active flag: a
         // concurrent `select_page` may have switched the active slot
         // while this action was in flight, and the new page's URL must
         // not be overwritten with this page's.
@@ -370,8 +369,8 @@ impl Session {
     }
 
     /// Starts a live screencast of the active page; the stream is
-    /// observation only — dropping it stops the capture (docs/dashboard.md:
-    /// on-demand, dashboard never executes actions).
+    /// observation only — dropping it stops the capture (on-demand,
+    /// the dashboard never executes actions).
     ///
     /// This path reads the registry instead of going through
     /// `ensure_page` on purpose: a viewer asking to watch must not
@@ -382,7 +381,7 @@ impl Session {
         page.start_screencast().await.map_err(SessionError::Engine)
     }
 
-    /// Captures the active page. docs/tool-catalog.md §4: capture errors map onto
+    /// Captures the active page. Capture errors map onto
     /// `ActionError::Internal` so the agent sees the action taxonomy, not
     /// a raw engine failure.
     pub async fn screenshot(&self) -> Result<Screenshot, SessionError> {
@@ -410,7 +409,7 @@ impl Session {
     /// that appeared without rutter opening them (`window.open`,
     /// `target=_blank`, a human's window) are adopted so they show up
     /// here and become selectable, exactly the surfaces `tabs_select`
-    /// and `tabs_close` name (docs/tool-catalog.md).
+    /// and `tabs_close` name.
     pub async fn pages(&self) -> Vec<PageInfo> {
         self.sync_foreign_pages().await;
         self.pages.list()
@@ -468,11 +467,11 @@ impl Session {
     }
 
     /// Opens a new page in the session's context and makes it the
-    /// active one (docs/tool-catalog.md §4: `tabs_open`); with a `url`
+    /// active one (`tabs_open`); with a `url`
     /// the new page navigates there, judged by the policy exactly like a
     /// `navigate` action. A denial or failed navigation leaves the new
     /// page open at its blank start so the agent can see — and close —
-    /// what it opened (docs/tool-catalog.md §4).
+    /// what it opened.
     pub async fn open_page(&self, url: Option<String>) -> Result<Snapshot, SessionError> {
         if !self.pages.accepts_new_page() {
             return Err(SessionError::Engine(EngineError::Terminated));
@@ -529,7 +528,7 @@ impl Session {
     }
 
     /// Overrides the active page's viewport size and returns a fresh
-    /// snapshot (docs/tool-catalog.md §4: `set_viewport`). A display
+    /// snapshot (`set_viewport`). A display
     /// change, not a page mutation: no policy judgment, matching the
     /// observation-only tabs operations.
     pub async fn set_viewport(&self, width: u32, height: u32) -> Result<Snapshot, SessionError> {
@@ -572,7 +571,7 @@ impl Session {
     }
 
     /// Reads every cookie scoped to the session's context
-    /// (docs/tool-catalog.md §4: `get_cookies`). Read-only observation:
+    /// (`get_cookies`). Read-only observation:
     /// nothing is judged by the policy and no page is opened, matching
     /// the storage-state capture that already reads these cookies.
     pub async fn cookies(&self) -> Result<Vec<Cookie>, SessionError> {
@@ -584,7 +583,7 @@ impl Session {
     /// `cookies` class rules (approval-required by default). The approval
     /// a human sees describes a cookie write: there is no `Action` variant
     /// for it, and an unrelated action standing in would authorize
-    /// something other than what was shown (docs/policy.md).
+    /// something other than what was shown.
     pub async fn set_cookies(&self, cookies: &[Cookie]) -> Result<(), SessionError> {
         let (page_id, page) = self.ensure_page().await?;
         let url = PageOps {
@@ -619,7 +618,7 @@ impl Session {
     }
 
     /// Saves the current storage state to the session's persistence
-    /// file (explicit save; docs/sessions.md).
+    /// file (explicit save).
     pub async fn save_storage(&self) -> Result<(), SessionError> {
         let (page_id, page) = self.ensure_page().await?;
         let url = PageOps {
@@ -634,7 +633,7 @@ impl Session {
     }
 
     /// Loads a previously saved storage state and applies it to the
-    /// session (explicit load; docs/sessions.md). Restores over the
+    /// session (explicit load). Restores over the
     /// currently open pages and records the loaded state as the last
     /// known one, so a later persistence run does not rewrite it.
     pub async fn load_storage(&self) -> Result<(), SessionError> {
@@ -655,7 +654,7 @@ impl Session {
 
     /// Rebuilds the session on a fresh context after an engine restart:
     /// replays cookies and localStorage, re-opens the tracked pages at
-    /// their URLs, and publishes `EngineRestarted` (docs/sessions.md).
+    /// their URLs, and publishes `EngineRestarted`.
     ///
     /// The registry is gated for the whole rebuild. Without the gate a
     /// concurrent action could open a page between the read-out and the
@@ -729,7 +728,7 @@ impl Session {
     /// Captures and persists the storage state; the in-memory copy
     /// updates first so recovery works even if the file write fails.
     /// The disk write is skipped when the captured state is identical to
-    /// the last persisted one: "persist on change" (docs/sessions.md)
+    /// the last persisted one: "persist on change"
     /// needs no rewrite when nothing changed, and rewriting identical
     /// JSON on every action only burns file I/O.
     async fn persist_storage(&self, page: &Arc<dyn PageHandle>, url: &str) {
@@ -768,7 +767,7 @@ impl Session {
     }
 
     /// The active page's console output and uncaught exceptions, oldest
-    /// first (docs/tool-catalog.md §4: `console_messages`). A session
+    /// first (`console_messages`). A session
     /// with no page has none; this is a read-only probe and never opens
     /// one.
     pub fn console_messages(&self) -> Vec<rutter_engine::ConsoleEntry> {
@@ -779,7 +778,7 @@ impl Session {
     }
 
     /// The active page's finished network requests, oldest first
-    /// (docs/tool-catalog.md §4: `network_requests`). Read-only like
+    /// (`network_requests`). Read-only like
     /// [`Session::console_messages`]: no page opens, none of the
     /// requests were made by rutter itself.
     pub fn network_requests(&self) -> Vec<rutter_engine::RequestEntry> {
@@ -790,7 +789,7 @@ impl Session {
     }
 
     /// Starts the observation feed for a tracked page: dialogs the page
-    /// opens are dismissed and recorded (docs/tool-catalog.md §4), its
+    /// opens are dismissed and recorded, its
     /// console lines land in the page's buffer.
     fn start_feed(&self, page_id: &PageId, handle: &Arc<dyn PageHandle>) {
         self.feeds.spawn(

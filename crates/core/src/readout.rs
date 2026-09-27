@@ -3,7 +3,7 @@
 //! Boundary: pure data plus its text rendering. Extracting the
 //! markdown from a page lives in `rutter-observe` (in-page reader
 //! script plus envelope conversion); the extraction rules are
-//! specified by `docs/read-format.md`. The rendering here is one
+//! specified by. The rendering here is one
 //! metadata line for the page title, then the markdown body.
 
 use std::fmt;
@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn readout_travels_as_typed_vocabulary() {
-        // Serialization conventions (docs/glossary.md): UTF-8 JSON for
+        // Serialization conventions : UTF-8 JSON for
         // anything embedding in event payloads or logs.
         let readout = Readout {
             title: "t".to_owned(),

@@ -1,4 +1,4 @@
-//! Acceptance for the streamable HTTP transport (docs/architecture.md, docs/tool-catalog.md).
+//! Acceptance for the streamable HTTP transport.
 //! An MCP client connects to `rutter serve --http` over HTTP, runs a
 //! navigate + snapshot round-trip, and the transport-level checks hold:
 //! the DNS-rebinding Host check rejects foreign hosts, and
@@ -167,7 +167,7 @@ async fn http_transport_round_trip() {
 }
 
 /// The DNS-rebinding check: a foreign Host header is rejected before
-/// any MCP processing (dashboard-grade checks; docs/dashboard.md).
+/// any MCP processing (dashboard-grade checks).
 #[tokio::test]
 #[ignore = "requires the engine binary in the cache"]
 async fn http_rejects_foreign_host() {

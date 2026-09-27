@@ -28,7 +28,7 @@ mod read;
 mod serve;
 
 /// Renders an observation for the one-shot modes: the Display text plus
-/// the truncation marker (docs/read-format.md section 4, the same
+/// the truncation marker (the same
 /// convention as the MCP surface), so a clipped one-shot output is
 /// never silently trusted as complete.
 pub(crate) fn render_marked(value: impl std::fmt::Display, truncated: bool) -> String {
@@ -60,7 +60,7 @@ mod tests {
 
     #[test]
     fn a_truncated_rendering_carries_the_marker() {
-        // docs/read-format.md section 4: the marker line follows the
+        // : the marker line follows the
         // content, the same convention the MCP surface applies.
         assert_eq!(render_marked("body", false), "body");
         assert_eq!(render_marked("body", true), "body… truncated\n");

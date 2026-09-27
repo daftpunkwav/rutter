@@ -4,7 +4,7 @@
 //! so a supervision question can be answered after the process is gone.
 //!
 //! Boundary: append-only writes, no reads. The in-memory event backbone is
-//! the live view (docs/events.md); this is the record that survives it, and
+//! the live view; this is the record that survives it, and
 //! a session close deliberately does not erase it the way it erases the
 //! session's replay ring.
 //!
@@ -17,7 +17,7 @@
 //! brief it was made from, not a verified human identity. On one machine and
 //! one user account there is no way for rutter to tell a person at a
 //! dashboard from a process that holds the dashboard token
-//! (docs/dashboard.md §2).
+//!.
 
 use std::path::{Path, PathBuf};
 

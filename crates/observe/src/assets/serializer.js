@@ -2,8 +2,8 @@
  * @fileoverview In-page DOM serializer for rutter accessibility snapshots.
  *
  * Walks the composed DOM (including open shadow roots and slot
- * assignments) and reports a plain JSON tree per docs/snapshot-format.md
- * sections 2-4. Hidden elements are omitted, never guessed at. The
+ * assignments) and reports a plain JSON tree following the snapshot
+ * format specification. Hidden elements are omitted, never guessed at. The
  * script never throws: every per-node computation is guarded and a
  * failure degrades that node to role "generic".
  *
@@ -196,7 +196,7 @@
     if (!store) {
       // Without a ref store no element can be named in a follow-up
       // action; that is an omission the snapshot must own up to
-      // (docs/snapshot-format.md section 2), never a silent one.
+      // , never a silent one.
       state.truncated = true;
       return null;
     }

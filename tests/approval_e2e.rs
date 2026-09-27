@@ -1,7 +1,7 @@
 //! Acceptance for approval flows (grant / deny / timeout) against the
 //! real stack — an MCP client drives `rutter serve` with a policy that
 //! requires approval for pointer actions, and decisions arrive through
-//! the dashboard HTTP API (docs/policy.md).
+//! the dashboard HTTP API.
 //!
 //! `#[ignore]`d by default: the CI e2e job (or a developer)
 //! runs them once the engine is in the cache.

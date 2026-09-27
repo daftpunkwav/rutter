@@ -6,7 +6,7 @@
 //!   127.0.0.1 only, gated by a per-launch random token; the first
 //!   visit exchanges the query token for an HttpOnly session cookie,
 //!   and `Host` headers are validated against DNS rebinding
-//!   (docs/dashboard.md).
+//!.
 //! - Hand that token's URL to a human through a channel chosen by who
 //!   owns stderr: a terminal gets the URL, a piped stderr (the MCP
 //!   client's case) gets an owner-only file and only its path is
@@ -15,7 +15,7 @@
 //!   client submits approval decisions through the same socket.
 //!
 //! Boundary: observation plus verdict submission — the dashboard never
-//! executes actions (docs/architecture.md). The screencast live view (docs/dashboard.md)
+//! executes actions. The screencast live view
 //! streams binary frames on demand through the same WebSocket.
 //!
 //! Module layout: `auth` owns the endpoint gate (host + token),
@@ -44,14 +44,13 @@ use rutter_policy::{ApprovalBroker, ApprovalId, Decision};
 use rutter_session::manager::SessionManager;
 use serde_json::Value;
 
-/// Static frontend sources, embedded at compile time (no build step,
-/// docs/dashboard.md).
+/// Static frontend sources, embedded at compile time (no build step).
 mod assets {
     /// The dashboard page shell.
     pub const INDEX_HTML: &str = include_str!("../../../frontend/src/index.html");
     /// The dashboard application script.
     pub const APP_JS: &str = include_str!("../../../frontend/src/app.js");
-    /// The English string catalog (default locale, docs/dashboard.md).
+    /// The English string catalog (default locale).
     pub const I18N_EN: &str = include_str!("../../../frontend/i18n/en.json");
 }
 
@@ -93,7 +92,7 @@ impl DashboardServer {
         }
     }
 
-    /// The per-launch access token (docs/dashboard.md).
+    /// The per-launch access token.
     pub fn token(&self) -> String {
         self.token.clone()
     }
@@ -144,12 +143,12 @@ impl DashboardServer {
     /// and the printed line names the path instead. The file is named
     /// per bound port, so two rutter processes on one machine — the
     /// multi-instance deployment — write different files and neither
-    /// hand-off can clobber the other (docs/dashboard.md §2).
+    /// hand-off can clobber the other.
     ///
     /// This is defence in depth, not isolation. A supervised process
     /// running as the same user can still read that file; a deployment
     /// needing a channel the agent cannot observe has to run the
-    /// dashboard outside the agent's account (docs/dashboard.md §2).
+    /// dashboard outside the agent's account.
     fn hand_off(&self, bound_port: u16) -> Result<String, String> {
         let url = format!("http://127.0.0.1:{bound_port}/?token={}", self.token);
         if std::io::stderr().is_terminal() {
@@ -227,7 +226,7 @@ async fn index(
         return Err(StatusCode::FORBIDDEN);
     }
     // First visit carries the token in the query; the answer exchanges
-    // it for a session cookie (docs/dashboard.md), and later requests
+    // it for a session cookie, and later requests
     // authenticate through the cookie alone.
     let mut response = Html(assets::INDEX_HTML).into_response();
     if let Some(cookie) = auth::token_cookie_header(&state.token) {

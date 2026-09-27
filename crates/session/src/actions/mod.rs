@@ -2,8 +2,8 @@
 //!
 //! Boundary: one action per call, executed against one page handle.
 //! Reference actions auto-wait through the page resolver
-//! (docs/tool-catalog.md §3); every mutating action returns a fresh
-//! snapshot (docs/tool-catalog.md §2). Policy verdicts and approval are
+//!; every mutating action returns a fresh
+//! snapshot. Policy verdicts and approval are
 //! decided by the session layer and never run here.
 
 use std::time::{Duration, Instant};
@@ -233,7 +233,7 @@ impl Executor<'_> {
     /// Runs the three-phase auto-wait: visible, then stable, then
     /// enabled. A gone reference fails fast; each phase gets its own
     /// budget and exhaustion maps to `TimedOut` naming the phase that
-    /// was pending (docs/tool-catalog.md §3). The budget restarts only when the
+    /// was pending. The budget restarts only when the
     /// wait advances to a later phase, so a flickering page cannot
     /// stretch the wait indefinitely.
     async fn auto_wait(&self, reference: &Reference) -> Result<ElementBox, SessionError> {
@@ -270,7 +270,7 @@ impl Executor<'_> {
                     }
                 }
                 // A page mid-navigation can reject evaluates; keep trying
-                // within the phase budget (docs/tool-catalog.md §3).
+                // within the phase budget.
                 Err(error) => {
                     if Instant::now() >= deadline {
                         return Err(SessionError::Engine(error));
@@ -284,7 +284,7 @@ impl Executor<'_> {
                 }));
             }
             // The two stability samples sit one interval apart, so the
-            // loop cadence is the stability interval (docs/tool-catalog.md §3).
+            // loop cadence is the stability interval.
             tokio::time::sleep(self.config.stability_sample_interval).await;
         }
     }
@@ -327,8 +327,8 @@ impl Executor<'_> {
         }
     }
 
-    /// Settles for the configured pause (docs/tool-catalog.md §3: lets same-tick
-    /// navigations start), then takes the fresh snapshot.
+    /// Settles for the configured pause (lets same-tick navigations
+    /// start), then takes the fresh snapshot.
     async fn settle_snapshot(&self) -> Result<Snapshot, SessionError> {
         if !self.config.settle.is_zero() {
             tokio::time::sleep(self.config.settle).await;

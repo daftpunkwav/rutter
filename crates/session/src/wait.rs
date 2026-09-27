@@ -3,7 +3,7 @@
 //! Boundary: time-boxing only. Every check runs inside the caller's
 //! budget; engine hiccups during a poll (a page mid-navigation, for
 //! example) are retried until the budget runs out, matching the
-//! bounded-wait invariant (docs/architecture.md).
+//! bounded-wait invariant.
 
 use std::future::Future;
 use std::time::{Duration, Instant};

@@ -3,8 +3,7 @@
 //! Boundary: request bookkeeping and decision delivery only. Publishing
 //! `ApprovalRequested` and mapping timeouts to the action error live in
 //! the session layer; the broker never touches engines, events, or
-//! files (docs/policy.md: pure computation plus parked-future
-//! bookkeeping).
+//! files (pure computation plus parked-future bookkeeping).
 
 use std::collections::HashMap;
 use std::sync::Mutex;

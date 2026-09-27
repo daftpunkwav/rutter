@@ -287,7 +287,7 @@ async fn ws_decisions_answer_parked_approvals_and_controls_are_acked() {
 
 #[tokio::test]
 async fn screencast_of_a_session_without_a_page_names_the_reason() {
-    // docs/dashboard.md section 5: a session with no open page answers
+    // a session with no open page answers
     // `no open page to observe` rather than opening one. The ack used
     // to swallow the failure, leaving the operator a bare ack, no
     // frames, and no explanation.
@@ -314,8 +314,8 @@ async fn screencast_of_a_session_without_a_page_names_the_reason() {
 
 #[tokio::test]
 async fn screencast_of_an_open_page_acks_started() {
-    // The success half of the ack contract (docs/dashboard.md section
-    // 3): a session with an open page answers `started: true` with no
+    // The success half of the ack contract: a session with an open
+    // page answers `started: true` with no
     // reason, and frames follow as binary messages.
     let serving = serve().await;
     let session = serving

@@ -2,7 +2,7 @@
 //! tool schemas, and their mappings onto `rutter-core` vocabulary.
 //!
 //! Boundary: pure data. These types know the spec's parameter shapes
-//! (`docs/tool-catalog.md` §4) and nothing about the server, the session,
+//! and nothing about the server, the session,
 //! or the engine.
 
 use rmcp::ErrorData as McpError;
@@ -37,7 +37,7 @@ impl From<Direction> for ScrollDirection {
 }
 
 /// Cross-site sending policy accepted by the set_cookies tool
-/// (`docs/tool-catalog.md` §4: `strict|lax|none`).
+/// (`strict|lax|none`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SameSiteInput {
@@ -59,7 +59,7 @@ impl From<SameSiteInput> for SameSite {
     }
 }
 
-/// One cookie as agents set it (`docs/tool-catalog.md` §4).
+/// One cookie as agents set it.
 #[derive(Debug, Clone, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
 pub struct CookieInput {
     /// Cookie name.
@@ -145,7 +145,7 @@ pub struct ScrollParams {
     ///
     /// Signed on purpose: a `u32` schema makes rmcp reject negatives at
     /// deserialization, whose error text bypasses the `hint:` contract
-    /// (docs/tool-catalog.md section 2). Signed keeps every bad `amount`
+    /// . Signed keeps every bad `amount`
     /// on the `invalid_params` path this crate validates itself.
     pub amount: i64,
     /// Reference of a container to scroll; omitted scrolls the page.

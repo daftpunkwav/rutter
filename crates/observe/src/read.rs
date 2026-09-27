@@ -54,8 +54,8 @@ pub fn read_from_response(response: &Value) -> Readout {
     // The envelope must be structurally complete, not merely an object:
     // `{"version": 1}` parses cleanly but reads as empty, and without
     // this check the agent could not tell a genuinely empty page from a
-    // reader whose output rutter could not parse (docs/read-format.md
-    // §5, mirroring `snapshot_from_response`'s root check). Fields that
+    // reader whose output rutter could not parse (mirroring
+    // `snapshot_from_response`'s root check). Fields that
     // are present as strings survive; only the flag marks the damage.
     let title_present = object
         .and_then(|object| object.get("title"))

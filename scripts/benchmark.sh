@@ -2,7 +2,7 @@
 #
 # Acceptance benchmark: runs `rutter open` (navigate + snapshot
 # round-trip) against a 20-site corpus and reports the success rate
-# (docs/testing.md benchmark level). Manual and
+# (benchmark level). Manual and
 # network-dependent by design; never part of CI gates.
 
 set -uo pipefail

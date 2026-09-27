@@ -3,7 +3,7 @@
 //! Boundary: events are data, derived from what the orchestration layer
 //! does. Screencast frames are not events on the backbone — they flow
 //! as binary WebSocket frames with their own latest-wins backpressure
-//! rule (docs/events.md, docs/dashboard.md).
+//! rule.
 //!
 //! `policy` is a dependency for one reason: an approval event carries the
 //! brief policy built, because only policy knows the class, the judged
@@ -32,7 +32,7 @@ pub enum Event {
         version: String,
     },
     /// The supervisor replaced a dead engine; state before the restart
-    /// is gone and time has passed (docs/sessions.md).
+    /// is gone and time has passed.
     EngineRestarted,
     /// A page opened inside the session's context.
     PageOpened {
@@ -87,7 +87,7 @@ pub enum Event {
         /// Page the parked operation targets.
         page: PageId,
         /// What a grant authorizes, the URL it was judged at, and the rule
-        /// that asked (docs/policy.md). The brief travels instead of a bare
+        /// that asked. The brief travels instead of a bare
         /// action: an approval must describe its own effect, and the human
         /// must see the target it applies to.
         brief: Box<ApprovalBrief>,
@@ -102,7 +102,7 @@ pub enum Event {
     /// A page opened a JavaScript dialog and the session dismissed it.
     /// Unanswered dialogs wedge a page, so sessions answer every dialog
     /// (dismiss; a prompt keeps its default text) and the dismissal is
-    /// recorded like any other page fact (docs/tool-catalog.md §4).
+    /// recorded like any other page fact.
     DialogAutoDismissed {
         /// The page that opened the dialog.
         page: PageId,

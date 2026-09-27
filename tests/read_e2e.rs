@@ -24,7 +24,7 @@ async fn run_read(url: &str) -> std::process::Output {
 #[tokio::test]
 #[ignore = "requires the engine binary in the cache"]
 async fn read_renders_mixed_inline_content_as_one_paragraph() {
-    // docs/read-format.md section 3: stray block text renders as plain
+    // stray block text renders as plain
     // paragraphs. A container of mixed inline children used to emit one
     // paragraph per text node, tearing every sentence apart.
     let output = run_read(

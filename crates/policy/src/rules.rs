@@ -1,4 +1,4 @@
-//! The rule set and verdict evaluation (docs/policy.md).
+//! The rule set and verdict evaluation.
 
 use serde::{Deserialize, Serialize};
 
@@ -63,8 +63,8 @@ pub struct PolicyRule {
 }
 
 /// An ordered rule set plus the verdict for actions no rule matches,
-/// and the window a human has to answer approvals (docs/policy.md:
-/// configurable, default 120 s).
+/// and the window a human has to answer approvals (configurable,
+/// default 120 s).
 ///
 /// The default set is conservative for the sensitive class: cookie
 /// manipulation always requires approval, everything else is allowed
@@ -121,7 +121,7 @@ impl RuleSet {
     /// caller reaches a verdict through: it canonicalizes the judgment URL
     /// itself, so no caller can reach a verdict while skipping
     /// canonicalization, and it hands back the brief a human decides from
-    /// whenever the answer is to ask one (docs/policy.md).
+    /// whenever the answer is to ask one.
     ///
     /// A URL that will not canonicalize — not a URL at all, or one hiding
     /// credentials behind a `user@host` decoy — counts as no URL at all,
@@ -247,7 +247,7 @@ mod tests {
         // executes. Judging the caller's URL instead would let a
         // mispairing approve "the allowed page" while navigating to the
         // denied one — the judged/authorized split the brief exists to
-        // prevent (docs/policy.md §4).
+        // prevent.
         let rules = RuleSet::new(
             vec![PolicyRule {
                 action_class: None,

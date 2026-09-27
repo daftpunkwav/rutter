@@ -20,7 +20,7 @@ pub enum EngineError {
     /// `cause` is classified by the backend that saw the failure. The
     /// vocabulary of network errors belongs to whoever speaks the
     /// protocol, so a caller above this crate never matches on error
-    /// text (docs/architecture.md).
+    /// text.
     #[error("navigation to '{url}' failed: {detail}")]
     NavigationFailed {
         /// URL that was requested.

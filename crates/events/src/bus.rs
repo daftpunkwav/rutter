@@ -32,7 +32,7 @@ impl EventBus {
     pub fn publish(&self, envelope: Envelope) {
         // A send error only means every receiver is gone; the ring keeps
         // the envelope, so dropping the result is the fire-and-forget
-        // contract (docs/events.md).
+        // contract.
         let _ = self.sender.send(envelope);
     }
 

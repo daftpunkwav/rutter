@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Acceptance smoke helper: runs `rutter open` against a fixed corpus
-# of real sites and reports a pass/fail summary (docs/testing.md).
+# of real sites and reports a pass/fail summary.
 # Manual and network-dependent by design; never part of CI gates.
 
 set -uo pipefail

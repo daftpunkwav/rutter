@@ -19,7 +19,7 @@ pub enum ActionClass {
     FileUpload,
     /// Scrolling.
     Scroll,
-    /// Cookie manipulation; sensitive by default (docs/policy.md).
+    /// Cookie manipulation; sensitive by default.
     Cookies,
 }
 
