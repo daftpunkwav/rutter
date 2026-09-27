@@ -275,10 +275,13 @@ async fn scroll_zero_and_negatives_are_invalid_params() {
 
 #[tokio::test]
 async fn close_session_is_terminal_for_the_connection() {
-    // docs/tool-catalog.md section 4: later tool calls on a closed
-    // connection fail with invalid_params naming the closed session —
-    // including a repeated close, which used to answer success twice.
+    // docs/tool-catalog.md §4: later tool calls on a closed connection
+    // fail with invalid_params naming the closed session — including a
+    // repeated close, which used to answer success twice.
     let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
+    // Open the session first: the terminality gate guards connections
+    // that had one, and a listing is the cheapest way to create it.
+    mcp.tabs_list().await.expect("listing opens the session");
     mcp.close_session()
         .await
         .expect("the first close closes the session");
@@ -291,6 +294,26 @@ async fn close_session_is_terminal_for_the_connection() {
     assert!(
         error.message.contains("s1") && error.message.contains("closed"),
         "names the closed session: {error}"
+    );
+}
+
+#[tokio::test]
+async fn close_session_on_an_unused_connection_creates_nothing() {
+    // The closed-session gate must not lazily initialize the session:
+    // for a connection that never ran a tool, closing is the manager's
+    // no-op — not an engine launch immediately torn down. The connection
+    // stays uninitialized, so a later close is the same no-op.
+    let manager = manager();
+    let mcp = RutterMcp::new(Arc::clone(&manager), SessionId::new("s-never"));
+    mcp.close_session()
+        .await
+        .expect("closing an unused connection succeeds as a no-op");
+    mcp.close_session()
+        .await
+        .expect("still a no-op: no session exists to be terminal about");
+    assert!(
+        manager.session_ids().await.is_empty(),
+        "no session was created just to be closed"
     );
 }
 

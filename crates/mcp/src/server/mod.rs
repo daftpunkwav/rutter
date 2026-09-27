@@ -457,8 +457,13 @@ impl RutterMcp {
         // The call is terminal for the connection (docs/tool-catalog.md
         // section 4): it goes through the same closed-session gate as
         // every other tool, so a second close fails with invalid_params
-        // instead of answering success twice.
-        let _session = self.session().await?;
+        // instead of answering success twice. A connection that never
+        // opened a session skips the gate — the gate's lazy
+        // initialization would launch an engine just to close it, where
+        // the manager's close of an unknown id is a plain no-op.
+        if self.session.get().is_some() {
+            let _session = self.session().await?;
+        }
         self.manager.close_session(&self.session_id).await;
         Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "closed session {}",
