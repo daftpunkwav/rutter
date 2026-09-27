@@ -71,7 +71,8 @@ pub fn parse_policy(toml_text: &str) -> Result<RuleSet, ConfigError> {
         }
         // A present-but-broken pattern must not degrade to `None`:
         // `None` widens the rule to every URL, so blank patterns and
-        // authority wildcards no later `/` anchors are rejected here.
+        // authority wildcards that no later `/` anchors are rejected
+        // here.
         let url_pattern = match rule.url_pattern.as_deref() {
             Some(text) => match Pattern::parse(text) {
                 Ok(pattern) => Some(pattern),

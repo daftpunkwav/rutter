@@ -27,8 +27,9 @@ pub fn canonical_url(raw: &str) -> Option<String> {
     // match the FQDN spelling the browser contacts — and the DNS layer
     // resolves both spellings to the same machine. The root dot names
     // the same host, so it normalizes away like case and default
-    // ports. A host that collapses to nothing was never a usable URL
-    // and fails closed.
+    // ports. A host that collapses to nothing fails closed for the
+    // schemes that require one; the hostless `file` scheme just
+    // normalizes its empty host away, exactly as the browser does.
     if url.is_special() && url.host_str().is_some_and(|host| host.ends_with('.')) {
         let host = url.host_str().unwrap_or_default().to_owned();
         let trimmed = host.trim_end_matches('.');
@@ -73,6 +74,14 @@ mod tests {
             canonical_url("https://[::1]:8443/x"),
             Some("https://[::1]:8443/x".to_owned())
         );
+        // Multiple trailing dots collapse the same way the OS resolver
+        // strips them; a non-special scheme has no host semantics and
+        // passes through untouched.
+        assert_eq!(
+            canonical_url("https://bank.example../x"),
+            Some("https://bank.example/x".to_owned())
+        );
+        assert_eq!(canonical_url("foo://a./x"), Some("foo://a./x".to_owned()));
         // A host of only dots carries no host information: fail closed.
         assert_eq!(canonical_url("https://./"), None);
     }

@@ -54,17 +54,6 @@ URL may be denied outright, or park again and ask the human about the
 page as it now is. The grant never follows a page the human was not
 shown.
 
-## 3.1 URL pattern wildcards
-
-`*` consumes any run of bytes, host-label dots and `/` included. Only
-a literal `/` after a wildcard pins it to the host it names, so
-[`Pattern::parse`](../crates/policy/src/pattern.rs) rejects a
-wildcard that sits in the authority with no later `/` anywhere after
-it: `https://bank.example*` would also match
-`bank.example.evil.com`, which anyone can register. Write
-`https://bank.example/*` instead. Bare patterns without a scheme
-(`*`) name no host and stay legal as explicit catch-alls.
-
 ## 3. The judgment URL
 
 The URL an action is judged at is where the action **leads**, not
@@ -88,6 +77,22 @@ bind, and a bare `allow` upgrades to `require_approval`. The brief then
 carries `judged_url: null` and basis `missing_url`, so a human can tell
 an unverifiable target from a known one. Missing information never
 passes an action unsupervised.
+
+## 3.1 URL pattern wildcards
+
+`*` is a byte-level wildcard — it consumes host-label dots and `/`
+alike, so textual matching can always be steered by a URL that
+carries the pattern's literals in its path or query. What
+[`Pattern::parse`](../crates/policy/src/pattern.rs) rejects is the
+cheapest spelling of that escape: a wildcard inside the authority
+with no `/` anywhere after it matches sibling domains with no
+crafting at all (`https://bank.example*` matches
+`bank.example.evil.com`, which anyone can register); write
+`https://bank.example/*` to close that door. Anchored or not, a
+pattern stays text matching, not a host guarantee: allow rules are
+safest on exact hosts, while a widened deny only over-refuses.
+Patterns without a scheme are not host-scoped and skip this check;
+the bare `*` remains the explicit catch-all.
 
 ## 4. Approvals
 

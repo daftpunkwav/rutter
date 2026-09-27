@@ -71,10 +71,13 @@ impl<'de> Deserialize<'de> for Pattern {
 }
 
 /// Whether a `*` sits in the URL authority with no later literal `/`
-/// anywhere after it. A wildcard consumes any bytes, host-label dots
-/// included, so only a literal `/` pins it to the host it names; bare
-/// patterns without a scheme (`*`) name no host and are explicit
-/// catch-alls.
+/// anywhere after it. This closes the cheapest wildcard escape — a
+/// suffix rule matching sibling domains with no crafting
+/// (`https://bank.example*` also matches `bank.example.evil.com`). A
+/// spelling check, not a host guarantee: `*` consumes `/` too, so an
+/// anchored pattern can still be steered by a URL that carries its
+/// literals in the path or query. Patterns without a scheme name no
+/// host and are never checked.
 fn unanchored_authority_wildcard(pattern: &str) -> bool {
     let Some(scheme_end) = pattern.find("://") else {
         return false;
@@ -153,12 +156,9 @@ mod tests {
     #[test]
     fn authority_wildcards_must_be_anchored_by_a_later_slash() {
         // `*` consumes any bytes, host-label dots included: these
-        // spellings match sibling domains an attacker can register, so
-        // `parse` refuses them instead of trusting the rule author to
-        // know. (`https://*.example.com/*` is safe — the trailing `/*`
-        // anchors the authority — and a deny widened this way only
-        // over-refuses, but an allow silently widened this way is a
-        // real relaxation.)
+        // spellings match sibling domains an attacker can register
+        // without any crafting, so `parse` refuses them instead of
+        // trusting the rule author to know.
         assert!(Pattern::new("https://bank.example*").matches("https://bank.example.evil.com/"));
         assert_eq!(
             Pattern::parse("https://bank.example*"),
@@ -173,13 +173,24 @@ mod tests {
             Err(PatternError::UnanchoredAuthorityWildcard)
         );
 
-        // Anchored forms stay legal, and a trailing `/*` really does
-        // keep the wildcard inside the named host.
+        // Anchored forms stay legal, and at least the crafted-path
+        // sibling escape is out: matching `.example.com/` needs a
+        // literal in the target, which `bank.example.evil.com` (the
+        // domain anyone can register) does not carry.
         assert!(Pattern::parse("https://*.example.com/*").is_ok());
         assert!(Pattern::parse("https://bank.example/*").is_ok());
         assert!(
             !Pattern::new("https://*.example.com/*").matches("https://api.example.com.evil.com/"),
-            "the anchored pattern does not reach sibling domains"
+            "the crafted-path escape does not fire here"
+        );
+        // This is a spelling check, not a host guarantee: `*` consumes
+        // `/` too, so a URL steering the literals into its query still
+        // matches. Allow rules that need a host guarantee use exact
+        // hosts.
+        assert!(
+            Pattern::new("https://*.example.com/*")
+                .matches("https://evil.example/x?q=.example.com/"),
+            "text matching remains steerable by crafted URLs"
         );
         assert!(
             Pattern::parse("*").is_ok(),

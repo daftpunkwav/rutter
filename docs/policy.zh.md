@@ -46,16 +46,6 @@ effect 里）；其余动作的判定 URL 是当时的页面，而并发调用�
 新判定：新 URL 可能被直接拒绝，也可能再次搁置、就页面当前的样子
 重新询问人类。批准永不跟随一个人类没有见过的页面。
 
-## 3.1 URL 模式通配符
-
-`*` 匹配任意字节序列，包括主机标签分隔点与 `/`。只有通配符之后的
-字面量 `/` 能把它钉在所命名的主机上，因此
-[`Pattern::parse`](../crates/policy/src/pattern.rs) 拒绝位于
-authority 内、且其后再无任何 `/` 的通配符写法：
-`https://bank.example*` 同样匹配 `bank.example.evil.com`——谁都能
-注册的域名。请写成 `https://bank.example/*`。不带 scheme 的裸模式
-（`*`）不指名主机，作为显式全匹配仍然合法。
-
 ## 3. 判定 URL
 
 动作被判断的 URL 是动作的**去向**，不是来处：
@@ -76,6 +66,19 @@ URL、或目标内嵌凭据
 `require_approval`。此时简报带 `judged_url: null` 与 basis
 `missing_url`，人类因此能分辨「目标无法核实」与「目标已知」。信息
 缺失永远不会让动作在无监督下通过。
+
+## 3.1 URL 模式通配符
+
+`*` 是字节级通配符——它同样吞掉主机标签分隔点与 `/`，因此只要
+URL 的 path 或 query 里凑出模式中的字面量，文本匹配总能被引向别
+处。[`Pattern::parse`](../crates/policy/src/pattern.rs) 拒绝的是这
+种逃逸中最廉价的一种写法：位于 authority 内、其后再无任何 `/` 的
+通配符无需任何构造即可匹配兄弟域（`https://bank.example*` 匹配
+谁都能注册的 `bank.example.evil.com`）；写成
+`https://bank.example/*` 即可堵住这一扇门。但无论是否锚定，模式
+匹配始终是文本匹配而非主机保证：allow 规则以精确主机最为稳妥，
+被放宽的 deny 只会过度拒绝。不带 scheme 的模式不受主机约束、不
+做此项检查；裸 `*` 仍是显式全匹配。
 
 ## 4. 审批
 
