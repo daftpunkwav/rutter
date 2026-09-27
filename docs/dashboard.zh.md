@@ -45,7 +45,12 @@ UI 字符串来自 `frontend/i18n/en.json` 目录。
   `SameSite=Strict` 的会话 cookie；之后的请求仅凭 cookie 认证。
   生成的 token 必定可安全放入 cookie；不可安全放入的
   `RUTTER_DASHBOARD_TOKEN` 覆盖值继续以 query 参数认证。
-- **`Host` 校验**防范 DNS rebinding。
+- **`Host` 校验**防范 DNS rebinding；出现的 **`Origin`** 头同样必须
+  指向 loopback，且以完全相同的方式精确匹配：改变状态的请求
+  （`POST /api/decisions`、WebSocket 消息）必须来自仪表盘自己的
+  origin，因此将来为第二个仪表盘 origin 放宽 cookie 的 `SameSite`
+  也不会把审批面暴露给跨站提交。没有 `Origin` 头（非浏览器客户端）
+  则回落到 `Host` 与 token 检查。
 
 ## 3. WebSocket 协议
 
@@ -66,7 +71,7 @@ client 消息（JSON 文本帧）：
 | 消息 | 效果 |
 |---|---|
 | `{"type":"decision","request_id":"apr-7","grant":true}` | 提交审批；回复是 `decision-ack`，回显 id 与是否受理。经 serde 构建，敌意 `request_id` 无法伪造回复字段 |
-| `{"type":"screencast","on":true,"session":"…"}` | 开始该 session 活动页面的 screencast（`on: false` 或断开连接则停止）；以 `screencast-ack` 确认 |
+| `{"type":"screencast","on":true,"session":"…"}` | 开始该 session 活动页面的 screencast（`on: false` 或断开连接则停止）；`screencast-ack` 携带 `"started": true`，或 `"started": false` 加 `reason`——session 不存在，或该 session 没有打开的页面（`no open page to observe`） |
 | `{"type":"subscribe"}` | 接受但无操作：replay 与实时投递在连接时自动开始 |
 
 服务器帧：文本帧承载 JSON 信封与 ack；二进制帧承载 JPEG

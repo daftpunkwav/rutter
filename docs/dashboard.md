@@ -55,7 +55,13 @@ Every endpoint, including the WebSocket upgrade, passes the same gate
   authenticate through the cookie alone. Generated tokens are always
   cookie-safe; a `RUTTER_DASHBOARD_TOKEN` override that is not keeps
   authenticating through the query parameter.
-- **`Host` validation** defends against DNS rebinding.
+- **`Host` validation** defends against DNS rebinding, and a present
+  **`Origin`** header must name loopback too, matched exactly the same
+  way: state-changing requests (`POST /api/decisions`, WebSocket
+  messages) must come from the dashboard's own origin, so relaxing the
+  cookie's `SameSite` for a second dashboard origin would not open the
+  approval surface to cross-site submits. No `Origin` header (a
+  non-browser client) falls back to the `Host` and token checks.
 
 ## 3. WebSocket protocol
 
@@ -78,7 +84,7 @@ Client messages (JSON text frames):
 | Message | Effect |
 |---|---|
 | `{"type":"decision","request_id":"apr-7","grant":true}` | Submits an approval; the reply is a `decision-ack` echoing the id and whether it was accepted. Built through serde, so a hostile `request_id` cannot forge reply fields |
-| `{"type":"screencast","on":true,"session":"…"}` | Starts a screencast of that session's active page (`on: false`, or dropping the connection, stops it); acknowledged with `screencast-ack` |
+| `{"type":"screencast","on":true,"session":"…"}` | Starts a screencast of that session's active page (`on: false`, or dropping the connection, stops it); the `screencast-ack` carries `"started": true`, or `"started": false` with a `reason` — an unknown session, or `no open page to observe` for a session with nothing open |
 | `{"type":"subscribe"}` | Accepted as a no-op: replay and live delivery start automatically on connect |
 
 Server frames: text frames carry JSON envelopes and acks; binary

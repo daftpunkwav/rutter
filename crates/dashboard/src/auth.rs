@@ -1,7 +1,9 @@
 //! Access control for every dashboard endpoint (docs/dashboard.md): the
-//! `Host` header must name loopback (DNS rebinding) and the request
-//! must carry the per-launch token, exchanged for an HttpOnly cookie
-//! on the first visit.
+//! `Host` header must name loopback (DNS rebinding), a present `Origin`
+//! must name loopback too (cross-site request forgery; the `Host` check
+//! alone cannot see who sent the request), and the request must carry
+//! the per-launch token, exchanged for an HttpOnly cookie on the first
+//! visit.
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.
@@ -12,6 +14,13 @@ use std::collections::HashMap;
 use axum::http::HeaderMap;
 
 use crate::Dashboard;
+
+/// Whether `name` (a host with any port already stripped) is a loopback
+/// name. Shared by the `Host` and `Origin` checks so the two gates can
+/// never drift apart.
+fn loopback_name(name: &str) -> bool {
+    name == "127.0.0.1" || name.eq_ignore_ascii_case("localhost") || name == "::1"
+}
 
 /// Host header validation: only loopback names pass (docs/dashboard.md,
 /// DNS rebinding). The host name is compared after stripping any port;
@@ -30,7 +39,34 @@ fn host_allowed(headers: &HeaderMap) -> bool {
     } else {
         host.split(':').next().unwrap_or("")
     };
-    name == "127.0.0.1" || name.eq_ignore_ascii_case("localhost") || name == "::1"
+    loopback_name(name)
+}
+
+/// Origin header validation: a request that carries an `Origin` is a
+/// browser submission, and the dashboard answers state-changing ones
+/// (`POST /api/decisions` skips CORS preflight with a simple
+/// content-type), so the origin must be the dashboard's own loopback —
+/// matched exactly, the same way as the `Host` check, since a prefix
+/// match would pass `http://localhost.evil.com`. No `Origin` header
+/// means the caller is not a browser form or fetch; the `Host` and
+/// token checks still apply. `Origin: null` (a sandboxed frame) is not
+/// a same-origin submission.
+fn origin_allowed(headers: &HeaderMap) -> bool {
+    let Some(origin) = headers
+        .get(axum::http::header::ORIGIN)
+        .and_then(|origin| origin.to_str().ok())
+    else {
+        return true;
+    };
+    let Some((_scheme, authority)) = origin.split_once("://") else {
+        return false;
+    };
+    let name = if let Some(rest) = authority.strip_prefix('[') {
+        rest.split(']').next().unwrap_or("")
+    } else {
+        authority.split(':').next().unwrap_or("")
+    };
+    loopback_name(name)
 }
 
 fn token_ok(state: &Dashboard, headers: &HeaderMap, provided: Option<&String>) -> bool {
@@ -95,15 +131,16 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
     diff == 0
 }
 
-/// Gate every endpoint shares: the `Host` header must name loopback and
-/// the request must carry the token (query parameter or cookie). Any
-/// new route must pass through this check.
+/// Gate every endpoint shares: the `Host` header must name loopback, a
+/// present `Origin` must name loopback too, and the request must carry
+/// the token (query parameter or cookie). Any new route must pass
+/// through this check.
 pub(crate) fn access_allowed(
     state: &Dashboard,
     headers: &HeaderMap,
     query: &HashMap<String, String>,
 ) -> bool {
-    host_allowed(headers) && token_ok(state, headers, query.get("token"))
+    host_allowed(headers) && origin_allowed(headers) && token_ok(state, headers, query.get("token"))
 }
 
 #[cfg(test)]
@@ -155,6 +192,41 @@ mod tests {
         assert!(text.contains("HttpOnly"));
         assert!(text.contains("SameSite=Strict"));
         assert!(token_cookie_header("not safe").is_none());
+    }
+
+    #[test]
+    fn origin_allows_loopback_and_rejects_cross_site() {
+        let headers = |origin: Option<&str>| {
+            let mut map = HeaderMap::new();
+            if let Some(origin) = origin {
+                map.insert(
+                    axum::http::header::ORIGIN,
+                    axum::http::HeaderValue::from_str(origin).expect("ascii origin"),
+                );
+            }
+            map
+        };
+        // No Origin header: not a browser submission; Host and token
+        // still gate the request.
+        assert!(origin_allowed(&headers(None)));
+        assert!(origin_allowed(&headers(Some("http://127.0.0.1:7700"))));
+        assert!(origin_allowed(&headers(Some("http://localhost:7700"))));
+        assert!(origin_allowed(&headers(Some("http://[::1]:7700"))));
+
+        // The host is matched exactly, like the Host check: an origin
+        // that embeds a loopback prefix is a cross-site submission from
+        // a sibling domain.
+        assert!(!origin_allowed(&headers(Some(
+            "http://localhost.evil.com:7700"
+        ))));
+        assert!(!origin_allowed(&headers(Some(
+            "http://127.0.0.1.evil.com/"
+        ))));
+        assert!(!origin_allowed(&headers(Some("https://evil.com"))));
+        // `Origin: null` (a sandboxed frame) is not a same-origin
+        // submission, and a scheme-less value is not an origin at all.
+        assert!(!origin_allowed(&headers(Some("null"))));
+        assert!(!origin_allowed(&headers(Some("evil.com"))));
     }
 
     #[test]
