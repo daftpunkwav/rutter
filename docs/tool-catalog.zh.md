@@ -36,7 +36,7 @@
   （`amount` <= 0、视口越界）是 `invalid_params` 协议错误，消息指
   明规则；这些值在 schema 中声明为有符号类型，正是为了不让 rmcp
   的反序列化器用它自己无提示的错误文本作答。只有根本无法反序列化
-  的请求体（字段类型错误）才会暴露反序列化器文本，且不带提示。
+  的请求体（字段类型错误或缺失）才会暴露反序列化器文本，且不带提示。
 - 协议级失败（未知 session、引擎死亡且熔断打开）是 JSON-RPC
   错误，code `-32000`，同样的消息加提示文本。
 - 快照以[快照格式 §5](snapshot-format.zh.md#5-文本渲染yaml-风格)
@@ -149,7 +149,7 @@ auto-wait；提取规则与守卫见[读取格式](read-format.zh.md)。站点�
 
 ### set_viewport
 `{ width: number, height: number }` → snapshot。以 CSS 像素覆盖活动
-页面的视口；`0` 或超过 10 000 的值是 `invalid_params`。这只是一次
+页面的视口；低于 `1` 或超过 `10 000` 的值是 `invalid_params`。这只是一次
 显示变更：不经策略判定，覆盖在导航后保持有效，页面关闭时消失。
 
 ### wait_for

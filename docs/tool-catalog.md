@@ -42,8 +42,8 @@ the payload vocabulary.
   message names the rule; those values are typed signed in the schemas
   precisely so rmcp's deserializer never answers them with its own
   hint-less error text. Only a body that does not deserialize at all
-  (a wrong-typed field) surfaces that deserializer text, without a
-  hint.
+  (a wrong-typed or missing field) surfaces that deserializer text,
+  without a hint.
 - Protocol-level failures (unknown session, engine dead beyond the
   breaker) are JSON-RPC errors with code `-32000` and the same
   message-plus-hint text.
@@ -169,8 +169,8 @@ by `amount` pixels; `amount` ≤ 0 is `invalid_params`.
 
 ### set_viewport
 `{ width: number, height: number }` → snapshot. Overrides the active
-page's viewport in CSS pixels; `0` or values above 10 000 are
-`invalid_params`. A display change: no policy judgment, and the
+page's viewport in CSS pixels; values below `1` or above `10 000`
+  are `invalid_params`. A display change: no policy judgment, and the
 override survives navigations until the page closes.
 
 ### wait_for

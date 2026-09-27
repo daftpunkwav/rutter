@@ -55,6 +55,8 @@ jobs:
           node --check frontend/src/app.js
           node --check browser/main.js
           node --check browser/preload.js
+          node --check crates/observe/src/assets/reader.js
+          node --check crates/observe/src/assets/serializer.js
 
   integration:
     name: engine integration tests (${{ matrix.os }})
