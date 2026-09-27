@@ -26,3 +26,43 @@ mod launcher;
 mod open;
 mod read;
 mod serve;
+
+/// Renders an observation for the one-shot modes: the Display text plus
+/// the truncation marker (docs/read-format.md section 4, the same
+/// convention as the MCP surface), so a clipped one-shot output is
+/// never silently trusted as complete.
+pub(crate) fn render_marked(value: impl std::fmt::Display, truncated: bool) -> String {
+    let mut text = value.to_string();
+    if truncated {
+        text.push_str("… truncated\n");
+    }
+    text
+}
+
+/// Loads and parses the `--policy` file. Public so the binary and the
+/// tests share one path, and the error is a [`CliError`] like every
+/// other startup failure: a hint line and the shared exit code, not a
+/// special-cased exit status.
+pub fn policy_file(path: &std::path::Path) -> Result<rutter_policy::RuleSet, error::CliError> {
+    let text = std::fs::read_to_string(path).map_err(|reason| error::CliError::PolicyFile {
+        path: path.to_path_buf(),
+        reason: reason.to_string(),
+    })?;
+    rutter_policy::parse_policy(&text).map_err(|error| error::CliError::PolicyFile {
+        path: path.to_path_buf(),
+        reason: error.to_string(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_marked;
+
+    #[test]
+    fn a_truncated_rendering_carries_the_marker() {
+        // docs/read-format.md section 4: the marker line follows the
+        // content, the same convention the MCP surface applies.
+        assert_eq!(render_marked("body", false), "body");
+        assert_eq!(render_marked("body", true), "body… truncated\n");
+    }
+}

@@ -36,6 +36,6 @@ async fn open_once(engine: &dyn Engine, settings: &Settings, url: &str) -> Resul
     let effective_url = page.navigate(url).await?;
     let raw = page.evaluate(rutter_observe::serializer_script()).await?;
     let snapshot = rutter_observe::snapshot_from_response(&effective_url, &raw);
-    println!("{snapshot}");
+    println!("{}", crate::render_marked(&snapshot, snapshot.truncated));
     Ok(())
 }

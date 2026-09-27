@@ -35,6 +35,7 @@ async fn read_once(engine: &dyn Engine, settings: &Settings, url: &str) -> Resul
 
     page.navigate(url).await?;
     let raw = page.evaluate(rutter_observe::reader_script()).await?;
-    println!("{}", rutter_observe::read_from_response(&raw));
+    let readout = rutter_observe::read_from_response(&raw);
+    println!("{}", crate::render_marked(&readout, readout.truncated));
     Ok(())
 }

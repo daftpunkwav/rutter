@@ -53,6 +53,16 @@ pub enum CliError {
         /// The address that was refused.
         addr: std::net::SocketAddr,
     },
+
+    /// The `--policy` file could not be read or parsed; the invocation
+    /// stops before any mode runs.
+    #[error("policy file {} could not be loaded: {reason}", path.display())]
+    PolicyFile {
+        /// The policy file that failed.
+        path: std::path::PathBuf,
+        /// What was wrong with it (read or parse error).
+        reason: String,
+    },
 }
 
 impl CliError {
@@ -74,6 +84,11 @@ impl CliError {
             Self::RemoteHttpBind { .. } => {
                 "pass --allow-remote if this server really must be reachable \
                  from other machines, and put an authenticated gateway in front of it"
+                    .to_owned()
+            }
+            Self::PolicyFile { .. } => {
+                "fix the policy file (docs/policy.md has the format and the \
+                 rejection rules), then rerun"
                     .to_owned()
             }
         }

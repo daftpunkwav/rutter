@@ -104,21 +104,15 @@ fn main() -> ExitCode {
         }
     };
 
-    let policy = cli.policy.map(|path| {
-        match std::fs::read_to_string(&path)
-            .map_err(|error| error.to_string())
-            .and_then(|text| {
-                rutter_policy::parse_policy(&text)
-                    .map_err(|error| error.to_string())
-                    .map(|rules| (rules, text))
-            }) {
-            Ok((rules, _text)) => rules,
-            Err(error) => {
-                eprintln!("rutter: {path:?}: {error}");
-                std::process::exit(2);
-            }
+    let policy = match cli.policy.as_deref().map(rutter_cli::policy_file) {
+        Some(Ok(rules)) => Some(rules),
+        Some(Err(error)) => {
+            eprintln!("rutter: {error}");
+            eprintln!("rutter: hint — {}", error.hint());
+            return ExitCode::FAILURE;
         }
-    });
+        None => None,
+    };
 
     match runtime.block_on(rutter_cli::entry::run(
         mode,
