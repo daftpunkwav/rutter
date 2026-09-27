@@ -238,11 +238,25 @@ impl RutterMcp {
             reference,
         }): Parameters<ScrollParams>,
     ) -> Result<CallToolResult, McpError> {
-        if amount == 0 {
+        // One rejection path for every bad amount, negative or zero
+        // (docs/tool-catalog.md section 4: `amount` <= 0 is
+        // invalid_params). The u32 schema used to let rmcp's
+        // deserializer answer negatives, whose error text carries no
+        // hint line.
+        if amount <= 0 {
             return Err(invalid_params(
                 "amount must be greater than zero".to_owned(),
             ));
         }
+        let amount = match u32::try_from(amount) {
+            Ok(amount) => amount,
+            Err(_) => {
+                return Err(invalid_params(format!(
+                    "amount must not exceed {}",
+                    u32::MAX
+                )));
+            }
+        };
         self.run_action(Action::Scroll {
             reference: reference.map(Reference::new),
             direction: direction.into(),
@@ -256,13 +270,15 @@ impl RutterMcp {
         &self,
         Parameters(ViewportParams { width, height }): Parameters<ViewportParams>,
     ) -> Result<CallToolResult, McpError> {
-        if width == 0 || width > 10_000 || height == 0 || height > 10_000 {
+        // Signed schema inputs; the range check doubles as the proof the
+        // `as u32` casts below are lossless.
+        if !(1..=10_000).contains(&width) || !(1..=10_000).contains(&height) {
             return Err(invalid_params(
                 "width and height must be between 1 and 10000".to_owned(),
             ));
         }
         let session = self.session().await?;
-        match session.set_viewport(width, height).await {
+        match session.set_viewport(width as u32, height as u32).await {
             Ok(snapshot) => Ok(snapshot_result(&snapshot)),
             Err(error) => Ok(error_result(&error)),
         }
@@ -438,6 +454,11 @@ impl RutterMcp {
 
     #[tool(description = "Close this session's pages and context")]
     async fn close_session(&self) -> Result<CallToolResult, McpError> {
+        // The call is terminal for the connection (docs/tool-catalog.md
+        // section 4): it goes through the same closed-session gate as
+        // every other tool, so a second close fails with invalid_params
+        // instead of answering success twice.
+        let _session = self.session().await?;
         self.manager.close_session(&self.session_id).await;
         Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "closed session {}",

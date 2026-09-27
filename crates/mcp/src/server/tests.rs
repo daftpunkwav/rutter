@@ -229,27 +229,68 @@ async fn tabs_close_unknown_page_is_invalid_params() {
 }
 
 #[tokio::test]
-async fn scroll_zero_is_invalid_params() {
-    // docs/tool-catalog.md §4: `amount` ≤ 0 is invalid_params. The u32 schema
-    // already rejects negatives, so zero is the one value that reaches
-    // this check — a silent no-op would report success and spend a
-    // snapshot on nothing.
+async fn scroll_zero_and_negatives_are_invalid_params() {
+    // docs/tool-catalog.md section 4: `amount` <= 0 is invalid_params —
+    // one rejection path for both. The u32 schema used to send negatives
+    // through rmcp's deserializer instead, whose error text carries no
+    // `hint:` line; signed now keeps them on this check.
     let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
+    for amount in [0, -1] {
+        let error = match mcp
+            .scroll(Parameters(ScrollParams {
+                direction: Direction::Down,
+                amount,
+                reference: None,
+            }))
+            .await
+        {
+            Ok(_) => panic!("a non-positive scroll must be refused"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
+        assert!(
+            error.message.contains("greater than zero"),
+            "names the rule: {error}"
+        );
+    }
+    // Beyond the u32 the action vocabulary accepts, the refusal names
+    // the bound instead of silently truncating.
     let error = match mcp
         .scroll(Parameters(ScrollParams {
             direction: Direction::Down,
-            amount: 0,
+            amount: i64::MAX,
             reference: None,
         }))
         .await
     {
-        Ok(_) => panic!("a zero scroll must be refused"),
+        Ok(_) => panic!("an absurd scroll must be refused"),
         Err(error) => error,
     };
     assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
     assert!(
-        error.message.contains("greater than zero"),
-        "names the rule: {error}"
+        error.message.contains("must not exceed"),
+        "names the bound: {error}"
+    );
+}
+
+#[tokio::test]
+async fn close_session_is_terminal_for_the_connection() {
+    // docs/tool-catalog.md section 4: later tool calls on a closed
+    // connection fail with invalid_params naming the closed session —
+    // including a repeated close, which used to answer success twice.
+    let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
+    mcp.close_session()
+        .await
+        .expect("the first close closes the session");
+
+    let error = match mcp.close_session().await {
+        Ok(_) => panic!("a closed connection cannot close again"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
+    assert!(
+        error.message.contains("s1") && error.message.contains("closed"),
+        "names the closed session: {error}"
     );
 }
 

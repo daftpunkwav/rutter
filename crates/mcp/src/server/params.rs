@@ -142,7 +142,12 @@ pub struct ScrollParams {
     /// Scroll direction.
     pub direction: Direction,
     /// Distance in pixels; must be greater than zero.
-    pub amount: u32,
+    ///
+    /// Signed on purpose: a `u32` schema makes rmcp reject negatives at
+    /// deserialization, whose error text bypasses the `hint:` contract
+    /// (docs/tool-catalog.md section 2). Signed keeps every bad `amount`
+    /// on the `invalid_params` path this crate validates itself.
+    pub amount: i64,
     /// Reference of a container to scroll; omitted scrolls the page.
     pub reference: Option<String>,
 }
@@ -185,9 +190,12 @@ pub struct UploadFileParams {
 /// Parameters of the set_viewport tool.
 pub struct ViewportParams {
     /// Viewport width in CSS pixels (1-10 000).
-    pub width: u32,
+    ///
+    /// Signed like `ScrollParams::amount`: the rejection stays on this
+    /// crate's `invalid_params` path instead of rmcp's deserializer.
+    pub width: i64,
     /// Viewport height in CSS pixels (1-10 000).
-    pub height: u32,
+    pub height: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
