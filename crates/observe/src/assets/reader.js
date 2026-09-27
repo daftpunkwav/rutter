@@ -437,7 +437,13 @@
   function joinBlocks() {
     var body = state.blocks.join('\n\n');
     var cleaned = body.replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '');
-    if (cleaned.length > MAX_CHARS) return clip(cleaned, MAX_CHARS);
+    if (cleaned.length > MAX_CHARS) {
+      // The '\n\n' join separators can push the total past the cap even
+      // when no single push did; a clip without the flag would present
+      // cut output as complete.
+      state.truncated = true;
+      return clip(cleaned, MAX_CHARS);
+    }
     return cleaned;
   }
 
