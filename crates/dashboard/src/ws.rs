@@ -178,7 +178,8 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                             }
                                         }
                                     } else {
-                                        ack["reason"] = serde_json::json!("no session named");
+                                        ack["reason"] =
+                                            serde_json::json!("the request names no session");
                                     }
                                 }
                                 let _ = socket.send(Message::text(ack.to_string())).await;

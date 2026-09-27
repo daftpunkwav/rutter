@@ -313,6 +313,36 @@ async fn screencast_of_a_session_without_a_page_names_the_reason() {
 }
 
 #[tokio::test]
+async fn screencast_of_an_open_page_acks_started() {
+    // The success half of the ack contract (docs/dashboard.md section
+    // 3): a session with an open page answers `started: true` with no
+    // reason, and frames follow as binary messages.
+    let serving = serve().await;
+    let session = serving
+        .manager
+        .session(SessionId::new("s-live"))
+        .await
+        .expect("the stub engine opens a session");
+    session.open_page(None).await.expect("the stub page opens");
+    let mut stream = connect(&serving).await;
+    stream
+        .send(Message::text(
+            serde_json::json!({"type": "screencast", "on": true, "session": "s-live"}).to_string(),
+        ))
+        .await
+        .expect("send screencast on");
+    let ack = next_of_type(&mut stream, "screencast-ack").await;
+    assert_eq!(
+        ack["started"], true,
+        "an open page starts the stream: {ack}"
+    );
+    assert!(
+        ack.get("reason").is_none(),
+        "a started stream carries no refusal: {ack}"
+    );
+}
+
+#[tokio::test]
 async fn ws_rejects_an_upgrade_without_the_token() {
     let serving = serve().await;
     let url = format!("{}?token=wrong", serving.ws_url);

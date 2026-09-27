@@ -71,7 +71,7 @@ client 消息（JSON 文本帧）：
 | 消息 | 效果 |
 |---|---|
 | `{"type":"decision","request_id":"apr-7","grant":true}` | 提交审批；回复是 `decision-ack`，回显 id 与是否受理。经 serde 构建，敌意 `request_id` 无法伪造回复字段 |
-| `{"type":"screencast","on":true,"session":"…"}` | 开始该 session 活动页面的 screencast（`on: false` 或断开连接则停止）；`screencast-ack` 携带 `"started": true`，或 `"started": false` 加 `reason`——session 不存在，或该 session 没有打开的页面（`no open page to observe`） |
+| `{"type":"screencast","on":true,"session":"…"}` | 开始该 session 活动页面的 screencast（`on: false` 或断开连接则停止）；`screencast-ack` 携带 `"started": true`，或 `"started": false`——拒绝时附 `reason`（session 不存在、请求未指名 session、或该 session 没有打开的页面（`no open page to observe`）），单纯的 `on: false` 不附 |
 | `{"type":"subscribe"}` | 接受但无操作：replay 与实时投递在连接时自动开始 |
 
 服务器帧：文本帧承载 JSON 信封与 ack；二进制帧承载 JPEG

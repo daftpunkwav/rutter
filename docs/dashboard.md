@@ -84,7 +84,7 @@ Client messages (JSON text frames):
 | Message | Effect |
 |---|---|
 | `{"type":"decision","request_id":"apr-7","grant":true}` | Submits an approval; the reply is a `decision-ack` echoing the id and whether it was accepted. Built through serde, so a hostile `request_id` cannot forge reply fields |
-| `{"type":"screencast","on":true,"session":"…"}` | Starts a screencast of that session's active page (`on: false`, or dropping the connection, stops it); the `screencast-ack` carries `"started": true`, or `"started": false` with a `reason` — an unknown session, or `no open page to observe` for a session with nothing open |
+| `{"type":"screencast","on":true,"session":"…"}` | Starts a screencast of that session's active page (`on: false`, or dropping the connection, stops it); the `screencast-ack` carries `"started": true`, or `"started": false` — with a `reason` when it refused (an unknown session, a request naming no session, or `no open page to observe` for a session with nothing open), without one for a plain `on: false` |
 | `{"type":"subscribe"}` | Accepted as a no-op: replay and live delivery start automatically on connect |
 
 Server frames: text frames carry JSON envelopes and acks; binary
