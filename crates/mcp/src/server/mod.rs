@@ -5,7 +5,7 @@
 //! - Expose the tool surface as rmcp tools.
 //! - Return snapshots and readouts as text, screenshots as image
 //!   blocks, and action failures as `isError` results carrying the
-//! error plus its hint.
+//!   error plus its hint.
 //!
 //! Boundary: protocol mapping only. All semantics live in
 //! `rutter-session`; this module validates parameters against the spec

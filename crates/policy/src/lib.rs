@@ -3,7 +3,7 @@
 //! Responsibilities:
 //! - Reach a verdict for one operation as a pure function: classify it,
 //!   canonicalize the judgment URL, match the rule set, and answer with
-//! [`rules::Review`].
+//!   [`rules::Review`].
 //! - Build the [`brief::ApprovalBrief`] a human decides from whenever the
 //!   answer is to ask one — the class, the URL judged, the rule that
 //!   spoke, and the effect a grant authorizes.

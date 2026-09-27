@@ -5,8 +5,7 @@
 //! - Serve the static frontend (embedded, no build step) on
 //!   127.0.0.1 only, gated by a per-launch random token; the first
 //!   visit exchanges the query token for an HttpOnly session cookie,
-//!   and `Host` headers are validated against DNS rebinding
-//!.
+//!   and `Host` headers are validated against DNS rebinding.
 //! - Hand that token's URL to a human through a channel chosen by who
 //!   owns stderr: a terminal gets the URL, a piped stderr (the MCP
 //!   client's case) gets an owner-only file and only its path is
