@@ -47,6 +47,14 @@ jobs:
         run: bash scripts/check_headers.sh
       - name: Encoding gate
         run: bash scripts/check_encoding.sh
+      - name: JavaScript syntax gate
+        shell: bash
+        # The dashboard and the Electron shell carry security-relevant
+        # logic outside the Rust workspace; at minimum they must parse.
+        run: |
+          node --check frontend/src/app.js
+          node --check browser/main.js
+          node --check browser/preload.js
 
   integration:
     name: engine integration tests (${{ matrix.os }})
