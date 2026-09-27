@@ -620,6 +620,12 @@ impl rutter_engine::page::PageHandle for CdpPage {
                             break;
                         }
                     }
+                    // A quiet page produces no observations, so the
+                    // Closed arm inside `try_forward` may not fire for a
+                    // long time; watching the sender directly ends the
+                    // feed the moment the consumer leaves (same rule as
+                    // the screencast).
+                    _ = sender.closed() => break,
                     else => break,
                 }
             }
