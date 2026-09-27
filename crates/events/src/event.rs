@@ -157,4 +157,51 @@ mod tests {
             "tagged enum: {json}"
         );
     }
+
+    #[test]
+    fn the_wire_tags_the_frontend_branches_on_are_pinned() {
+        // The dashboard branches on these literals with no schema
+        // between the two sides (frontend/src/app.js `render()`); a
+        // rename would pass every test while the approval cards and the
+        // session list silently stop appearing. The brief has its own
+        // wire pin (`crates/policy/tests/brief_wire.rs`) — these tags
+        // are the event-side half of the same defense.
+        let page = PageId::new("ctx-1:page-0");
+        let brief = ApprovalBrief {
+            class: rutter_policy::ActionClass::Pointer,
+            judged_url: Some("https://x.example/".to_owned()),
+            basis: rutter_policy::VerdictBasis::SetDefault,
+            effect: rutter_policy::ApprovalEffect::Action {
+                action: Action::Click {
+                    reference: rutter_core::reference::Reference::new("e1"),
+                },
+            },
+        };
+        let cases: Vec<(Event, &str)> = vec![
+            (Event::SessionStarted, "session_started"),
+            (Event::SessionClosed, "session_closed"),
+            (
+                Event::ApprovalRequested {
+                    request_id: "apr-7".to_owned(),
+                    page: page.clone(),
+                    brief: Box::new(brief),
+                },
+                "approval_requested",
+            ),
+            (
+                Event::ApprovalResolved {
+                    request_id: "apr-7".to_owned(),
+                    granted: true,
+                },
+                "approval_resolved",
+            ),
+        ];
+        for (event, tag) in cases {
+            let json = serde_json::to_string(&event).expect("serialize");
+            assert!(
+                json.contains(&format!(r#""type":"{tag}""#)),
+                "the frontend branches on {tag:?}: {json}"
+            );
+        }
+    }
 }
