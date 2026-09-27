@@ -60,7 +60,13 @@
       var envelope;
       try { envelope = JSON.parse(message.data); } catch (error) { return; }
       if (envelope.type === 'note') { append(envelope.text); return; }
-      if (envelope.type === 'decision-ack' || envelope.type === 'screencast-ack') { return; }
+      if (envelope.type === 'decision-ack') { return; }
+      if (envelope.type === 'screencast-ack') {
+        // A refusal carries its reason (docs/dashboard.md section 5);
+        // silence would leave the operator a blank live view.
+        if (envelope.reason) { append(t('screencastRefused') + ' ' + envelope.reason); }
+        return;
+      }
       render(envelope);
     };
     socket.onopen = function () { reconnectDelay = 1000; };
@@ -98,7 +104,7 @@
     switch (event.type) {
       case 'session_started':
       case 'session_closed':
-        refreshSessions();
+        trackSession(envelope, event.type);
         break;
       case 'approval_requested':
         showApproval(envelope.session, event);
@@ -109,6 +115,39 @@
       default:
         append(describe(envelope));
     }
+  }
+
+  // Sessions known from the event stream. A reconnect replays every
+  // session's history, so this object rebuilds itself on reconnect; the
+  // live events keep it current afterwards.
+  var knownSessions = {};
+
+  function trackSession(envelope, type) {
+    if (type === 'session_started') {
+      knownSessions[envelope.session] = true;
+    } else {
+      delete knownSessions[envelope.session];
+    }
+    renderSessions();
+  }
+
+  function renderSessions() {
+    var list = document.getElementById('sessions');
+    var options = document.getElementById('session-ids');
+    if (!list) { return; }
+    list.textContent = '';
+    if (options) { options.textContent = ''; }
+    Object.keys(knownSessions).sort().forEach(function (id) {
+      var item = document.createElement('span');
+      item.className = 'session-chip';
+      item.textContent = id + ' ';
+      list.appendChild(item);
+      if (options) {
+        var option = document.createElement('option');
+        option.value = id;
+        options.appendChild(option);
+      }
+    });
   }
 
   function describe(envelope) {
@@ -198,10 +237,6 @@
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ request_id: requestId, grant: grant })
     });
-  }
-
-  function refreshSessions() {
-    document.getElementById('sessions').textContent = '';
   }
 
   // Every line (events, notes, connection status) lands in the single

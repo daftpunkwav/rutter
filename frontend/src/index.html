@@ -21,7 +21,8 @@
 <header><strong>rutter</strong> <span data-i18n="subtitle"></span>
   <span id="sessions"></span></header>
 <section id="live"><h2 data-i18n="live"></h2>
-  <input id="live-session" placeholder="session id" style="width:220px">
+  <input id="live-session" list="session-ids" placeholder="session id" style="width:220px">
+  <datalist id="session-ids"></datalist>
   <button id="live-start" data-i18n="start"></button>
   <button id="live-stop" data-i18n="stop"></button>
   <div><img id="live-frame" alt="live view" hidden></div>
