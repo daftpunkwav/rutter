@@ -44,9 +44,12 @@
   function connect() {
     // The server replays every session's history on connect, so a
     // reconnect must start from an empty timeline or the replay appends
-    // a second copy of every event.
+    // a second copy of every event. The session set rebuilds the same
+    // way — a session closed while the socket was down is absent from
+    // the replay (its ring is dropped on close) and must not linger.
     var timeline = document.getElementById('events');
     if (timeline) { timeline.textContent = ''; }
+    knownSessions = {};
     var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     socket = new WebSocket(
       protocol + '//' + window.location.host + withToken('/ws'));
@@ -117,9 +120,9 @@
     }
   }
 
-  // Sessions known from the event stream. A reconnect replays every
-  // session's history, so this object rebuilds itself on reconnect; the
-  // live events keep it current afterwards.
+  // Sessions known from the event stream. connect() clears this on
+  // every (re)connect and the replay rebuilds it; the live events keep
+  // it current afterwards.
   var knownSessions = {};
 
   function trackSession(envelope, type) {
