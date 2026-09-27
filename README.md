@@ -122,8 +122,15 @@ rutter/
 ├── scripts/      # quality-gate helpers run by CI
 ├── crates/       # workspace members (see below)
 ├── tests/        # cross-crate acceptance tests driving the binary
-└── frontend/     # dashboard sources (vanilla JS, no build step)
+├── frontend/     # dashboard sources (vanilla JS, no build step)
+└── browser/      # optional Electron engine shell rutter can attach to
 ```
+
+`browser/` is not a crate and ships no Rust: it is the Electron shell
+that `--engine-executable` can point at, giving rutter a real window
+with a supervision toolbar
+([docs/engine-supervision.md](docs/engine-supervision.md)). The Rust
+workspace itself stays a single binary.
 
 | Crate | Responsibility |
 |-------|----------------|
@@ -159,7 +166,9 @@ bash scripts/check_encoding.sh  # tracked text files: UTF-8, LF, no BOM
 
 CI also gates workspace line coverage: `scripts/check_coverage.sh`
 checks the cargo-llvm-cov report against a threshold (90 % in CI,
-engine suites and e2e suites included).
+engine suites and e2e suites included). The gate measures the Rust
+workspace; the JavaScript sources (`frontend/`, `browser/`) are
+covered by a syntax gate, not a coverage number.
 
 Engine integration tests need a real binary and are `#[ignore]`d by
 default; run them explicitly (they reuse the cache `rutter open`

@@ -4,8 +4,10 @@ English | [中文](README.zh.md)
 
 | File | Role |
 |---|---|
+| `lib.rs` | Crate root: module wiring and re-exports |
 | `action.rs` | `Action` enum, `Origin`, `ScrollDirection` — the request vocabulary |
 | `snapshot.rs` | `Snapshot`/`SnapshotNode` and the YAML rendering (docs/snapshot-format.md) |
+| `readout.rs` | `Readout` — title, markdown body, truncated flag (docs/read-format.md) |
 | `reference.rs` | `Reference` — opaque per-page element handle |
 | `cookie.rs` | `Cookie`/`SameSite` as passed to engine backends |
 | `ids.rs` | Newtype ids (`SessionId`, `PageId`, `ContextId`) |

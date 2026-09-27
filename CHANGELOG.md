@@ -9,6 +9,45 @@ and the project adheres to
 
 ### Fixed
 
+- Host-scoped policy rules can no longer be slipped past with a
+  trailing root dot: `https://bank.example./` canonicalizes to
+  `https://bank.example/` before judgment, the same host the DNS layer
+  resolves it to.
+- A granted action no longer executes against a page that moved during
+  the approval window: after a grant (navigations excepted — their
+  target rides in the effect) the page URL is re-read and re-judged, so
+  the grant never follows a page the human was not shown.
+- `read` no longer reports a structurally broken reader envelope as
+  "empty and complete": a missing or non-string `title`/`markdown`
+  field sets `truncated` like a non-object response does.
+- Mixed inline content inside a container renders as one paragraph in
+  `read` output (`<div>Hello <b>world</b> again</div>` is one sentence,
+  not three); inline images follow the same `src`-only rule as
+  block-level ones.
+- A screencast request for a session with no open page answers
+  `screencast-ack` with `started: false` and the documented reason
+  (`no open page to observe`) instead of a bare ack with no frames and
+  no explanation; the dashboard surfaces the reason in the timeline.
+- The dashboard renders the known sessions in its header and offers
+  them as suggestions for the live-view session field; the list was a
+  clear-only no-op before.
+- `scroll` and `set_viewport` rejections land on one `invalid_params`
+  path with the hint contract intact for negatives as well as zero
+  (the unsigned schemas used to let rmcp's deserializer answer
+  negatives with hint-less error text).
+- `close_session` is terminal for the connection: a second call fails
+  with `invalid_params` naming the closed session instead of
+  answering success twice.
+- A failing `--policy` file is a regular CLI error with its hint and
+  the shared exit code, where it used to exit 2 with no hint.
+- The snapshot's ref-store failures (a page tampering with
+  `__rutterRefStore`, or no store at all) set `truncated` instead of
+  silently dropping every element reference.
+- Policy patterns with an authority wildcard that no later `/` anchors
+  (`https://bank.example*`, which also matches
+  `bank.example.evil.com`) are rejected at load time; anchored
+  spellings and bare catch-alls are unchanged.
+
 - Headed mode launches on Windows: rutter spawns the browser itself and
   resolves the debugging endpoint by polling the port, so both
   launcher-style executables (Edge) and full Chrome start where
@@ -29,6 +68,15 @@ and the project adheres to
   `Enter`, arrows, function keys, …) plus the text that makes
   printable keys land in focused inputs. Sites that ignored the
   previous name-only events respond correctly now.
+
+### Changed
+
+- Dashboard endpoints additionally reject requests whose `Origin`
+  header names a non-loopback host, matched exactly like the `Host`
+  check; requests without an `Origin` header are unaffected.
+- `scroll`'s `amount` and `set_viewport`'s `width`/`height` are signed
+  integers in the tool schemas (`i64`), so out-of-range values reach
+  rutter's own validation instead of failing deserialization.
 
 ### Added
 
@@ -71,6 +119,12 @@ and the project adheres to
 - CI runs the e2e acceptance suites and gates workspace line coverage
   at 90 % (`cargo-llvm-cov`, engine suites and e2e included), with the
   engine-backed jobs sharing one composite setup action.
+- Wire-tag pins for the event names the schema-less dashboard branches
+  on (`session_started`, `session_closed`, `approval_requested`,
+  `approval_resolved`), the event-side counterpart of the brief's wire
+  pin.
+- CI gates the dashboard and Electron-shell JavaScript with a syntax
+  check on both OSes.
 
 ## [0.1.0] - 2026-09-21
 

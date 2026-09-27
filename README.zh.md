@@ -112,8 +112,14 @@ rutter/
 ├── scripts/      # CI 运行的质量门禁辅助脚本
 ├── crates/       # workspace 成员（见下表）
 ├── tests/        # 驱动二进制的跨 crate 验收测试
-└── frontend/     # 面板源码（原生 JS，无构建步骤）
+├── frontend/     # 面板源码（原生 JS，无构建步骤）
+└── browser/      # 可选的 Electron 引擎壳，rutter 可附着其上
 ```
+
+`browser/` 不是 crate，也不含 Rust：它是 `--engine-executable` 可指向
+的 Electron 壳，让 rutter 拥有带监督工具栏的真实窗口
+（[docs/engine-supervision.md](docs/engine-supervision.md)）。Rust
+workspace 本身保持单一二进制。
 
 | Crate | 职责 |
 |-------|------|
@@ -149,7 +155,8 @@ bash scripts/check_encoding.sh  # 跟踪的文本文件：UTF-8、LF、无 BOM
 
 CI 还对工作区行覆盖率设门禁：`scripts/check_coverage.sh` 将
 cargo-llvm-cov 报告与阈值比对（CI 为 90%，引擎套件与 e2e 套件
-包含在内）。
+包含在内）。该门禁度量的是 Rust workspace；JavaScript 源码
+（`frontend/`、`browser/`）由语法门禁覆盖，没有覆盖率数字。
 
 引擎集成测试需要真实二进制，默认 `#[ignore]`；显式运行（复用
 `rutter open` 填充的缓存）：
