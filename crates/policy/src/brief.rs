@@ -53,6 +53,30 @@ impl ApprovalEffect {
             Self::Cookies { .. } => ActionClass::Cookies,
         }
     }
+
+    /// The URL this effect itself targets: a navigation's destination.
+    /// A review must judge exactly this URL when it exists — judging
+    /// some other URL the caller paired with the effect would approve
+    /// one target while executing another, the separation this type
+    /// exists to make inexpressible.
+    pub fn target_url(&self) -> Option<&str> {
+        match self {
+            Self::Action {
+                action: Action::Navigate { url },
+            } => Some(url),
+            _ => None,
+        }
+    }
+}
+
+impl ApprovalBrief {
+    /// Whether `raw_url` is still the URL this brief was judged at.
+    /// The re-validation a granted operation passes before it executes:
+    /// a page that moved during the approval window is a different
+    /// judgment, and the grant never follows it.
+    pub fn judged_at(&self, raw_url: Option<&str>) -> bool {
+        self.judged_url == raw_url.and_then(crate::canonical::canonical_url)
+    }
 }
 
 /// Why the verdict is what it is, as far as the deciding human needs it.

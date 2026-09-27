@@ -127,7 +127,11 @@ impl RuleSet {
     /// credentials behind a `user@host` decoy — counts as no URL at all,
     /// which fails closed rather than matching a placeholder.
     pub fn review(&self, effect: ApprovalEffect, raw_url: Option<&str>) -> Review {
-        let judged_url = raw_url.and_then(canonical_url);
+        // The judgment URL is the one the effect itself names when it
+        // carries one (a navigation's target): whatever URL the caller
+        // pairs with the effect, a grant can only ever authorize what
+        // the brief described, so the target inside the effect wins.
+        let judged_url = effect.target_url().or(raw_url).and_then(canonical_url);
         let class = effect.class();
         let (verdict, basis) = match &judged_url {
             Some(url) => self.judge(class, url),
@@ -233,6 +237,37 @@ mod tests {
         assert_eq!(
             rules.evaluate(ActionClass::Pointer, "https://other.org/x"),
             Verdict::Allow
+        );
+    }
+
+    #[test]
+    fn a_navigation_is_judged_by_the_url_its_effect_carries() {
+        // The signature hands the URL to `review` separately from the
+        // effect; a navigation must still be judged on the target it
+        // executes. Judging the caller's URL instead would let a
+        // mispairing approve "the allowed page" while navigating to the
+        // denied one — the judged/authorized split the brief exists to
+        // prevent (docs/policy.md §4).
+        let rules = RuleSet::new(
+            vec![PolicyRule {
+                action_class: None,
+                url_pattern: Some(Pattern::new("https://denied.example/*")),
+                verdict: Verdict::Deny,
+            }],
+            Verdict::Allow,
+        );
+        let review = rules.review(
+            ApprovalEffect::Action {
+                action: Action::Navigate {
+                    url: "https://denied.example/pay".to_owned(),
+                },
+            },
+            Some("https://allowed.example/"),
+        );
+        assert_eq!(
+            review,
+            Review::Denied,
+            "the effect's own target is the judgment URL"
         );
     }
 
