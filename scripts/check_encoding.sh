@@ -18,8 +18,10 @@ while IFS= read -r -d '' file; do
   # Skip binary files (the -I heuristic: a file is binary if it
   # contains a NUL in its first 32 KiB).
   if grep -Iq . "$path"; then
-    # UTF-8 validity: iconv fails on malformed byte sequences.
-    if ! iconv -f UTF-8 -t UTF-8 "$path" >/dev/null 2>&1; then
+    # UTF-8 validity: strict decode fails on malformed byte sequences.
+    # perl instead of iconv because BSD iconv (macOS) rejects some
+    # well-formed files the other platforms accept.
+    if ! perl -MEncode -e 'local $/; my $d = <STDIN>; eval { Encode::decode("UTF-8", $d, Encode::FB_CROAK()) }; exit($@ ? 1 : 0)' < "$path" >/dev/null 2>&1; then
       failures+=("$file: not valid UTF-8")
       continue
     fi
