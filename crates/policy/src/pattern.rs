@@ -2,22 +2,46 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Why a pattern string was rejected.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PatternError {
+    /// The pattern is empty or whitespace-only.
+    #[error("patterns must not be blank")]
+    Blank,
+    /// A `*` sits inside the URL authority with no later `/` to anchor
+    /// the authority boundary, so it would match across host-label dots
+    /// into sibling domains (`https://bank.example*` also matches
+    /// `bank.example.evil.com`, which anyone can register).
+    #[error(
+        "a wildcard in the authority is not anchored by a later '/'; \
+         write 'https://host/*' so it cannot cross into sibling domains"
+    )]
+    UnanchoredAuthorityWildcard,
+}
+
 /// A URL pattern with `*` wildcards; `https://*.example.com/*` matches
 /// scheme, host, and any path. Anything a wildcard must consume is
 /// matched non-greedily by segments of literal text between wildcards.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Pattern(String);
 
 impl Pattern {
     /// Wraps a pattern string without validation; use [`Pattern::parse`]
-    /// to reject empty patterns.
+    /// to reject blank and unanchored patterns.
     pub fn new(pattern: impl Into<String>) -> Self {
         Self(pattern.into())
     }
 
-    /// Parses a pattern, rejecting empty ones.
-    pub fn parse(pattern: &str) -> Option<Self> {
-        (!pattern.trim().is_empty()).then(|| Self(pattern.to_owned()))
+    /// Parses a pattern, rejecting blank ones and authority wildcards
+    /// that no later `/` anchors.
+    pub fn parse(pattern: &str) -> Result<Self, PatternError> {
+        if pattern.trim().is_empty() {
+            return Err(PatternError::Blank);
+        }
+        if unanchored_authority_wildcard(pattern) {
+            return Err(PatternError::UnanchoredAuthorityWildcard);
+        }
+        Ok(Self(pattern.to_owned()))
     }
 
     /// The pattern source text.
@@ -29,6 +53,40 @@ impl Pattern {
     /// except for the scheme and host, which URLs lowercase anyway.
     pub fn matches(&self, url: &str) -> bool {
         wildcard_match(self.0.as_bytes(), url.as_bytes())
+    }
+}
+
+/// The README promise ("blank patterns are rejected, not widened") is a
+/// deserialization contract, not just a `parse` one: the derived impl
+/// would bypass [`Pattern::parse`] and admit a blank pattern as a dead
+/// rule that silently matches nothing.
+impl<'de> Deserialize<'de> for Pattern {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let text = String::deserialize(deserializer)?;
+        Pattern::parse(&text).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Whether a `*` sits in the URL authority with no later literal `/`
+/// anywhere after it. A wildcard consumes any bytes, host-label dots
+/// included, so only a literal `/` pins it to the host it names; bare
+/// patterns without a scheme (`*`) name no host and are explicit
+/// catch-alls.
+fn unanchored_authority_wildcard(pattern: &str) -> bool {
+    let Some(scheme_end) = pattern.find("://") else {
+        return false;
+    };
+    let authority_start = scheme_end + 3;
+    let authority = match pattern[authority_start..].find('/') {
+        Some(offset) => &pattern[authority_start..authority_start + offset],
+        None => &pattern[authority_start..],
+    };
+    match authority.find('*') {
+        None => false,
+        Some(star_at) => !pattern[authority_start + star_at..].contains('/'),
     }
 }
 
@@ -86,9 +144,56 @@ mod tests {
     }
 
     #[test]
-    fn parse_rejects_empty_patterns() {
-        assert!(Pattern::parse("").is_none());
-        assert!(Pattern::parse("  ").is_none());
-        assert!(Pattern::parse("https://x/*").is_some());
+    fn parse_rejects_blank_patterns() {
+        assert_eq!(Pattern::parse(""), Err(PatternError::Blank));
+        assert_eq!(Pattern::parse("  "), Err(PatternError::Blank));
+        assert!(Pattern::parse("https://x/*").is_ok());
+    }
+
+    #[test]
+    fn authority_wildcards_must_be_anchored_by_a_later_slash() {
+        // `*` consumes any bytes, host-label dots included: these
+        // spellings match sibling domains an attacker can register, so
+        // `parse` refuses them instead of trusting the rule author to
+        // know. (`https://*.example.com/*` is safe — the trailing `/*`
+        // anchors the authority — and a deny widened this way only
+        // over-refuses, but an allow silently widened this way is a
+        // real relaxation.)
+        assert!(Pattern::new("https://bank.example*").matches("https://bank.example.evil.com/"));
+        assert_eq!(
+            Pattern::parse("https://bank.example*"),
+            Err(PatternError::UnanchoredAuthorityWildcard)
+        );
+        assert_eq!(
+            Pattern::parse("https://*"),
+            Err(PatternError::UnanchoredAuthorityWildcard)
+        );
+        assert_eq!(
+            Pattern::parse("https://*.example*"),
+            Err(PatternError::UnanchoredAuthorityWildcard)
+        );
+
+        // Anchored forms stay legal, and a trailing `/*` really does
+        // keep the wildcard inside the named host.
+        assert!(Pattern::parse("https://*.example.com/*").is_ok());
+        assert!(Pattern::parse("https://bank.example/*").is_ok());
+        assert!(
+            !Pattern::new("https://*.example.com/*").matches("https://api.example.com.evil.com/"),
+            "the anchored pattern does not reach sibling domains"
+        );
+        assert!(
+            Pattern::parse("*").is_ok(),
+            "a bare pattern names no host and is an explicit catch-all"
+        );
+    }
+
+    #[test]
+    fn deserialization_goes_through_parse() {
+        // The derived Deserialize used to bypass `parse` and admit a
+        // blank pattern as a dead rule that matches nothing.
+        assert!(serde_json::from_str::<Pattern>("\"\"").is_err());
+        assert!(serde_json::from_str::<Pattern>("\"   \"").is_err());
+        assert!(serde_json::from_str::<Pattern>("\"https://bank.example*\"").is_err());
+        assert!(serde_json::from_str::<Pattern>("\"https://bank.example/*\"").is_ok());
     }
 }

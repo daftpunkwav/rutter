@@ -47,7 +47,7 @@ fn session_with_policy(context: Arc<dyn ContextHandle>, rules: RuleSet) -> Sessi
 fn navigation_deny(pattern: &str) -> rutter_policy::rules::PolicyRule {
     rutter_policy::rules::PolicyRule {
         action_class: Some("navigation".to_owned()),
-        url_pattern: rutter_policy::Pattern::parse(pattern),
+        url_pattern: rutter_policy::Pattern::parse(pattern).ok(),
         verdict: rutter_policy::Verdict::Deny,
     }
 }

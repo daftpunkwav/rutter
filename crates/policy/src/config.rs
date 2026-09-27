@@ -69,14 +69,18 @@ pub fn parse_policy(toml_text: &str) -> Result<RuleSet, ConfigError> {
                 detail: "a rule must set action_class, url_pattern, or both".to_owned(),
             });
         }
-        // A present-but-blank pattern must not degrade to `None`: `None`
-        // widens the rule to every URL, so the mistake is rejected.
+        // A present-but-broken pattern must not degrade to `None`:
+        // `None` widens the rule to every URL, so blank patterns and
+        // authority wildcards no later `/` anchors are rejected here.
         let url_pattern = match rule.url_pattern.as_deref() {
-            Some(text) => Some(Pattern::parse(text).ok_or_else(|| ConfigError {
-                detail: format!(
-                    "blank url_pattern '{text:?}' in a rule; patterns must not be empty"
-                ),
-            })?),
+            Some(text) => match Pattern::parse(text) {
+                Ok(pattern) => Some(pattern),
+                Err(error) => {
+                    return Err(ConfigError {
+                        detail: format!("invalid url_pattern {text:?} in a rule: {error}"),
+                    });
+                }
+            },
             None => None,
         };
         rules.push(PolicyRule {
@@ -195,6 +199,26 @@ verdict = "deny"
             let error = parse_policy(&text).expect_err("blank pattern");
             assert!(error.to_string().contains("url_pattern"));
         }
+    }
+
+    #[test]
+    fn unanchored_authority_wildcards_are_rejected_not_widened() {
+        // `https://bank.example*` would also match `bank.example.evil.com`;
+        // the rule author means the host, so the spelling is rejected.
+        let error = parse_policy(
+            "[[rules]]\nurl_pattern = \"https://bank.example*\"\nverdict = \"allow\"\n",
+        )
+        .expect_err("unanchored authority wildcard");
+        assert!(
+            error.to_string().contains("sibling domains"),
+            "the error says how to fix it: {error}"
+        );
+        assert!(
+            parse_policy(
+                "[[rules]]\nurl_pattern = \"https://bank.example/*\"\nverdict = \"allow\"\n"
+            )
+            .is_ok()
+        );
     }
 
     #[test]

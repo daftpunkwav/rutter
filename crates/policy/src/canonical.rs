@@ -18,11 +18,24 @@ use url::Url;
 /// judgment string while the browser contacts the host after it, so
 /// such navigations go to a human instead of a pattern.
 pub fn canonical_url(raw: &str) -> Option<String> {
-    let url = Url::parse(raw).ok()?;
-    if url.username().is_empty() && url.password().is_none() {
-        return Some(String::from(url));
+    let mut url = Url::parse(raw).ok()?;
+    if !(url.username().is_empty() && url.password().is_none()) {
+        return None;
     }
-    None
+    // WHATWG host parsing keeps a trailing root dot (`https://host./`
+    // serializes verbatim), so a textual pattern for `host` would not
+    // match the FQDN spelling the browser contacts — and the DNS layer
+    // resolves both spellings to the same machine. The root dot names
+    // the same host, so it normalizes away like case and default
+    // ports. A host that collapses to nothing was never a usable URL
+    // and fails closed.
+    if url.is_special() && url.host_str().is_some_and(|host| host.ends_with('.')) {
+        let host = url.host_str().unwrap_or_default().to_owned();
+        let trimmed = host.trim_end_matches('.');
+        url.set_host((!trimmed.is_empty()).then_some(trimmed))
+            .ok()?;
+    }
+    Some(String::from(url))
 }
 
 #[cfg(test)]
@@ -39,6 +52,29 @@ mod tests {
             canonical_url("http://Good.Example:80/x?Y=1#Z"),
             Some("http://good.example/x?Y=1#Z".to_owned())
         );
+    }
+
+    #[test]
+    fn a_trailing_root_dot_names_the_same_host() {
+        // `https://bank.example./` serializes verbatim out of the WHATWG
+        // parser, while DNS resolves it to the same machine — so a
+        // pattern for `bank.example` must see the same canonical form
+        // for both spellings.
+        assert_eq!(
+            canonical_url("https://bank.example./"),
+            Some("https://bank.example/".to_owned())
+        );
+        assert_eq!(
+            canonical_url("https://BANK.Example.:443/x"),
+            Some("https://bank.example/x".to_owned())
+        );
+        // An IPv6 literal ends in `]`, never in a dot.
+        assert_eq!(
+            canonical_url("https://[::1]:8443/x"),
+            Some("https://[::1]:8443/x".to_owned())
+        );
+        // A host of only dots carries no host information: fail closed.
+        assert_eq!(canonical_url("https://./"), None);
     }
 
     #[test]
