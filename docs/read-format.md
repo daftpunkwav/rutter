@@ -124,5 +124,7 @@ Unicode-scalar counted — is the authoritative budget.
 The converter independently clamps title (200) and markdown
 (100 000) — character-counted, so no UTF-8 boundary can split — and
 sets `truncated` when a clamp bites or the envelope version is newer
-than this build understands. A missing or malformed envelope yields an
-empty, truncated readout rather than an error.
+than this build understands. A missing or malformed envelope yields a
+truncated readout rather than an error: string fields it does carry
+survive, the rest degrade to empty strings, and a response that is
+not an envelope at all yields an entirely empty one.

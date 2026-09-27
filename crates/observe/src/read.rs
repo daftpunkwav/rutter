@@ -55,7 +55,8 @@ pub fn read_from_response(response: &Value) -> Readout {
     // `{"version": 1}` parses cleanly but reads as empty, and without
     // this check the agent could not tell a genuinely empty page from a
     // reader whose output rutter could not parse (docs/read-format.md
-    // §5, mirroring `snapshot_from_response`'s root check).
+    // §5, mirroring `snapshot_from_response`'s root check). Fields that
+    // are present as strings survive; only the flag marks the damage.
     let title_present = object
         .and_then(|object| object.get("title"))
         .is_some_and(Value::is_string);
@@ -140,9 +141,10 @@ mod tests {
     #[test]
     fn a_structurally_broken_envelope_flags_truncated() {
         // An envelope object without string `title`/`markdown` fields
-        // degrades exactly like a non-object response: empty content
-        // AND the truncated flag, never "empty and complete" — the
-        // shape the serializer side already pins with `root_present`.
+        // degrades with the truncated flag — a non-object response
+        // loses everything, while a partial envelope keeps the string
+        // fields it does carry and only the flag says so. Either way
+        // the damage is never silent.
         for response in [
             json!({"version": 1}),
             json!({"version": 1, "title": "t"}),
@@ -152,6 +154,12 @@ mod tests {
             let readout = read_from_response(&response);
             assert!(readout.truncated, "unstructured envelope: {response}");
         }
+        let partial = read_from_response(&json!({"version": 1, "title": "kept"}));
+        assert_eq!(
+            partial.title, "kept",
+            "a readable title survives with the flag set"
+        );
+        assert_eq!(partial.markdown, "");
         assert!(
             !read_from_response(&json!({"version": 1, "title": "", "markdown": ""})).truncated,
             "empty strings are present fields, not missing ones"

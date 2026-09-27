@@ -110,5 +110,6 @@ truncated }`。`Display` 渲染标题行、一个空行、然后是 markdown 正
 
 转换器独立地对标题（200）与 markdown（100 000）做钳制——按字符计数，
 不会切在 UTF-8 边界上——并在钳制生效或 envelope 版本比当前构建更新时置
-`truncated`。缺失或畸形 envelope 产出空且 truncated 的 readout，而不是
-错误。
+`truncated`。缺失或畸形 envelope 产出 truncated 的 readout，而不是
+错误：其中能读到的字符串字段会保留，缺失字段降级为空串；完全不是
+envelope 的响应则整体为空。
