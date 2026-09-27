@@ -77,8 +77,14 @@ and the project adheres to
 - `scroll`'s `amount` and `set_viewport`'s `width`/`height` are signed
   integers in the tool schemas (`i64`), so out-of-range values reach
   rutter's own validation instead of failing deserialization.
+- The dashboard's gap refill after a broadcast lag filters inside the
+  ring (`replay_after`), so envelopes the client already received are
+  no longer cloned only to be dropped.
 
 ### Added
+
+- CI quality gates now also compile and test the workspace on macOS,
+  which the release archives ship for.
 
 - Network visibility: finished page requests (method, URL, status or
   failure, resource type) are recorded per page, and the new

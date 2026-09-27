@@ -34,7 +34,7 @@ layer that owns an object's lifecycle mints its identifier.
 | `ContextId` | engine-assigned | `rutter-engine-cdp` |
 | `PageId` | engine-assigned | `rutter-engine-cdp` |
 | `ApprovalId` | `apr-<n>`, serial per broker | [`ApprovalBroker`](../crates/policy/src/broker.rs) |
-| `Reference` | `e<n>`, per-page counter reset on navigation | the in-page serializer ([snapshot format §4](snapshot-format.md#4-reference-minting-v1)) |
+| `Reference` | `e<n>`, per-page counter reset on navigation | the in-page serializer ([snapshot format](snapshot-format.md#4-reference-minting-v1)) |
 
 ## Serialization conventions
 

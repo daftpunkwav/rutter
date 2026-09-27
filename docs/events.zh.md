@@ -71,5 +71,5 @@ fire-and-forget：不等待消费者、永不失败。两条通道，两种丢�
 
 丢失契约：**语义事件存活**（经 ring）；跟不上的实时订阅者在
 replay 之前会丢信封。仪表盘演示了重同步模式
-（[仪表盘 §3](dashboard.zh.md#3-websocket-协议)）：先订阅、再截取
+（[仪表盘](dashboard.zh.md#3-websocket-协议)）：先订阅、再截取
 replay 快照、按序列水位去重，并用 ring 填补任何 `Lagged` 缺口。

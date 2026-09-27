@@ -149,7 +149,7 @@ outcome distinguishes `granted`, `denied`, `timed_out`, and `cancelled`, the
 last covering a client that disconnected mid-park. The entry records the
 decision, not a verified human identity: on one machine and one account
 rutter cannot tell a person at the dashboard from a process holding the
-dashboard token ([dashboard §2](dashboard.md#2-access-control)).
+dashboard token ([dashboard](dashboard.md#2-access-control)).
 
 ## 5. TOML configuration
 
@@ -170,6 +170,6 @@ verdict      = "require_approval"
 [`parse_policy`](../crates/policy/src/config.rs) rejects: unknown
 verdict or class names, a rule with neither `action_class` nor
 `url_pattern`, a blank `url_pattern` (it would silently widen the rule
-to every URL), an unanchored authority wildcard (§3.1), and windows
+to every URL), an [unanchored authority wildcard](#31-url-pattern-wildcards), and windows
 above 24 h. TOML syntax errors carry the TOML position; the
 rejections above are reported as messages.

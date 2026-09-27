@@ -16,7 +16,7 @@ cookie）——见 `src/auth.rs`。token 本身由 `DashboardServer::hand_off`
 交接，信道由 stderr 的另一端是谁决定：终端拿到 URL，管道（被监管的
 MCP client 的情形）拿到一个 Unix 上仅属主可读的文件，打印行只出现
 路径
-（docs/dashboard.zh.md §2）。
+（访问控制，docs/dashboard.zh.md）。
 
 ## 消费者
 

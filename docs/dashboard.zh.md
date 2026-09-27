@@ -94,4 +94,4 @@ Screencast **按需开启**：观看者请求时开始，离开时停止。它�
 经容量 4 的有界 channel，channel 满时丢帧。卡顿的观看者丢帧而不
 丢内存，截取也永远无法阻塞动作执行。CDP 在导航时停止 screencast；
 传输在导航事件上重启截取
-（[引擎监管 §4](engine-supervision.zh.md#4-cdp-传输说明)）。
+（[引擎监管](engine-supervision.zh.md#4-cdp-传输说明)）。

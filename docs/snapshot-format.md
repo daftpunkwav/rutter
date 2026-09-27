@@ -30,7 +30,7 @@ JSON with `observe::snapshot_from_response()`.
   "truncated": false,
   "viewport": { "width": 1280, "height": 720 },
   "scroll": { "x": 0, "y": 0 },
-  "root": { "...node...": "see §3" }
+  "root": { "...node...": "see the node shape" }
 }
 ```
 
@@ -40,7 +40,7 @@ JSON with `observe::snapshot_from_response()`.
   (200), ref-store creation, or a per-node internal access failure.
 - `viewport` / `scroll` — CSS pixels of the page's viewport and scroll
   position. The budget consumes only `viewport`: node rects are
-  viewport-relative (§3), so scroll offsets play no part in
+  viewport-relative (the [node shape](#3-node-shape)), so scroll offsets play no part in
   classification, and nothing consumes `scroll` — the field is
   informational. If the viewport is absent or malformed the converter
   treats it as unbounded (no viewport-first folding) and relies on the
@@ -61,7 +61,7 @@ role `generic` with no name.
 | `role` | string | ARIA role: explicit `role` attribute first, then the implicit role of the tag (link, button, textbox, heading, list, listitem, image, …), else `generic` |
 | `name` | string, optional | Accessible name, computed as: `aria-label` → `alt` (image) → associated `<label>` (form controls) → `placeholder` (text fields) → `title` → visible text (text-bearing roles only; containers such as `generic`, `list`, or `group` stay nameless), whitespace-collapsed, capped at 120 characters |
 | `value` | string, optional | Current value of form controls, capped at 200 characters |
-| `ref` | string, optional | Stable handle (§4); present on actionable, enabled elements |
+| `ref` | string, optional | Stable handle ([reference minting](#4-reference-minting-v1)); present on actionable, enabled elements |
 | `checked` | bool, optional | Checkbox/radio state |
 | `disabled` | bool | `disabled` attribute or `aria-disabled="true"`; default false |
 | `rect` | object, optional | `{x, y, width, height}` in CSS pixels, integers, viewport-relative |
@@ -103,7 +103,7 @@ One node per line, children indented two spaces per level:
 
 Suffixes render in this order: `"name"` (double quotes inside names
 escaped as `\"`), `[checked]` (only when true), `[disabled]` (only
-when true), `[ref=eN]`, `× N` (folded-subtree count, §6). A folded
+when true), `[ref=eN]`, `× N` (folded-subtree count, the [token budget](#6-token-budget-v1)). A folded
 summary line renders as `- listitem × 20` (role of the folded items,
 their count as `× N`). This format is implemented by `Snapshot`'s
 `Display` in `rutter-core` and pinned by its unit tests.
@@ -135,4 +135,4 @@ order; every budget-induced change sets `Snapshot::truncated = true`.
    degrades, never panics.
 
 `snapshot_from_response(url, json)` never panics and never returns an
-error; hostile input degrades (§2, §3).
+error; hostile input degrades (the [envelope](#2-serializer-envelope) and the [node shape](#3-node-shape)).

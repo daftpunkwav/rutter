@@ -80,6 +80,6 @@ channels with different loss rules:
 The loss contract: **semantic events survive** (through the rings);
 live subscribers that cannot keep up lose envelopes until they replay.
 The dashboard shows the resync pattern
-([dashboard §3](dashboard.md#3-websocket-protocol)): subscribe first,
+([dashboard](dashboard.md#3-websocket-protocol)): subscribe first,
 snapshot the replay, deduplicate by sequence watermark, and refill any
 `Lagged` gap from the rings.

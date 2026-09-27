@@ -33,7 +33,7 @@ Page、Session 三个术语的类型层版本。
 | `ContextId` | 引擎分配 | `rutter-engine-cdp` |
 | `PageId` | 引擎分配 | `rutter-engine-cdp` |
 | `ApprovalId` | `apr-<n>`，每个 broker 独立序号 | [`ApprovalBroker`](../crates/policy/src/broker.rs) |
-| `Reference` | `e<n>`，每页计数器，导航时重置 | 页内序列化器（[快照格式 §4](snapshot-format.zh.md#4-引用铸造v1)） |
+| `Reference` | `e<n>`，每页计数器，导航时重置 | 页内序列化器（[快照格式](snapshot-format.zh.md#4-引用铸造v1)） |
 
 ## 序列化约定
 

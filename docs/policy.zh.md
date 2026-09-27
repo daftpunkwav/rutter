@@ -129,7 +129,7 @@ JSON：时间、session、page、`request_id`、类别、被判定的 URL、basi
 与 `cancelled`，最后一种覆盖「client 在等待中途断连」。记录留下的是决定
 本身，不是经过验证的人类身份：同机同账户下，rutter 无法区分坐在 dashboard
 前的人与持有 dashboard 令牌的进程
-（[仪表盘 §2](dashboard.zh.md#2-访问控制)）。
+（[仪表盘](dashboard.zh.md#2-访问控制)）。
 
 ## 5. TOML 配置
 
@@ -150,5 +150,5 @@ verdict      = "require_approval"
 [`parse_policy`](../crates/policy/src/config.rs) 拒绝：未知的
 verdict 或 class 名称、既无 `action_class` 也无 `url_pattern` 的规
 则、空白 `url_pattern`（它会静默把规则放宽到每个 URL）、未锚定的
-authority 通配符（§3.1）、以及超过 24 小时的窗口。TOML 语法错误
+[authority 通配符](#31-url-模式通配符)、以及超过 24 小时的窗口。TOML 语法错误
 携带 TOML 位置；上述拒绝以消息形式报告。

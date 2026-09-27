@@ -51,7 +51,7 @@ submits approval decisions and never executes actions:
 resolve active page
   → policy gate (agent origin only; policy.md)
   → ActionRequested event
-  → executor: auto-wait → act → settle (tool-catalog.md §3)
+  → executor: auto-wait → act → settle (tool-catalog.md)
   → ActionCompleted | ActionFailed event
   → refresh tracked page URL
   → persist storage state if it changed

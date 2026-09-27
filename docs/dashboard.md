@@ -109,4 +109,4 @@ bounded channel of 4, dropping frames over a full channel. A stalled
 viewer loses frames, not memory, and the capture can never block
 action execution. CDP stops screencasts on navigation; the transport
 restarts the capture on the navigation event
-([engine supervision §4](engine-supervision.md#4-cdp-transport-notes)).
+([engine supervision](engine-supervision.md#4-cdp-transport-notes)).

@@ -39,7 +39,7 @@
   的请求体（字段类型错误或缺失）才会暴露反序列化器文本，且不带提示。
 - 协议级失败（未知 session、引擎死亡且熔断打开）是 JSON-RPC
   错误，code `-32000`，同样的消息加提示文本。
-- 快照以[快照格式 §5](snapshot-format.zh.md#5-文本渲染yaml-风格)
+- 快照以[快照格式](snapshot-format.zh.md#5-文本渲染yaml-风格)
   的 YAML 文本形式渲染，遵循 20 000 字符预算；`Snapshot::truncated`
   置位时文本以 `… truncated` 标记行结尾。
 - 除非下文另有说明，每个变更类工具默认返回一份新快照。

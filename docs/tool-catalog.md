@@ -48,7 +48,7 @@ the payload vocabulary.
   breaker) are JSON-RPC errors with code `-32000` and the same
   message-plus-hint text.
 - Snapshots are rendered in the YAML text form of
-  [snapshot format §5](snapshot-format.md#5-text-rendering-yaml-style),
+  [snapshot format](snapshot-format.md#5-text-rendering-yaml-style),
   under the 20 000-character budget; the text ends with a marker line
   `… truncated` when `Snapshot::truncated` is set.
 - Every mutating tool returns a fresh snapshot by default, unless

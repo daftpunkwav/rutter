@@ -18,7 +18,7 @@ cookie) — see `src/auth.rs`. The token reaches a human through
 stderr: a terminal gets the URL, a pipe — the supervised MCP client's
 case — gets a file that is owner-only on Unix, and only its path is
 printed
-(docs/dashboard.md §2).
+(access control, docs/dashboard.md).
 
 ## Consumers
 

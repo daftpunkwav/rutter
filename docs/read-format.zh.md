@@ -19,7 +19,7 @@ reader 脚本是 `rutter-observe` 的内嵌资产
 引擎的 `evaluate` 在页面内执行它（`rutter-observe` 不依赖引擎），然后把
 返回的 JSON 交给 `observe::read_from_response()` 转换。
 
-MCP `read` 工具（docs/tool-catalog.md §4）与 `rutter read <url>` CLI 模式
+MCP [read 工具](tool-catalog.zh.md#4-工具)与 `rutter read <url>` CLI 模式
 消费这条管道；两者都是只读观察——不产生事件、不做 auto-wait、不过策略门。
 
 ## 2. Reader envelope
@@ -34,9 +34,9 @@ MCP `read` 工具（docs/tool-catalog.md §4）与 `rutter read <url>` CLI 模�
 ```
 
 - `version` — reader 格式版本，当前为 `1`。
-- `truncated` — reader 触发了某个守卫（§5），省略了部分内容。
+- `truncated` — reader 触发了某个[守卫](#5-guards)，省略了部分内容。
 - `title` — `document.title`，空白折叠。
-- `markdown` — 页面可读内容组成的 markdown 文档（§3）。
+- `markdown` — 页面可读内容组成的 markdown 文档（[抽取规则](#3-extraction-rules)）。
 
 ## 3. 提取规则
 
@@ -83,7 +83,7 @@ URL 在页面内按 `document.baseURI` 解析，因此链接与图片总是绝�
 [`Readout`](../crates/core/src/readout.rs) `{ title, markdown,
 truncated }`。`Display` 渲染标题行、一个空行、然后是 markdown 正文。
 `truncated` 置位时由工具层追加 `… truncated` 标记行
-（docs/tool-catalog.md §2），与 snapshot 同一约定。
+，与 snapshot 同一约定。
 
 ## 5. 守卫
 

@@ -81,7 +81,7 @@ Plus `cargo-deny` (`deny.toml`: advisories, licenses, bans). The
 job runs the full `rutter-integration-tests` set, both on ubuntu and
 windows against the real engine; a coverage job (ubuntu) measures the
 whole workspace — engine suites and e2e included — and fails below
-90 % line coverage (§5). Pull-request runs are canceled when a newer
+90 % line coverage (the [coverage job](#5-coverage)). Pull-request runs are canceled when a newer
 push supersedes them (concurrency group), every job carries a
 `timeout-minutes` bound, and the three engine jobs share one composite
 action ([engine-setup](../.github/actions/engine-setup/action.yml)) for the

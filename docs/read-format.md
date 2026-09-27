@@ -21,7 +21,7 @@ caller evaluates it inside a page via the engine's `evaluate` (no
 engine dependency in `rutter-observe`), then converts the returned
 JSON with `observe::read_from_response()`.
 
-The MCP `read` tool (docs/tool-catalog.md §4) and the
+The MCP [read tool](tool-catalog.md#4-tools) and the
 `rutter read <url>` CLI mode consume the pipeline; both are read-only
 observation — no events, no auto-wait, no policy gate.
 
@@ -37,11 +37,11 @@ observation — no events, no auto-wait, no policy gate.
 ```
 
 - `version` — reader format version, currently `1`.
-- `truncated` — the reader hit one of its guards (§5) and omitted part
+- `truncated` — the reader hit one of its [guards](#5-guards) and omitted part
   of the content.
 - `title` — `document.title`, whitespace-collapsed.
 - `markdown` — the readable content of the page as a markdown
-  document (§3).
+  document (the [extraction rules](#3-extraction-rules)).
 
 ## 3. Extraction rules
 
@@ -92,7 +92,7 @@ appear inside their slot.
 [`Readout`](../crates/core/src/readout.rs) `{ title, markdown,
 truncated }`. `Display` renders the title, one blank line, then the
 markdown body. The tool layer appends the `… truncated` marker line
-when `truncated` is set (docs/tool-catalog.md §2), the same convention
+when `truncated` is set, the same convention
 as snapshots.
 
 ## 5. Guards

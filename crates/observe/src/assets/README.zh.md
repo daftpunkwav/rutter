@@ -5,7 +5,7 @@
 `serializer.js` 在 Page（页面）内部运行（经 `evaluate` 注入），把无
 障碍树序列化为 `response.rs` 解析的 JSON envelope：role/name/ref/
 rect 节点、viewport 报告与截断旗标。它把 ref 铸造进每页一个的存储
-（docs/snapshot-format.md §4）；导航使其失效。
+（引用铸造）；导航使其失效。
 
 `reader.js` 以同样方式在页面内部运行，把可读内容提取为 `read.rs`
 解析的 markdown envelope：`{ version, truncated, title, markdown }`，

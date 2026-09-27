@@ -76,7 +76,7 @@ bash scripts/check_encoding.sh  # 跟踪的文本文件：UTF-8、LF、无 BOM
 `rutter-engine-cdp` 全部套件（含 screencast），e2e job 在 ubuntu 与
 windows 上以真实引擎跑完 `rutter-integration-tests` 的全部套件；
 coverage job（ubuntu）度量整个 workspace——引擎套件与 e2e 一并计入
-——行覆盖低于 90 % 即失败（§5）。concurrency 组会取消同一 PR 被更新的
+——行覆盖低于 90 % 即失败（[覆盖率任务](#5-coverage)）。concurrency 组会取消同一 PR 被更新的
 push 取代的旧运行，每个 job 都有 `timeout-minutes` 上限，三个引擎
 job 共用一个复合 action
 （[engine-setup](../.github/actions/engine-setup/action.yml)）负责引擎缓存与

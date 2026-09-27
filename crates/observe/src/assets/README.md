@@ -6,7 +6,7 @@ English | [中文](README.zh.md)
 serializes the accessibility tree to the JSON envelope
 `response.rs` parses: role/name/ref/rect nodes, viewport report, and
 the truncation flag. It mints refs into a per-page store
-(docs/snapshot-format.md §4); a navigation invalidates them.
+(reference minting); a navigation invalidates them.
 
 `reader.js` runs inside the page the same way and extracts the
 readable content as the markdown envelope `read.rs` parses:

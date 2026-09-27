@@ -1,7 +1,7 @@
 //! Serializer envelope parsing: page JSON to snapshot conversion entry.
 //!
-//! Boundary: adapts the in-page serializer's envelope (spec section 2)
-//! to the pure builder. The caller evaluates `serializer_script()` in a
+//! Boundary: adapts the in-page serializer's envelope to the pure
+//! builder. The caller evaluates `serializer_script()` in a
 //! page and hands the returned JSON here; the engine stays out of this
 //! crate entirely.
 
