@@ -342,6 +342,11 @@ impl MockContext {
         lock(&self.inner.set_cookie_calls, |calls| calls.clone())
     }
 
+    /// Whether [`ContextHandle::close`] ran on this context.
+    pub fn is_closed(&self) -> bool {
+        self.inner.closed.load(Ordering::SeqCst)
+    }
+
     /// The typed mock page registered under `id`, if any.
     pub fn page_mock(&self, id: PageId) -> Option<Arc<MockPage>> {
         lock(&self.inner.pages, |pages| {

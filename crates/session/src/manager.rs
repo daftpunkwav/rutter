@@ -104,6 +104,14 @@ impl SessionManager {
         self.inner.sessions.lock().await.get(id).map(Arc::clone)
     }
 
+    /// Builds a manager over an existing `Inner`; test-only, so a test
+    /// can drive the manager API against the same state the recovery
+    /// task works on.
+    #[cfg(test)]
+    fn from_inner(inner: Arc<Inner>) -> Self {
+        Self { inner }
+    }
+
     /// The event backbone once the engine started; `None` before the
     /// first session (dashboard sources replay + live events here).
     pub async fn backbone(&self) -> Option<Arc<Backbone>> {
@@ -313,7 +321,21 @@ fn spawn_recovery(inner: &Arc<Inner>, mut watcher: tokio::sync::watch::Receiver<
                     continue;
                 }
                 match engine.create_context(inner.config.context_config()).await {
-                    Ok(context) => session.recover(context).await,
+                    Ok(context) => {
+                        session.recover(context).await;
+                        // The rebuild runs outside the map lock, so a
+                        // close can land while it is in flight — the
+                        // membership check above passed before that. A
+                        // closed session holds the fresh context with
+                        // nothing left to close it (contexts have no
+                        // Drop cleanup), and the rebuild's events
+                        // re-created the ring the close forgot; finish
+                        // both here. An open session is untouched.
+                        if !inner.sessions.lock().await.contains_key(session.id()) {
+                            session.close().await;
+                            session.backbone().forget(session.id());
+                        }
+                    }
                     Err(error) => {
                         eprintln!("rutter: recovery context failed: {error}");
                     }
@@ -340,10 +362,21 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     /// An engine whose contexts are observable and whose `create_context`
-    /// can be made to fail on demand.
+    /// can be made to fail on demand — or to park, so a test can
+    /// interleave another operation into the middle of the engine round
+    /// trip.
     struct RecoveryEngine {
         fail_contexts: AtomicBool,
         contexts: Mutex<Vec<Arc<MockContext>>>,
+        /// When set, the first `create_context` reports entry through the
+        /// sender and then parks until the receiver fires: a controllable
+        /// slow engine round trip.
+        context_gate: Mutex<
+            Option<(
+                tokio::sync::oneshot::Sender<()>,
+                tokio::sync::oneshot::Receiver<()>,
+            )>,
+        >,
     }
 
     #[async_trait::async_trait]
@@ -365,6 +398,19 @@ mod tests {
             &self,
             _config: rutter_engine::config::ContextConfig,
         ) -> Result<Arc<dyn rutter_engine::context::ContextHandle>, EngineError> {
+            // Park before producing the context when the test asked for
+            // it: the parked span is the window the test interleaves a
+            // close into. The guard's scope ends before the await (the
+            // future must stay `Send`).
+            let gate = self
+                .context_gate
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .take();
+            if let Some((entered, wait)) = gate {
+                let _ = entered.send(());
+                let _ = wait.await;
+            }
             if self.fail_contexts.load(Ordering::SeqCst) {
                 return Err(EngineError::Terminated);
             }
@@ -391,6 +437,13 @@ mod tests {
 
     struct RecoveryLauncher {
         engines: Mutex<Vec<Arc<RecoveryEngine>>>,
+        /// Handed to the first launched engine's `create_context` gate.
+        context_gate: Mutex<
+            Option<(
+                tokio::sync::oneshot::Sender<()>,
+                tokio::sync::oneshot::Receiver<()>,
+            )>,
+        >,
     }
 
     #[async_trait::async_trait]
@@ -406,6 +459,12 @@ mod tests {
             let engine = Arc::new(RecoveryEngine {
                 fail_contexts: AtomicBool::new(false),
                 contexts: Mutex::new(Vec::new()),
+                context_gate: Mutex::new(
+                    self.context_gate
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .take(),
+                ),
             });
             self.engines
                 .lock()
@@ -506,6 +565,7 @@ mod tests {
     async fn a_restart_bump_with_no_engine_yet_is_ignored() {
         let launcher = Arc::new(RecoveryLauncher {
             engines: Mutex::new(Vec::new()),
+            context_gate: Mutex::new(None),
         });
         let inner = test_inner(Arc::clone(&launcher));
         let (tx, rx) = tokio::sync::watch::channel(0_u64);
@@ -528,6 +588,7 @@ mod tests {
     async fn a_restart_bump_with_no_sessions_recovers_nothing() {
         let launcher = Arc::new(RecoveryLauncher {
             engines: Mutex::new(Vec::new()),
+            context_gate: Mutex::new(None),
         });
         let inner = test_inner(Arc::clone(&launcher));
         let (running, engine) = start_test_running(Arc::clone(&launcher)).await;
@@ -553,6 +614,7 @@ mod tests {
     async fn a_restart_rebuilds_sessions_with_cookies_and_pages() {
         let launcher = Arc::new(RecoveryLauncher {
             engines: Mutex::new(Vec::new()),
+            context_gate: Mutex::new(None),
         });
         let inner = test_inner(Arc::clone(&launcher));
         let (running, engine) = start_test_running(Arc::clone(&launcher)).await;
@@ -618,6 +680,7 @@ mod tests {
     async fn a_recovery_context_failure_leaves_the_session_as_it_was() {
         let launcher = Arc::new(RecoveryLauncher {
             engines: Mutex::new(Vec::new()),
+            context_gate: Mutex::new(None),
         });
         let inner = test_inner(Arc::clone(&launcher));
         let (running, engine) = start_test_running(Arc::clone(&launcher)).await;
@@ -644,6 +707,67 @@ mod tests {
             session.pages().await.len(),
             1,
             "the old tracking survives the failed rebuild"
+        );
+        running.supervisor.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_session_closed_mid_rebuild_gets_its_fresh_context_closed() {
+        // The membership re-check runs before the engine round trips, so
+        // a close_session can land while the rebuild is in flight. The
+        // context built for a session nobody holds any more must be
+        // closed (contexts have no Drop cleanup), and the rebuild's
+        // events must not re-create the ring the close forgot.
+        let (entered, entered_rx) = tokio::sync::oneshot::channel::<()>();
+        let (release, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let launcher = Arc::new(RecoveryLauncher {
+            engines: Mutex::new(Vec::new()),
+            context_gate: Mutex::new(Some((entered, release_rx))),
+        });
+        let inner = test_inner(Arc::clone(&launcher));
+        let (running, engine) = start_test_running(Arc::clone(&launcher)).await;
+        *inner.engine.write().await = Some(Arc::clone(&running));
+        let session_id = SessionId::new("s1");
+        let _session = seeded_session(&running, &inner).await;
+
+        let (tx, rx) = tokio::sync::watch::channel(0_u64);
+        spawn_recovery(&inner, rx);
+        // The task must establish its baseline before the bump lands.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tx.send_modify(|count| *count += 1);
+
+        // The rebuild parks inside create_context; the close lands in
+        // exactly the window the membership re-check cannot see.
+        tokio::time::timeout(std::time::Duration::from_secs(5), entered_rx)
+            .await
+            .expect("the rebuild reached create_context")
+            .expect("entry signal");
+        let manager = SessionManager::from_inner(Arc::clone(&inner));
+        manager.close_session(&session_id).await;
+        release.send(()).expect("release the rebuild");
+
+        // The fresh context only ever closes through the post-rebuild
+        // membership check, so its closed flag is the completion signal.
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let closed = {
+                    let contexts = engine
+                        .contexts
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    contexts.first().is_some_and(|context| context.is_closed())
+                };
+                if closed {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the rebuilt context gets closed for the closed session");
+        assert!(
+            running.backbone.replay(&session_id).is_empty(),
+            "the rebuild's events do not re-create the forgotten ring"
         );
         running.supervisor.shutdown().await;
     }
