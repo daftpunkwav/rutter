@@ -53,7 +53,7 @@ impl History {
 
 /// Publishes events to live subscribers and per-session history.
 ///
-/// `publish` never blocks and never fails (docs/events.md): the envelope
+/// `publish` never blocks and never fails : the envelope
 /// always lands in the ring and reaches every live subscriber that keeps
 /// up. Semantic events survive for late joiners through [`Backbone::replay`].
 #[derive(Debug)]
@@ -102,6 +102,19 @@ impl Backbone {
             .rings
             .get(session)
             .map(RingBuffer::history)
+            .unwrap_or_default()
+    }
+
+    /// History of one session older-first, or just the tail past
+    /// `after` when the caller knows the highest sequence it was
+    /// already sent (the gap refill for a consumer that fell behind):
+    /// the filter runs inside the ring, so entries the caller would
+    /// drop are never cloned.
+    pub fn replay_after(&self, session: &SessionId, after: Option<u64>) -> Vec<Envelope> {
+        self.lock_history()
+            .rings
+            .get(session)
+            .map(|ring| ring.history_after(after))
             .unwrap_or_default()
     }
 
@@ -174,6 +187,40 @@ mod tests {
         assert_eq!(backbone.replay(&SessionId::new("s1")).len(), 1);
         assert_eq!(backbone.replay(&SessionId::new("s2")).len(), 1);
         assert!(backbone.replay(&SessionId::new("s3")).is_empty());
+    }
+
+    #[test]
+    fn replay_after_returns_only_the_unsent_tail() {
+        // Gap-refill premise: a consumer that knows the last sequence it
+        // was sent needs the tail past that watermark, and entries at or
+        // below it must not survive the replay.
+        let backbone = Backbone::new();
+        let session = SessionId::new("s1");
+        for _ in 0..5 {
+            backbone.publish(session.clone(), Event::SessionStarted);
+        }
+        let full = backbone.replay(&session);
+
+        let tail = backbone.replay_after(&session, Some(full[2].seq));
+        let seqs: Vec<u64> = tail.iter().map(|envelope| envelope.seq).collect();
+        assert_eq!(seqs, vec![3, 4], "only entries past the watermark");
+
+        assert_eq!(
+            backbone.replay_after(&session, None).len(),
+            5,
+            "no watermark means the full history"
+        );
+        assert!(
+            backbone
+                .replay_after(&session, Some(full[4].seq))
+                .is_empty(),
+            "a caught-up consumer gets nothing"
+        );
+        assert!(
+            backbone
+                .replay_after(&SessionId::new("s2"), None)
+                .is_empty()
+        );
     }
 
     #[test]

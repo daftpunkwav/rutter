@@ -1,4 +1,4 @@
-# Continuous integration: the release gates of docs/testing.md run on
+# Continuous integration: the release gates of run on
 # every push and pull request. The engine jobs share one composite
 # action (engine cache + Linux engine dependencies); the integration
 # and e2e jobs drive the real Chrome for Testing engine, and the
@@ -26,7 +26,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # macOS compiles and tests the workspace because release
+        # archives ship for it: the unix permission branches and the
+        # non-Windows key paths otherwise never compile outside a
+        # contributor's machine.
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:

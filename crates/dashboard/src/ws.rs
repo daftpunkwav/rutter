@@ -1,6 +1,6 @@
 //! The dashboard WebSocket: replay first, then live events; approval
 //! decisions arrive as client messages, screencast frames leave as
-//! binary frames on demand (docs/events.md, docs/dashboard.md).
+//! binary frames on demand.
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.
@@ -49,7 +49,7 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
 
     // Live: forward the broadcast stream; client decisions come back
     // on the same socket, so all writes happen in this loop. Screencast
-    // frames are on-demand (docs/dashboard.md): they flow only while a
+    // frames are on-demand: they flow only while a
     // viewer asked for them, as binary WebSocket frames.
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<Message>(64);
     let mut current: Option<ScreencastStream> = None;
@@ -77,16 +77,16 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                         // The bus dropped envelopes while this client was
                         // slow, but the rings still hold the semantic
-                        // events (docs/events.md): resync from the last
+                        // events: resync from the last
                         // sequence sent instead of losing the gap until a
                         // reconnect.
+                        // The watermark filter is pushed down into the
+                        // ring, so entries at or below it are never
+                        // cloned.
                         let mut gap: Vec<Envelope> = Vec::new();
                         for session in state.manager.session_ids().await {
-                            gap.extend(backbone.replay(&session));
+                            gap.extend(backbone.replay_after(&session, sent_up_to));
                         }
-                        gap.retain(|envelope| {
-                            sent_up_to.is_none_or(|seen| envelope.seq > seen)
-                        });
                         gap.sort_by_key(|envelope| envelope.seq);
                         for envelope in gap {
                             if send_envelope(&mut socket, &envelope).await.is_err() {
@@ -159,8 +159,7 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                                     current = Some(stream);
                                                     ack["started"] = serde_json::json!(true);
                                                 }
-                                                // docs/dashboard.md section 5: the
-                                                // refusal names its cause instead of
+                                                // the refusal names its cause instead of
                                                 // acking a stream that never comes.
                                                 Err(SessionError::NoOpenPage) => {
                                                     ack["reason"] = serde_json::json!(
@@ -185,8 +184,8 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                 let _ = socket.send(Message::text(ack.to_string())).await;
                             }
                             Some("subscribe") => {
-                                // docs/dashboard.md lists subscribe as a
-                                // client message; replay and the live
+                                // subscribe is accepted as a client
+                                // message; replay and the live
                                 // stream start automatically on connect,
                                 // so there is nothing further to do.
                             }

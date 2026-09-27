@@ -32,6 +32,22 @@ impl RingBuffer {
     pub fn history(&self) -> Vec<Envelope> {
         self.entries.iter().cloned().collect()
     }
+
+    /// History of the ring, oldest first, skipping every envelope at or
+    /// below `after` when one is given: a consumer resyncing from a
+    /// known sequence only needs the tail, and the clone of an entry
+    /// the caller would drop is pure waste on the replay path.
+    pub fn history_after(&self, after: Option<u64>) -> Vec<Envelope> {
+        match after {
+            None => self.history(),
+            Some(after) => self
+                .entries
+                .iter()
+                .filter(|envelope| envelope.seq > after)
+                .cloned()
+                .collect(),
+        }
+    }
 }
 
 #[cfg(test)]
