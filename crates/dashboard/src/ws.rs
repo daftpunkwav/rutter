@@ -10,7 +10,7 @@ use axum::extract::ws::{Message, WebSocket};
 use rutter_core::ids::SessionId;
 use rutter_events::Envelope;
 use rutter_policy::{ApprovalId, Decision};
-use rutter_session::ScreencastStream;
+use rutter_session::{ScreencastStream, SessionError};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -144,25 +144,44 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                     .and_then(|v| v.get("on"))
                                     .and_then(Value::as_bool)
                                     .unwrap_or(false);
+                                let mut ack =
+                                    serde_json::json!({ "type": "screencast-ack", "started": false });
                                 if on {
                                     let session_id = value
                                         .as_ref()
                                         .and_then(|v| v.get("session"))
                                         .and_then(Value::as_str)
                                         .map(|s| SessionId::new(s.to_owned()));
-                                    if let Some(session_id) = session_id
-                                        && let Some(session) =
-                                            state.manager.get_session(&session_id).await
-                                        {
-                                            current =
-                                                session.screencast().await.ok();
+                                    if let Some(session_id) = session_id {
+                                        match state.manager.get_session(&session_id).await {
+                                            Some(session) => match session.screencast().await {
+                                                Ok(stream) => {
+                                                    current = Some(stream);
+                                                    ack["started"] = serde_json::json!(true);
+                                                }
+                                                // docs/dashboard.md section 5: the
+                                                // refusal names its cause instead of
+                                                // acking a stream that never comes.
+                                                Err(SessionError::NoOpenPage) => {
+                                                    ack["reason"] = serde_json::json!(
+                                                        "no open page to observe"
+                                                    );
+                                                }
+                                                Err(other) => {
+                                                    ack["reason"] =
+                                                        serde_json::json!(other.to_string());
+                                                }
+                                            },
+                                            None => {
+                                                ack["reason"] =
+                                                    serde_json::json!("no such session");
+                                            }
                                         }
+                                    } else {
+                                        ack["reason"] = serde_json::json!("no session named");
+                                    }
                                 }
-                                let _ = socket
-                                    .send(Message::text(
-                                        "{\"type\":\"screencast-ack\"}",
-                                    ))
-                                    .await;
+                                let _ = socket.send(Message::text(ack.to_string())).await;
                             }
                             Some("subscribe") => {
                                 // docs/dashboard.md lists subscribe as a

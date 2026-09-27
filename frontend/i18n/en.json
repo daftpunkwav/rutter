@@ -8,6 +8,7 @@
   "start": "start",
   "stop": "stop",
   "reconnecting": "connection lost; reconnecting...",
+  "screencastRefused": "live view refused:",
   "labelClass": "class",
   "labelEffect": "effect",
   "labelTarget": "target",

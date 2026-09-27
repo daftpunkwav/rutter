@@ -236,14 +236,20 @@ async fn ws_decisions_answer_parked_approvals_and_controls_are_acked() {
         .expect("send screencast off");
     next_of_type(&mut stream, "screencast-ack").await;
 
-    // Screencast on for an unknown session: still acked, no stream.
+    // Screencast on for an unknown session: still acked, no stream, and
+    // the reason names the miss instead of leaving a bare ack.
     stream
         .send(Message::text(
             serde_json::json!({"type": "screencast", "on": true, "session": "ghost"}).to_string(),
         ))
         .await
         .expect("send screencast on");
-    next_of_type(&mut stream, "screencast-ack").await;
+    let ack = next_of_type(&mut stream, "screencast-ack").await;
+    assert_eq!(
+        ack["started"], false,
+        "an unknown session streams nothing: {ack}"
+    );
+    assert_eq!(ack["reason"], "no such session", "the miss is named: {ack}");
 
     // The documented subscribe message needs no reply (replay and the
     // live stream start automatically on connect), and an unknown
@@ -277,6 +283,33 @@ async fn ws_decisions_answer_parked_approvals_and_controls_are_acked() {
     let ack = next_of_type(&mut stream, "decision-ack").await;
     assert_eq!(ack["accepted"], true);
     assert_eq!(receiver.await.expect("delivered"), Decision::Grant);
+}
+
+#[tokio::test]
+async fn screencast_of_a_session_without_a_page_names_the_reason() {
+    // docs/dashboard.md section 5: a session with no open page answers
+    // `no open page to observe` rather than opening one. The ack used
+    // to swallow the failure, leaving the operator a bare ack, no
+    // frames, and no explanation.
+    let serving = serve().await;
+    serving
+        .manager
+        .session(SessionId::new("s-live"))
+        .await
+        .expect("the stub engine opens a session");
+    let mut stream = connect(&serving).await;
+    stream
+        .send(Message::text(
+            serde_json::json!({"type": "screencast", "on": true, "session": "s-live"}).to_string(),
+        ))
+        .await
+        .expect("send screencast on");
+    let ack = next_of_type(&mut stream, "screencast-ack").await;
+    assert_eq!(ack["started"], false, "no page, no stream: {ack}");
+    assert_eq!(
+        ack["reason"], "no open page to observe",
+        "the refusal names its cause: {ack}"
+    );
 }
 
 #[tokio::test]
