@@ -14,9 +14,9 @@ seams exist so that each crate has one reason to change
 | [`core/`](core/README.md) | Domain vocabulary: actions, snapshots, references, cookies, errors | — |
 | [`policy/`](policy/README.md) | Verdict rules (TOML) and the approval broker | core |
 | [`events/`](events/README.md) | Typed event backbone: bus, per-session rings, replay | core, policy |
-| [`observe/`](observe/README.md) | In-page scripts plus the snapshot builder (pure, no I/O) | core |
 | [`engine/`](engine/README.md) | Engine/page traits, Chrome-for-Testing download, supervisor | core |
-| [`engine-cdp/`](engine-cdp/README.md) | The only CDP speaker (chromiumoxide); public face is one launcher | core, engine |
+| [`engine-cdp/`](engine-cdp/README.md) | The only CDP speaker (chromiumoxide); public face is one launcher | core, engine, observe |
+| [`observe/`](observe/README.md) | In-page scripts plus the snapshot builder (pure, no I/O) | core |
 | [`session/`](session/README.md) | Orchestration: sessions, actions, auto-wait, storage, recovery | core, engine, events, observe, policy |
 | [`mcp/`](mcp/README.md) | MCP tool surface on rmcp (stdio + streamable HTTP) | core, session (engine, policy as dev-dependencies) |
 | [`dashboard/`](dashboard/README.md) | Local supervision dashboard (events, approvals, screencast) | core, events, policy, session (engine as a dev-dependency) |

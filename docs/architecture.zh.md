@@ -25,8 +25,8 @@ crate 永远不 import 排在它下方的 crate。Rust 在语言层面禁止循�
 |---|---|---|
 | `rutter-core` | serde | 领域词汇：`Action`、`Snapshot`、`Reference`、错误 |
 | `rutter-engine` | core | `Engine`/`Page` trait、supervisor、引擎下载器 |
-| `rutter-engine-cdp` | engine, core | CDP 实现细节（chromiumoxide）——仅此而已 |
 | `rutter-observe` | core | 注入式序列化脚本 + 纯 DOM→`Snapshot` 构建器 |
+| `rutter-engine-cdp` | engine, core, observe | CDP 实现细节（chromiumoxide）——仅此而已 |
 | `rutter-policy` | core | 规则集、verdict 评估、approval broker |
 | `rutter-events` | core, policy | 事件类型、broadcast bus、环形缓冲、replay |
 | `rutter-session` | core, events, engine, observe, policy | 编排：执行、context、storage state、恢复 |
@@ -44,6 +44,9 @@ crate 永远不 import 排在它下方的 crate。Rust 在语言层面禁止循�
 - **`engine-cdp` 是唯一允许说 CDP 的 crate。** 更换或新增引擎被
   限制在一个 crate 加 CLI 中的一个注册点
   （[`EngineLauncher`](../crates/engine/src/supervisor/mod.rs)）。
+- **`engine-cdp` 通过 `observe` 的引用存储脚本解析引用。** 文件上传
+  需要定位到活元素，而页侧引用存储的布局只有一个所有者；CDP 后端
+  直接运行该脚本，而不是复制这份布局。
 - **`observe` 是纯数据变换**（`serde_json::Value` 进，`Snapshot`
   出）加上它自有的 JS 资产。没有 async 代码；不依赖引擎即可单元
   测试。
@@ -69,10 +72,10 @@ Agent (any MCP client)
 │  dashboard    axum server + embedded frontend (localhost)  │
 │  session      orchestration: actions, contexts, recovery   │
 │  policy       verdicts + approval broker (pure, no I/O)    │
-│  observe      snapshot builder + injected serializer (pure)│
 │  events       typed event backbone + ring buffer + replay  │
 │  engine       Engine/Page traits, supervisor, downloader   │
 │  engine-cdp   the only crate that knows CDP (chromiumoxide)│
+│  observe      snapshot builder + injected serializer (pure)│
 │  core         shared domain vocabulary (types, errors)     │
 └─────────────────────────────────────────────────────────────┘
   │ CDP over WebSocket (localhost)          ▲ events + frames

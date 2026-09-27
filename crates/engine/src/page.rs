@@ -273,8 +273,9 @@ pub trait PageHandle: Send + Sync {
     }
 
     /// Sets the files of the file input a snapshot reference points to.
-    /// Paths are resolved by the machine the engine runs on; a missing
-    /// path fails here. Fails with [`EngineError::ReferenceExpired`]
+    /// Paths are resolved by the machine the engine runs on; whether a
+    /// path exists is caller feedback to check before handing files
+    /// over. Fails with [`EngineError::ReferenceExpired`]
     /// when the reference no longer resolves. Backends that cannot set
     /// files answer [`EngineError::Unsupported`].
     async fn set_input_files(&self, reference: &str, files: &[String]) -> Result<(), EngineError> {

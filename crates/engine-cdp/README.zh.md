@@ -9,7 +9,9 @@
 
 ## 边界
 
-只依赖 `core` 与 `engine`。消费者把 `CdpLauncher::new` 接进
+依赖 `core` 与 `engine`；文件上传还会运行 `observe` 的引用存储
+脚本——页侧引用存储的布局只有一个所有者（docs/architecture.md）。
+消费者把 `CdpLauncher::new` 接进
 supervisor，永远无需知道 CDP 存在。所有 CDP 调用都在 deadline 之下
 运行（`error::with_deadline`）；浏览器侧的意外（目标消失、Context
 （上下文）已经死亡）会折入协议中立的错误分类法，而不是泄漏协议文

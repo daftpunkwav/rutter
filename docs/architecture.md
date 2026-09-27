@@ -29,8 +29,8 @@ construction; the table is the layering contract.
 |---|---|---|
 | `rutter-core` | serde | Domain vocabulary: `Action`, `Snapshot`, `Reference`, errors |
 | `rutter-engine` | core | `Engine`/`Page` traits, supervisor, engine downloader |
-| `rutter-engine-cdp` | engine, core | CDP implementation details (chromiumoxide) — nothing else |
 | `rutter-observe` | core | Injected serializer script + pure DOM→`Snapshot` builder |
+| `rutter-engine-cdp` | engine, core, observe | CDP implementation details (chromiumoxide) — nothing else |
 | `rutter-policy` | core | Rule set, verdict evaluation, approval broker |
 | `rutter-events` | core, policy | Event types, broadcast bus, ring buffers, replay |
 | `rutter-session` | core, events, engine, observe, policy | Orchestration: execution, contexts, storage state, recovery |
@@ -49,6 +49,10 @@ The seams and why they exist:
 - **`engine-cdp` is the only crate permitted to speak CDP.** Swapping
   or adding engines is confined to one crate plus a registration point
   in the CLI ([`EngineLauncher`](../crates/engine/src/supervisor/mod.rs)).
+- **`engine-cdp` resolves references through `observe`'s store
+  script.** File uploads target a live element, and the page-side
+  reference store's layout has one owner; the CDP backend runs the
+  script instead of duplicating the layout.
 - **`observe` is pure data transformation** (`serde_json::Value` in,
   `Snapshot` out) plus the JS assets it owns. No async code; unit-testable
   without an engine.
@@ -76,10 +80,10 @@ Agent (any MCP client)
 │  dashboard    axum server + embedded frontend (localhost)  │
 │  session      orchestration: actions, contexts, recovery   │
 │  policy       verdicts + approval broker (pure, no I/O)    │
-│  observe      snapshot builder + injected serializer (pure)│
 │  events       typed event backbone + ring buffer + replay  │
 │  engine       Engine/Page traits, supervisor, downloader   │
 │  engine-cdp   the only crate that knows CDP (chromiumoxide)│
+│  observe      snapshot builder + injected serializer (pure)│
 │  core         shared domain vocabulary (types, errors)     │
 └─────────────────────────────────────────────────────────────┘
   │ CDP over WebSocket (localhost)          ▲ events + frames

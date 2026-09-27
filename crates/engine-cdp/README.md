@@ -10,7 +10,9 @@ type appears in a public signature.
 
 ## Boundary
 
-Depends on `core` and `engine` only. Consumers wire `CdpLauncher::new`
+Depends on `core` and `engine`; file uploads also run `observe`'s
+reference-store script — the page-side reference store's layout has
+one owner (docs/architecture.md). Consumers wire `CdpLauncher::new`
 into a supervisor and never learn that CDP exists. All CDP calls run
 under deadlines (`error::with_deadline`); browser-side surprises (a
 target that vanished, an already-dead context) fold into the
