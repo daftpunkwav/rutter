@@ -14,6 +14,8 @@
 
 mod common;
 
+use std::time::Duration;
+
 use rutter_engine::config::{ContextConfig, LaunchMode};
 use rutter_engine::descriptor::EngineBackend;
 use rutter_engine::supervisor::EngineLauncher;
@@ -83,10 +85,19 @@ async fn foreign_pages_are_adoptable_and_closable() -> Result<(), Box<dyn std::e
     );
 
     // This popup sits inside the session's own isolation, so closing
-    // it closes the target: the next listing reports nothing.
+    // it closes the target. Target destruction races the protocol
+    // round-trip, so poll the listing instead of assuming the first
+    // query already observes the teardown.
     context.close_page(adopted_id.clone()).await?;
     assert!(!context.pages().contains(&adopted_id));
-    let relisted = context.foreign_pages().await?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let relisted = loop {
+        let listing = context.foreign_pages().await?;
+        if listing.is_empty() || tokio::time::Instant::now() >= deadline {
+            break listing;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
     assert!(
         relisted.is_empty(),
         "the closed popup is gone: {relisted:?}"
