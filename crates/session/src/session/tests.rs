@@ -1329,3 +1329,39 @@ async fn network_requests_reports_the_active_pages_entries() {
     session.close_page(page_id).await.expect("page closes");
     assert!(session.network_requests().is_empty());
 }
+
+#[tokio::test]
+async fn a_denied_upload_names_the_targeted_input() {
+    let context = MockContext::new();
+    let session = session_with_policy(
+        Arc::new(context),
+        RuleSet::new(
+            vec![rutter_policy::rules::PolicyRule {
+                action_class: Some("file_upload".to_owned()),
+                url_pattern: None,
+                verdict: rutter_policy::Verdict::Deny,
+            }],
+            Verdict::Allow,
+        ),
+    );
+    session.active_page_for_test().await;
+
+    let error = session
+        .execute(
+            Action::SetInputFiles {
+                reference: rutter_core::reference::Reference::new("e1"),
+                paths: vec!["report.pdf".to_owned()],
+            },
+            Origin::Agent,
+        )
+        .await
+        .expect_err("the class-only deny rule blocks the upload");
+    let SessionError::Action(ActionError::ApprovalDenied { reference }) = error else {
+        panic!("unexpected error: {error}")
+    };
+    assert_eq!(
+        reference.as_str(),
+        "e1",
+        "the denial names the element the action targeted"
+    );
+}

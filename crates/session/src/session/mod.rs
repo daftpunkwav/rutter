@@ -792,7 +792,8 @@ fn action_reference(action: &Action) -> rutter_core::reference::Reference {
         Action::Click { reference }
         | Action::Hover { reference }
         | Action::Type { reference, .. }
-        | Action::SelectOption { reference, .. } => reference.clone(),
+        | Action::SelectOption { reference, .. }
+        | Action::SetInputFiles { reference, .. } => reference.clone(),
         Action::Scroll {
             reference: Some(reference),
             ..
