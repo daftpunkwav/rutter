@@ -51,9 +51,20 @@ pub fn read_from_response(response: &Value) -> Readout {
         .and_then(|object| object.get("truncated"))
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    // The envelope must be structurally complete, not merely an object:
+    // `{"version": 1}` parses cleanly but reads as empty, and without
+    // this check the agent could not tell a genuinely empty page from a
+    // reader whose output rutter could not parse (docs/read-format.md
+    // §5, mirroring `snapshot_from_response`'s root check).
+    let title_present = object
+        .and_then(|object| object.get("title"))
+        .is_some_and(Value::is_string);
+    let markdown_present = object
+        .and_then(|object| object.get("markdown"))
+        .is_some_and(Value::is_string);
     let present = object.is_some();
 
-    let mut truncated = !version_ok || !present;
+    let mut truncated = !version_ok || !present || !title_present || !markdown_present;
     let title = clamp(
         object
             .and_then(|object| object.get("title"))
@@ -124,6 +135,27 @@ mod tests {
             assert_eq!(readout.markdown, "");
             assert!(readout.truncated);
         }
+    }
+
+    #[test]
+    fn a_structurally_broken_envelope_flags_truncated() {
+        // An envelope object without string `title`/`markdown` fields
+        // degrades exactly like a non-object response: empty content
+        // AND the truncated flag, never "empty and complete" — the
+        // shape the serializer side already pins with `root_present`.
+        for response in [
+            json!({"version": 1}),
+            json!({"version": 1, "title": "t"}),
+            json!({"version": 1, "markdown": "m"}),
+            json!({"version": 1, "title": 3, "markdown": null}),
+        ] {
+            let readout = read_from_response(&response);
+            assert!(readout.truncated, "unstructured envelope: {response}");
+        }
+        assert!(
+            !read_from_response(&json!({"version": 1, "title": "", "markdown": ""})).truncated,
+            "empty strings are present fields, not missing ones"
+        );
     }
 
     #[test]

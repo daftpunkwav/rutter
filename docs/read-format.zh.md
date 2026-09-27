@@ -102,6 +102,12 @@ truncated }`。`Display` 渲染标题行、一个空行、然后是 markdown 正
 | 单次行内调用大小 | 20 000 字符 |
 | 标题长度 | 200 字符 |
 
+页内的大小守卫按 UTF-16 code unit 计数（`String` 的 `length`），
+而本表与转换器说的是字符：增补平面字符（emoji、CJK 扩展区）在页
+内占两个 unit，因此以它们为主的页面会略早于 100 000 字符停止。
+停止总会置 `truncated`；转换器自身的钳制按 Unicode 标量值计数，
+是权威预算。
+
 转换器独立地对标题（200）与 markdown（100 000）做钳制——按字符计数，
 不会切在 UTF-8 边界上——并在钳制生效或 envelope 版本比当前构建更新时置
 `truncated`。缺失或畸形 envelope 产出空且 truncated 的 readout，而不是

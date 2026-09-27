@@ -114,6 +114,13 @@ never fails on hostile page data.
 | Per-inline-call size | 20 000 characters |
 | Title length | 200 characters |
 
+The in-page size guards count UTF-16 code units (`String length`),
+while this table and the converter speak characters: astral-plane
+glyphs (emoji, CJK extensions) cost two units in the page, so a page
+dominated by them stops somewhat earlier than 100 000 characters.
+Stopping always sets `truncated`, and the converter's own clamp —
+Unicode-scalar counted — is the authoritative budget.
+
 The converter independently clamps title (200) and markdown
 (100 000) — character-counted, so no UTF-8 boundary can split — and
 sets `truncated` when a clamp bites or the envelope version is newer
