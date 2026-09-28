@@ -327,7 +327,7 @@ impl RutterMcp {
         Parameters(PageParams { page_id }): Parameters<PageParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
-        // an unknown page id is invalid_params, not an action failure.
+        // An unknown page id is invalid_params, not an action failure.
         if !session
             .pages()
             .await
@@ -362,7 +362,7 @@ impl RutterMcp {
         Parameters(PageParams { page_id }): Parameters<PageParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
-        // a page id names an open page, so an unknown id is
+        // A page id names an open page, so an unknown id is
         // invalid_params as in tabs_select, not an action failure.
         if !session
             .pages()
@@ -558,7 +558,7 @@ fn invalid_params(message: String) -> McpError {
 }
 
 fn protocol_error(error: SessionError) -> McpError {
-    // protocol-level failures carry the same message-plus-hint text as
+    // Protocol-level failures carry the same message-plus-hint text as
     // isError results.
     McpError::new(
         ErrorCode(SERVER_ERROR_CODE),

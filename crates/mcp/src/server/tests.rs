@@ -147,7 +147,7 @@ async fn session_is_created_once_per_connection() {
 
 #[test]
 fn truncated_snapshots_carry_the_spec_marker() {
-    // a truncated snapshot must tell the agent it only sees part of
+    // A truncated snapshot must tell the agent it only sees part of
     // the page, or the agent trusts a cropped view.
     let button = rutter_core::snapshot::SnapshotNode::leaf("button");
     let full = rutter_core::snapshot::Snapshot {
@@ -211,7 +211,7 @@ fn first_text_block(result: &CallToolResult) -> String {
 
 #[tokio::test]
 async fn tabs_close_unknown_page_is_invalid_params() {
-    // a page id names an open page, so an unknown id is invalid_params
+    // A page id names an open page, so an unknown id is invalid_params
     // as in tabs_select — not an action failure whose
     // hint would tell the agent to re-snapshot and pick an element.
     let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
@@ -275,7 +275,7 @@ async fn scroll_zero_and_negatives_are_invalid_params() {
 
 #[tokio::test]
 async fn close_session_is_terminal_for_the_connection() {
-    // later tool calls on a closed connection fail with invalid_params
+    // Later tool calls on a closed connection fail with invalid_params
     // naming the closed session — including a
     // repeated close, which used to answer success twice.
     let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
@@ -319,7 +319,7 @@ async fn close_session_on_an_unused_connection_creates_nothing() {
 
 #[tokio::test]
 async fn protocol_failures_surface_as_server_errors_carrying_hints() {
-    // protocol-level failures are JSON-RPC errors with code -32000,
+    // Protocol-level failures are JSON-RPC errors with code -32000,
     // carrying the same message-plus-hint text an isError
     // result would. The wiring is exercised for real through
     // `session()`: a zero-session cap fails the first session request

@@ -8,7 +8,7 @@
 //!
 //! Boundary: pure vocabulary only. This crate performs no I/O, contains no
 //! async code, and knows nothing about engines or transport protocols.
-//! The glossary in is normative for every name
+//! The glossary is normative for every name
 //! defined here.
 
 // Restriction lints are denied workspace-wide; tests may use plain

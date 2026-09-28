@@ -36,12 +36,12 @@ pub const DEFAULT_BUDGET_CHARS: usize = 20_000;
 /// into one summary line.
 const FOLD_RUN_MIN: usize = 8;
 
-/// Margin around the viewport for out-of-viewport classification
-/// Viewport-first culling margin.
+/// Margin around the viewport, in CSS pixels, for out-of-viewport
+/// classification under viewport-first culling.
 const VIEWPORT_MARGIN_PX: f64 = 200.0;
 
-/// Minimum rendered size before an out-of-viewport subtree folds
-/// Minimum characters a fold run must save.
+/// Minimum rendered size, in characters, before an out-of-viewport
+/// subtree folds.
 const FOLD_SIZE_MIN_CHARS: usize = 400;
 
 /// Safety clamp for hostile overlong strings. The serializer

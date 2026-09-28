@@ -1,5 +1,5 @@
-//! Acceptance: e2e task flows against the real engine
-//!. Each test drives the built `rutter serve`
+//! Acceptance: e2e task flows against the real engine.
+//! Each test drives the built `rutter serve`
 //! binary over stdio with an rmcp client, so the whole protocol stack
 //! runs: client -> stdio -> MCP -> session -> CDP -> engine.
 //!
@@ -231,7 +231,7 @@ async fn form_task_type_select_and_screenshot() {
     client.cancel().await.expect("shutdown");
 }
 
-/// wait_for resolves once the awaited text appears, and a timeout on a
+/// `wait_for` resolves once the awaited text appears, and a timeout on a
 /// missing text surfaces as an isError result naming the budget.
 #[tokio::test]
 #[ignore = "requires the engine binary in the cache"]

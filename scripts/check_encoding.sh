@@ -7,7 +7,7 @@
 # this gate checks byte hygiene only, never language. Binary files
 # are skipped with the same heuristic git grep uses.
 #
-# One perl process scans every tracked file. Spawning three probes per
+# One perl process scans every tracked file. Spawning four probes per
 # file (a binary grep, a UTF-8 perl, head, a CRLF grep) made the gate
 # wall-clock dominated by process startup on Windows; the checks and
 # their order are unchanged, only the per-file spawning is gone.

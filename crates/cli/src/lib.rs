@@ -40,9 +40,9 @@ pub(crate) fn render_marked(value: impl std::fmt::Display, truncated: bool) -> S
 }
 
 /// Loads and parses the `--policy` file. Public so the binary and the
-/// tests share one path, and the error is a [`CliError`] like every
-/// other startup failure: a hint line and the shared exit code, not a
-/// special-cased exit status.
+/// tests share one path, and the error is an [`error::CliError`] like
+/// every other startup failure: a hint line and the shared exit code,
+/// not a special-cased exit status.
 pub fn policy_file(path: &std::path::Path) -> Result<rutter_policy::RuleSet, error::CliError> {
     let text = std::fs::read_to_string(path).map_err(|reason| error::CliError::PolicyFile {
         path: path.to_path_buf(),

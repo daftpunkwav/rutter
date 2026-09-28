@@ -159,7 +159,7 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                                     current = Some(stream);
                                                     ack["started"] = serde_json::json!(true);
                                                 }
-                                                // the refusal names its cause instead of
+                                                // The refusal names its cause instead of
                                                 // acking a stream that never comes.
                                                 Err(SessionError::NoOpenPage) => {
                                                     ack["reason"] = serde_json::json!(
@@ -184,7 +184,7 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                 let _ = socket.send(Message::text(ack.to_string())).await;
                             }
                             Some("subscribe") => {
-                                // subscribe is accepted as a client
+                                // `subscribe` is accepted as a client
                                 // message; replay and the live
                                 // stream start automatically on connect,
                                 // so there is nothing further to do.

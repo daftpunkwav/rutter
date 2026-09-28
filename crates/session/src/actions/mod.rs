@@ -1,10 +1,9 @@
 //! The action executor: three-phase auto-wait, act, settle, snapshot.
 //!
 //! Boundary: one action per call, executed against one page handle.
-//! Reference actions auto-wait through the page resolver
-//!; every mutating action returns a fresh
-//! snapshot. Policy verdicts and approval are
-//! decided by the session layer and never run here.
+//! Reference actions auto-wait through the page resolver; every
+//! mutating action returns a fresh snapshot. Policy verdicts and
+//! approval are decided by the session layer and never run here.
 
 use std::time::{Duration, Instant};
 
