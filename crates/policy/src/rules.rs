@@ -80,15 +80,14 @@ impl RuleSet {
     /// The built-in default: allow, except cookies require approval,
     /// with the 120 s approval window.
     pub fn default_set() -> Self {
-        Self {
-            rules: vec![PolicyRule {
+        Self::new(
+            vec![PolicyRule {
                 action_class: Some(ActionClass::Cookies.name().to_owned()),
                 url_pattern: None,
                 verdict: Verdict::RequireApproval,
             }],
-            default_verdict: Verdict::Allow,
-            approval_timeout: std::time::Duration::from_secs(120),
-        }
+            Verdict::Allow,
+        )
     }
 
     /// Builds a rule set from parsed rules and a default verdict.
