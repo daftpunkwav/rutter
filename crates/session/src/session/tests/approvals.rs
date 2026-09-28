@@ -62,7 +62,7 @@ async fn a_grant_does_not_follow_a_page_that_moved_mid_park() {
                 .await
         }
     });
-    let request_id = pending_request_id(&session).await;
+    let request_id = first_approval_request_id(&session).await;
 
     // The page moves while the click is parked, and the human grants
     // what they were shown.
@@ -122,7 +122,7 @@ async fn a_grant_survives_a_move_to_a_url_the_rules_allow() {
                 .await
         }
     });
-    let request_id = pending_request_id(&session).await;
+    let request_id = first_approval_request_id(&session).await;
 
     page.set_url("https://b.example/other");
     assert!(
@@ -139,21 +139,23 @@ async fn a_grant_survives_a_move_to_a_url_the_rules_allow() {
         .expect("the moved page re-reviews as allowed");
 }
 
-/// Waits until the session's backbone shows a parked request and
-/// returns its id.
-async fn pending_request_id(session: &Session) -> String {
-    pending_request_ids(session)
+/// Waits until the session's backbone records an approval request and
+/// returns the first recorded id — the request of the single parked
+/// operation under test.
+async fn first_approval_request_id(session: &Session) -> String {
+    approval_request_ids(session)
         .await
         .into_iter()
         .next()
         .expect("the operation parks")
 }
 
-/// Waits until the session's backbone shows at least one parked request
-/// and returns every request id in history, oldest first. Re-validation
-/// tests need the whole set: an earlier request stays in the ring, so a
-/// single-id lookup would hand back the stale one.
-async fn pending_request_ids(session: &Session) -> Vec<String> {
+/// Waits until the session's backbone records at least one approval
+/// request and returns every request id in history, oldest first.
+/// Re-validation tests need the whole set: an earlier request stays in
+/// the ring (possibly already resolved), so a single-id lookup would
+/// hand back the stale one.
+async fn approval_request_ids(session: &Session) -> Vec<String> {
     crate::wait::poll_until(
         || async {
             let ids: Vec<String> = session
@@ -603,7 +605,7 @@ async fn a_cookie_grant_does_not_follow_a_page_that_moved_mid_park() {
                 .await
         }
     });
-    let first = pending_request_id(&session).await;
+    let first = first_approval_request_id(&session).await;
 
     gated.move_page("https://other.example/moved");
     assert!(
@@ -620,7 +622,7 @@ async fn a_cookie_grant_does_not_follow_a_page_that_moved_mid_park() {
     // fresh request the re-review must raise lands on the backbone.
     let second = crate::wait::poll_until(
         || async {
-            let ids = pending_request_ids(&session).await;
+            let ids = approval_request_ids(&session).await;
             (ids.len() >= 2).then(|| ids[ids.len() - 1].clone())
         },
         Duration::from_secs(5),
@@ -675,7 +677,7 @@ async fn a_grant_without_a_readable_url_fails_closed_to_a_fresh_park() {
                 .await
         }
     });
-    let first = pending_request_id(&session).await;
+    let first = first_approval_request_id(&session).await;
 
     gated.move_page("");
     assert!(
@@ -690,7 +692,7 @@ async fn a_grant_without_a_readable_url_fails_closed_to_a_fresh_park() {
     // fresh request the re-review must raise lands on the backbone.
     let second = crate::wait::poll_until(
         || async {
-            let ids = pending_request_ids(&session).await;
+            let ids = approval_request_ids(&session).await;
             (ids.len() >= 2).then(|| ids[ids.len() - 1].clone())
         },
         Duration::from_secs(5),
