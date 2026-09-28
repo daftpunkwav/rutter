@@ -7,6 +7,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use rutter_core::cookie::Cookie;
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,12 @@ use serde::{Deserialize, Serialize};
 use rutter_engine::context::ContextHandle;
 use rutter_engine::page::PageHandle;
 use rutter_observe::{storage_dump_script, storage_restore_script};
+
+/// Disambiguates staging files between writes in the same process: the
+/// process id alone collides when two overlapping actions persist the
+/// same session's state at once, and the writers would then interleave
+/// into one temporary — publishing a mixture, or losing the rename.
+static WRITE_ATTEMPT: AtomicU64 = AtomicU64::new(0);
 
 /// Everything needed to rebuild a session's login state.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -98,9 +105,11 @@ impl StorageState {
     /// write is atomic: the JSON lands in a sibling temporary file that
     /// replaces the real one in one rename, so a crash or a full disk
     /// can never leave a half-written file (which would read back as an
-    /// empty state and silently drop the session's login). The file
-    /// holds cookies and localStorage — secrets — so it is created
-    /// owner-only on Unix instead of inheriting the umask default.
+    /// empty state and silently drop the session's login). Each write
+    /// stages under its own name, so two of them racing on one file
+    /// cannot interleave into one temporary. The file holds cookies and
+    /// localStorage — secrets — so it is created owner-only on Unix
+    /// instead of inheriting the umask default.
     pub fn write(&self, path: &Path) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -112,7 +121,11 @@ impl StorageState {
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("storage.json");
-        let staging = path.with_file_name(format!(".{file_name}.tmp-{}", std::process::id()));
+        let staging = path.with_file_name(format!(
+            ".{file_name}.tmp-{}-{}",
+            std::process::id(),
+            WRITE_ATTEMPT.fetch_add(1, Ordering::Relaxed)
+        ));
         let mut options = std::fs::File::options();
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
@@ -201,6 +214,86 @@ mod tests {
         let state = StorageState::read(&dir.path().join("missing.json"));
         assert!(state.cookies.is_empty());
         assert!(state.origins.is_empty());
+    }
+
+    /// One state whose serialized length grows with `padding`, so the
+    /// concurrent writers below differ by whole kilobytes and an
+    /// interleaved mixture can never be mistaken for either one.
+    fn padded_state(marker: &str, padding: usize) -> StorageState {
+        StorageState {
+            cookies: Vec::new(),
+            origins: vec![OriginStorage {
+                origin: "https://example.com".to_owned(),
+                entries: vec![
+                    ("marker".to_owned(), marker.to_owned()),
+                    ("pad".to_owned(), "p".repeat(padding)),
+                ],
+            }],
+        }
+    }
+
+    #[test]
+    fn concurrent_writes_of_one_file_all_succeed_and_stay_readable() {
+        // The staging name used to be derived from the process id alone,
+        // so two writers persisting the same session's file shared one
+        // temporary: their writes interleaved into it and whichever
+        // rename landed published the mixture, while the loser failed
+        // renaming a file that no longer existed. A mixture reads back
+        // as `StorageState::default()` — the silently empty login state
+        // the atomic write exists to prevent. `Session::persist_storage`
+        // takes `&self` and is reachable from two overlapping actions,
+        // so one process really can write one file concurrently.
+        const WRITERS: usize = 6;
+        const ROUNDS: usize = 40;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.json");
+        let states: Vec<StorageState> = (0..WRITERS)
+            .map(|index| padded_state(&format!("w{index}"), 4096 * index))
+            .collect();
+
+        let barrier = std::sync::Barrier::new(WRITERS);
+        let errors: Vec<String> = std::thread::scope(|scope| {
+            let handles: Vec<_> = states
+                .iter()
+                .map(|state| {
+                    let path = path.clone();
+                    let barrier = &barrier;
+                    scope.spawn(move || {
+                        let mut errors = Vec::new();
+                        barrier.wait();
+                        for _ in 0..ROUNDS {
+                            if let Err(error) = state.write(&path) {
+                                errors.push(error.to_string());
+                            }
+                        }
+                        errors
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|handle| handle.join().expect("writer thread"))
+                .collect()
+        });
+
+        assert!(
+            errors.is_empty(),
+            "every publish of one file must succeed: {errors:?}"
+        );
+        let back = StorageState::read(&path);
+        assert!(
+            states.contains(&back),
+            "the published file must be exactly one writer's state, got {} origins",
+            back.origins.len()
+        );
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .expect("read dir")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name())
+            .filter(|name| name.to_string_lossy().contains(".tmp-"))
+            .collect();
+        assert!(leftovers.is_empty(), "staging leftovers: {leftovers:?}");
     }
 
     #[test]
