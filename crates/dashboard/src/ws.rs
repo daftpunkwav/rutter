@@ -12,7 +12,6 @@ use rutter_events::Envelope;
 use rutter_policy::{ApprovalId, Decision};
 use rutter_session::{ScreencastStream, SessionError};
 use serde_json::Value;
-use tokio::sync::mpsc;
 
 use crate::Dashboard;
 
@@ -47,11 +46,14 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
         }
     }
 
-    // Live: forward the broadcast stream; client decisions come back
-    // on the same socket, so all writes happen in this loop. Screencast
-    // frames are on-demand: they flow only while a
-    // viewer asked for them, as binary WebSocket frames.
-    let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<Message>(64);
+    // Live: forward the broadcast stream; client decisions come back on
+    // the same socket, so every write happens in this loop and replies
+    // go straight to the socket it already owns. A reply must never be
+    // handed to a queue this loop would also have to drain: a client
+    // that out-ran the drain would park the loop inside its own send,
+    // with no acks, no events, and no way back. Screencast frames are
+    // on-demand: they flow only while a viewer asked for them, as
+    // binary WebSocket frames.
     let mut current: Option<ScreencastStream> = None;
     // Highest sequence number sent to this client; live envelopes at or
     // below it are duplicates and are skipped.
@@ -97,16 +99,6 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                         continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                }
-            }
-            reply = outgoing_rx.recv() => {
-                match reply {
-                    Some(message) => {
-                        if socket.send(message).await.is_err() {
-                            break;
-                        }
-                    }
-                    None => break,
                 }
             }
             frame = async {
@@ -191,8 +183,7 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                             }
                             _ => {
                                 if let Some(reply) = handle_client_message(&state, &text) {
-                                    let _ =
-                                        outgoing_tx.send(Message::text(reply)).await;
+                                    let _ = socket.send(Message::text(reply)).await;
                                 }
                             }
                         }

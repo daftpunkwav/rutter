@@ -343,6 +343,51 @@ async fn screencast_of_an_open_page_acks_started() {
 }
 
 #[tokio::test]
+async fn a_decision_flood_is_acked_without_wedging_the_loop() {
+    // The decision reply used to be handed to a bounded channel whose
+    // only reader was this same select loop, so a client that out-ran
+    // the drain parked the loop inside its own send: no further acks,
+    // no live events, no close, and no way back — the connection was
+    // dead for good. Replies now go straight to the socket the loop
+    // already owns exclusively, so backpressure stops at the client.
+    const DECISIONS: usize = 8192;
+
+    let serving = serve().await;
+    serving
+        .manager
+        .session(SessionId::new("s1"))
+        .await
+        .expect("session starts");
+    let mut stream = connect(&serving).await;
+    let decision = serde_json::json!({
+        "type": "decision",
+        "request_id": "apr-flood",
+        "grant": true,
+    })
+    .to_string();
+
+    let answered = tokio::time::timeout(Duration::from_secs(15), async {
+        for _ in 0..DECISIONS {
+            stream.send(Message::text(decision.clone())).await.ok()?;
+        }
+        let mut acked = 0usize;
+        while acked < DECISIONS {
+            let frame = stream.next().await?.ok()?;
+            if frame.into_text().ok()?.contains("\"decision-ack\"") {
+                acked += 1;
+            }
+        }
+        Some(())
+    })
+    .await;
+
+    assert!(
+        answered.is_ok(),
+        "every one of the {DECISIONS} decisions must be acked; the loop wedged otherwise"
+    );
+}
+
+#[tokio::test]
 async fn ws_rejects_an_upgrade_without_the_token() {
     let serving = serve().await;
     let url = format!("{}?token=wrong", serving.ws_url);
