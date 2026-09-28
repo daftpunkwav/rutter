@@ -76,6 +76,16 @@ impl CdpContext {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+
+    /// Targets a registered handle already drives. Shared by the
+    /// foreign-page listing and the attach fallback, which must never
+    /// hand the same target out twice.
+    fn driven_target_ids(&self) -> Vec<TargetId> {
+        self.lock_pages()
+            .values()
+            .map(|page| page.target_id())
+            .collect()
+    }
 }
 
 #[async_trait]
@@ -118,10 +128,31 @@ impl ContextHandle for CdpContext {
                 // Browser answers Target.createTarget with "Not
                 // supported" because its one visible window is the
                 // surface, and driving that is the point.
-                Err(error) if is_not_supported(&error) => (
-                    attach_existing_surface(&browser).await.map_err(|_| error)?,
-                    false,
-                ),
+                Err(error) if is_not_supported(&error) => {
+                    let taken = self.driven_target_ids();
+                    match attach_existing_surface(&browser, &taken).await {
+                        Ok(Some(page)) => (page, false),
+                        // The engine listed its targets and has no
+                        // surface at all: that is what the refusal
+                        // meant, so the caller keeps it.
+                        Ok(None) if taken.is_empty() => return Err(error),
+                        // Every drivable surface already has a handle:
+                        // the engine has no second page to give, and
+                        // handing the same window back under a new id
+                        // would count one tab twice against the cap.
+                        Ok(None) => {
+                            return Err(EngineError::Capacity {
+                                detail: format!(
+                                    "context '{}' drives every page surface this engine exposes",
+                                    self.id
+                                ),
+                            });
+                        }
+                        // The listing or the attach failed; that is the
+                        // answer, not a capacity verdict.
+                        Err(failure) => return Err(failure),
+                    }
+                }
                 Err(error) => return Err(error),
             }
         };
@@ -270,19 +301,13 @@ impl ContextHandle for CdpContext {
                 .execute(GetTargetsParams::default()),
         )
         .await?;
-        let tracked: Vec<String> = {
-            let pages = self.lock_pages();
-            pages
-                .values()
-                .map(|page| page.target_id().as_ref().to_owned())
-                .collect()
-        };
+        let tracked = self.driven_target_ids();
         Ok(response
             .result
             .target_infos
             .iter()
             .filter(|info| is_foreign_candidate(&self.cdp_context_id, info))
-            .filter(|info| !tracked.iter().any(|id| *id == info.target_id.as_ref()))
+            .filter(|info| !tracked.contains(&info.target_id))
             .map(|info| ForeignPage {
                 id: foreign_page_id(info.target_id.as_ref()),
                 url: info.url.clone(),
@@ -478,34 +503,47 @@ fn adopt_closable(cdp_context_id: &Option<BrowserContextId>, info: &TargetInfo) 
 }
 
 /// Picks the target a page handle may drive: the first `page`-typed
-/// target that is not the shell's own toolbar document. Pure so the
-/// attach rules are unit-testable without a browser connection.
-fn pick_drivable_target(infos: &[TargetInfo]) -> Option<TargetId> {
+/// target that is not the shell's own toolbar document and that no
+/// handle already drives. Pure so the attach rules are unit-testable
+/// without a browser connection.
+fn pick_drivable_target(infos: &[TargetInfo], taken: &[TargetId]) -> Option<TargetId> {
     infos
         .iter()
         .filter(|info| info.r#type == "page")
-        .find(|info| !is_toolbar_document(&info.url))
+        // Both disqualifications filter before the pick, so the search
+        // moves on to the next surface instead of giving up on the one
+        // it found first.
+        .filter(|info| !is_toolbar_document(&info.url))
+        .filter(|info| !taken.contains(&info.target_id))
         .map(|info| info.target_id.clone())
+        .next()
 }
 
 /// The browser's own page surface, for engines that cannot create
 /// targets: lists the targets and attaches to the one
-/// [`pick_drivable_target`] selects. Fails when the browser offers
-/// nothing drivable, which keeps the original "Not supported" error
-/// the caller holds.
+/// [`pick_drivable_target`] selects. `Ok(None)` means the engine
+/// answered with no free surface, which the caller reports as the
+/// refusal it holds; `Err` means the listing or the attach itself
+/// failed, and keeps its own answer.
+///
+/// Engines without context support have exactly one surface, so two
+/// concurrent opens used to attach to the same target and register it
+/// under two page ids: one window counted as two tabs, and the page cap
+/// charged for both. An already-driven target is therefore never
+/// offered again; the second open fails like any other caller that
+/// would exceed the surface count.
 async fn attach_existing_surface(
     browser: &chromiumoxide::Browser,
-) -> Result<chromiumoxide::Page, EngineError> {
+    taken: &[TargetId],
+) -> Result<Option<chromiumoxide::Page>, EngineError> {
     let response = crate::error::with_deadline(
         "list_targets",
         crate::error::COMMAND_TIMEOUT,
         browser.execute(GetTargetsParams::default()),
     )
     .await?;
-    let Some(target_id) = pick_drivable_target(&response.result.target_infos) else {
-        return Err(EngineError::Internal {
-            detail: "the engine exposes no page surface to attach to".to_owned(),
-        });
+    let Some(target_id) = pick_drivable_target(&response.result.target_infos, taken) else {
+        return Ok(None);
     };
     crate::error::with_deadline(
         "attach_surface",
@@ -513,6 +551,7 @@ async fn attach_existing_surface(
         browser.get_page(target_id),
     )
     .await
+    .map(Some)
 }
 
 /// Whether the browser still knows a target; the answer defaults to
@@ -687,7 +726,33 @@ mod tests {
             target("frame", "iframe", "https://example.com/"),
             target("start", "page", "file:///C:/apps/rutter/start.html"),
         ];
-        assert_eq!(pick_drivable_target(&infos), Some(TargetId::new("start")));
+        assert_eq!(
+            pick_drivable_target(&infos, &[]),
+            Some(TargetId::new("start"))
+        );
+    }
+
+    #[test]
+    fn attach_never_hands_out_a_target_a_handle_already_drives() {
+        // Engines without target creation expose one surface. Two
+        // concurrent opens used to attach to it twice and register one
+        // window under two page ids, charging the page cap for a tab
+        // that does not exist.
+        let infos = [
+            target("toolbar", "page", "file:///C:/apps/rutter/toolbar.html"),
+            target("start", "page", "file:///C:/apps/rutter/start.html"),
+            target("second", "page", "https://a.example/"),
+        ];
+        assert_eq!(
+            pick_drivable_target(&infos, &[TargetId::new("start")]),
+            Some(TargetId::new("second")),
+            "the surface a handle drives is skipped, not reused"
+        );
+        assert_eq!(
+            pick_drivable_target(&infos, &[TargetId::new("start"), TargetId::new("second")]),
+            None,
+            "an engine with no free surface offers nothing"
+        );
     }
 
     #[test]
@@ -700,8 +765,8 @@ mod tests {
             "page",
             "file:///C:/apps/rutter/toolbar.html",
         )];
-        assert_eq!(pick_drivable_target(&infos), None);
-        assert_eq!(pick_drivable_target(&[]), None);
+        assert_eq!(pick_drivable_target(&infos, &[]), None);
+        assert_eq!(pick_drivable_target(&[], &[]), None);
     }
 
     #[test]

@@ -77,6 +77,10 @@ injected serializer (page)       rutter-observe
   ref 的 `WeakMap<Element, string>`、解析 ref 的反向
   `Map<string, WeakRef<Element>>`，加整数计数器）。可操作元素第一次被
   观察到时获得 `e<N>`，并在同一页面的后续快照中保持不变。
+- 反向 Map 在两次快照之间清扫：元素已被页面回收的条目会被丢弃，
+  于是长时间存活的动态文档不会随着它展示过的每一个元素一起增长
+  （浏览器进程也不会）。被回收元素的引用在清扫前同样解析为
+  `ReferenceExpired`，因此没有任何仍可解析的引用会变得不可解析。
 - v1 可操作 role：`button`、`link`、`textbox`、`searchbox`、
   `checkbox`、`radio`、`combobox`、`listbox`、`option`、`menuitem`、
   `tab`、`slider`、`spinbutton`、`switch`、`treeitem`。

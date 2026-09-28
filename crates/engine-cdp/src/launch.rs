@@ -143,7 +143,12 @@ impl CdpLauncher {
             // operate and humans watch.
             args.push("--app=about:blank".to_owned());
         }
-        args.push(format!("--remote-debugging-port={port}"));
+        // An override names its own port, and Chromium takes the last
+        // spelling it sees: adding ours beside it would leave the two
+        // flags disagreeing about which endpoint to wait for.
+        if self.configured_port().is_none() {
+            args.push(format!("--remote-debugging-port={port}"));
+        }
         if !self
             .extra_args
             .iter()
@@ -156,13 +161,27 @@ impl CdpLauncher {
     }
 
     /// Reads a user-supplied debugging port from the extras, so an
-    /// override still lands on the port rutter waits for.
+    /// override still lands on the port rutter waits for. Chromium
+    /// accepts both `--remote-debugging-port=9333` and the two-argument
+    /// `--remote-debugging-port 9333`; reading only the first spelling
+    /// made the second a silent mismatch — rutter waited on a port
+    /// nobody opened until the whole launch budget ran out.
     fn configured_port(&self) -> Option<u16> {
-        self.extra_args.iter().find_map(|argument| {
-            argument
+        let mut arguments = self.extra_args.iter();
+        while let Some(argument) = arguments.next() {
+            if let Some(port) = argument
                 .strip_prefix("--remote-debugging-port=")
                 .and_then(|value| value.parse().ok())
-        })
+            {
+                return Some(port);
+            }
+            if argument == "--remote-debugging-port"
+                && let Some(port) = arguments.next().and_then(|value| value.parse().ok())
+            {
+                return Some(port);
+            }
+        }
+        None
     }
 
     /// Spawns the browser process. Stdin and stdout are severed; stderr
@@ -401,7 +420,57 @@ mod tests {
             launcher(&["--remote-debugging-port=9333"]).configured_port(),
             Some(9333)
         );
+        // Chromium also accepts the two-argument spelling; reading only
+        // the `=` form left rutter waiting on a port the browser never
+        // opened.
+        assert_eq!(
+            launcher(&["--remote-debugging-port", "9333"]).configured_port(),
+            Some(9333)
+        );
+        assert_eq!(
+            launcher(&["--no-sandbox", "--remote-debugging-port", "9333"]).configured_port(),
+            Some(9333),
+            "the value is read from the argument that follows the flag"
+        );
+        assert_eq!(
+            launcher(&["--remote-debugging-port"]).configured_port(),
+            None,
+            "a flag with no value names no port"
+        );
         assert_eq!(launcher(&[]).configured_port(), None);
+    }
+
+    #[test]
+    fn an_overridden_port_is_never_passed_twice() {
+        // Chromium takes the last spelling it sees, so rutter's own flag
+        // next to the override could leave the endpoint it waits for and
+        // the one the browser opens disagreeing.
+        for extra in [
+            vec!["--remote-debugging-port=9333"],
+            vec!["--remote-debugging-port", "9333"],
+        ] {
+            let args = launcher(&extra).browser_args(LaunchMode::Headless, 9222, Path::new("p"));
+            let flags = args
+                .iter()
+                .filter(|argument| argument.starts_with("--remote-debugging-port"))
+                .count();
+            assert_eq!(flags, 1, "one port flag for {extra:?}: {args:?}");
+            assert!(
+                !args.iter().any(|argument| argument.contains("9222")),
+                "rutter's own port never joins an override: {args:?}"
+            );
+            assert!(
+                args.iter().any(|argument| argument.contains("9333")),
+                "the override reaches the command line: {args:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_free_launch_still_passes_its_own_port() {
+        let args =
+            launcher(&["--no-sandbox"]).browser_args(LaunchMode::Headless, 9222, Path::new("p"));
+        assert_eq!(find(&args, "--remote-debugging-port="), Some("9222"));
     }
 
     #[test]

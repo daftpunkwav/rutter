@@ -18,6 +18,9 @@
   var MAX_DEPTH = 200;
   var NAME_LIMIT = 120;
   var VALUE_LIMIT = 200;
+  // How many reverse-store entries may pile up before a snapshot sweeps
+  // the collected ones out. See pruneRefs.
+  var REF_SWEEP_AT = 512;
 
   var SKIPPED_TAGS = {
     SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, HEAD: 1,
@@ -56,6 +59,37 @@
 
   var state = { count: 0, truncated: false };
 
+  // Forgets the refs whose element the page has already collected.
+  //
+  // `reverse` is a strong Map: its key is the ref string and its value a
+  // WeakRef, so nothing in it is ever collectible while the entry lives.
+  // Without a sweep the store grows with every element the page has ever
+  // shown, and a long-lived document that re-renders (a virtual list, an
+  // infinite feed) would grow the browser process with it for as long as
+  // the tab stays open.
+  //
+  // Dropping a collected element's entry answers nothing differently:
+  // the resolver dereferences every entry and reports `missing` when the
+  // element is gone, so the ref was already unresolvable. Refs of
+  // elements that are still alive keep their entry, and the WeakMap
+  // hands them the same ref again, which is the stability the snapshot
+  // format promises.
+  function pruneRefs(store) {
+    if (!store || !store.reverse ||
+        typeof store.reverse.forEach !== 'function' ||
+        typeof store.reverse.size !== 'number') return;
+    if (store.reverse.size < REF_SWEEP_AT) return;
+    var collected = [];
+    store.reverse.forEach(function (weak, ref) {
+      if (!weak || typeof weak.deref !== 'function' || weak.deref() === undefined) {
+        collected.push(ref);
+      }
+    });
+    for (var i = 0; i < collected.length; i += 1) {
+      store.reverse.delete(collected[i]);
+    }
+  }
+
   function ensureRefStore() {
     try {
       if (!window.__rutterRefStore) {
@@ -68,6 +102,7 @@
           counter: 0
         };
       }
+      pruneRefs(window.__rutterRefStore);
       return window.__rutterRefStore;
     } catch (err) {
       state.truncated = true;

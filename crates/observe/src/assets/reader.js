@@ -279,21 +279,54 @@
   function emitTable(el) {
     var rows = [];
     try {
-      rows = Array.prototype.slice.call(el.querySelectorAll('tr'));
+      // `el.rows` and not `querySelectorAll('tr')`: the collection
+      // holds this table's own rows, so a table nested inside a cell
+      // contributes its rows to itself instead of interleaving them
+      // into the outer table's.
+      rows = Array.prototype.slice.call(el.rows || []);
     } catch (err) {
       return;
     }
     if (rows.length === 0) return;
-    var header = rowCells(rows[0]);
-    if (header.length === 0) return;
+
+    // The header is the first row that carries cells: an empty leading
+    // row (a spacer, a template row) must not swallow the whole table,
+    // which is what treating rows[0] as the header unconditionally did.
+    var headerIndex = -1;
+    // Markdown tables need one column count for every row, and it has
+    // to fit the widest row. A colspan header spans fewer cells than the
+    // data rows under it, and clipping those rows to the header's cell
+    // count silently dropped their trailing cells without marking the
+    // readout truncated.
+    var width = 0;
+    for (var r = 0; r < rows.length; r += 1) {
+      var count = cellCount(rows[r]);
+      if (count === 0) continue;
+      if (headerIndex === -1) headerIndex = r;
+      if (count > width) width = count;
+    }
+    if (headerIndex === -1) return;
+
+    var header = rowCells(rows[headerIndex]);
+    while (header.length < width) header.push('');
     push('| ' + header.join(' | ') + ' |');
     var separator = [];
-    for (var c = 0; c < header.length; c += 1) separator.push('---');
+    for (var c = 0; c < width; c += 1) separator.push('---');
     push('| ' + separator.join(' | ') + ' |');
-    for (var r = 1; r < rows.length; r += 1) {
-      var cells = rowCells(rows[r]);
-      while (cells.length < header.length) cells.push('');
-      push('| ' + cells.slice(0, header.length).join(' | ') + ' |');
+    for (var b = 0; b < rows.length; b += 1) {
+      if (b === headerIndex) continue;
+      var cells = rowCells(rows[b]);
+      while (cells.length < width) cells.push('');
+      push('| ' + cells.join(' | ') + ' |');
+    }
+  }
+
+  function cellCount(row) {
+    try {
+      var parts = row.cells;
+      return parts ? parts.length : 0;
+    } catch (err) {
+      return 0;
     }
   }
 

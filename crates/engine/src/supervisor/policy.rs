@@ -59,7 +59,7 @@ impl RestartPolicy {
     pub fn new(max_restarts: u32, window: Duration) -> Self {
         Self {
             backoff: Backoff::new(Duration::from_secs(1), Duration::from_secs(30)),
-            max_restarts,
+            max_restarts: max_restarts.max(1),
             window,
         }
     }
@@ -74,7 +74,7 @@ impl RestartPolicy {
     ) -> Self {
         Self {
             backoff: Backoff::new(base, max),
-            max_restarts,
+            max_restarts: max_restarts.max(1),
             window,
         }
     }
@@ -144,6 +144,39 @@ mod tests {
             history.record(now);
         }
         assert_eq!(policy.decide(&mut history, now), RestartDecision::Open);
+    }
+
+    #[test]
+    fn a_zero_budget_still_admits_one_attempt() {
+        // `in_window >= 0` holds from the empty window, so a literal
+        // zero opened the breaker before anything was ever tried: the
+        // engine could never launch at all.
+        let mut history = RestartHistory::default();
+        let now = Instant::now();
+        let policy = RestartPolicy::new(0, Duration::from_secs(60));
+        assert_eq!(
+            policy.decide(&mut history, now),
+            RestartDecision::Allowed(Duration::ZERO),
+            "the first attempt starts immediately"
+        );
+        history.record(now);
+        assert_eq!(
+            policy.decide(&mut history, now),
+            RestartDecision::Open,
+            "the breaker still protects a repeated failure"
+        );
+
+        let mut with_backoff = RestartHistory::default();
+        assert_eq!(
+            RestartPolicy::with_backoff(
+                0,
+                Duration::from_secs(60),
+                Duration::from_millis(1),
+                Duration::from_millis(1)
+            )
+            .decide(&mut with_backoff, now),
+            RestartDecision::Allowed(Duration::ZERO)
+        );
     }
 
     #[test]

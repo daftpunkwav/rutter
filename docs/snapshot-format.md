@@ -87,6 +87,12 @@ Skipped elements: `script`, `style`, `noscript`, `template`, `head`,
   integer counter). An actionable element receives `e<N>` the first
   time it is observed and keeps it for later snapshots of the same
   page.
+- The reverse map is swept between snapshots: entries whose element the
+  page has already collected are dropped, so a long-lived document
+  that re-renders does not grow the store (and the browser process)
+  with every element it ever showed. A collected element's reference
+  resolved to `ReferenceExpired` before the sweep too, so no reference
+  that could still resolve stops resolving.
 - Actionable roles v1: `button`, `link`, `textbox`, `searchbox`,
   `checkbox`, `radio`, `combobox`, `listbox`, `option`, `menuitem`,
   `tab`, `slider`, `spinbutton`, `switch`, `treeitem`.

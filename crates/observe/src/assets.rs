@@ -30,6 +30,50 @@ mod tests {
     }
 
     #[test]
+    fn the_reverse_ref_store_sweeps_collected_entries() {
+        // The reverse store is a strong Map keyed by the ref string, so
+        // nothing in it can be collected while its entry lives: without
+        // a sweep it grows with every element the page has ever shown,
+        // and a long-lived document that re-renders grows the browser
+        // process with it.
+        //
+        // Behaviour is covered by the page-side harness; these
+        // assertions pin that the sweep exists, runs on the way out of
+        // the store accessor, and actually deletes what it finds.
+        assert!(
+            SERIALIZER_JS.contains("function pruneRefs"),
+            "the serializer must sweep collected refs"
+        );
+        assert!(
+            SERIALIZER_JS.contains("pruneRefs(window.__rutterRefStore)"),
+            "every snapshot that reaches the accessor sweeps first"
+        );
+        assert!(
+            SERIALIZER_JS.contains("store.reverse.delete(collected[i])"),
+            "a sweep that finds nothing to remove is not a sweep"
+        );
+    }
+
+    #[test]
+    fn the_reader_never_clips_a_row_to_the_header() {
+        // A colspan header spans fewer cells than the rows under it, and
+        // clipping those rows to the header's cell count dropped their
+        // trailing cells while the readout still claimed to be complete.
+        assert!(
+            !READER_JS.contains("cells.slice(0"),
+            "data cells must not be clipped to the header width"
+        );
+        assert!(
+            READER_JS.contains("while (cells.length < width)"),
+            "rows are padded to the widest row instead"
+        );
+        assert!(
+            READER_JS.contains("if (headerIndex === -1) return;"),
+            "a leading row with no cells must not swallow the table"
+        );
+    }
+
+    #[test]
     fn reader_script_is_embedded_non_empty() {
         assert!(READER_JS.len() > 1000, "script looks truncated");
         assert!(READER_JS.contains("markdown"));

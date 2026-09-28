@@ -127,6 +127,36 @@ async fn console_lines_land_in_the_page_buffer_and_clear_stops_the_feed() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_duplicate_spawn_never_costs_the_page_its_feed() {
+    // Spawning the same page twice used to spawn a second task and abort
+    // it afterwards — but an aborted task is already queued, so it can
+    // still run one poll, and on a single-consumer feed that poll is
+    // enough to claim the page's stream and then die. The page would
+    // keep a feed entry and never receive an observation again.
+    let context = MockContext::new();
+    let (page_id, _handle) = context.open_page().await.expect("mock open");
+    let mock = context.page_mock(page_id.clone()).expect("mock page");
+
+    let feeds = Arc::new(ObservationFeeds::default());
+    for _ in 0..2 {
+        feeds.spawn(
+            session_id(),
+            page_id.clone(),
+            context.page_mock(page_id.clone()).expect("mock page"),
+            Arc::new(Backbone::new()),
+        );
+    }
+    wait_for(|| mock.feed_claimed()).await;
+
+    mock.emit(PageObservation::ConsoleEmitted {
+        level: ConsoleLevel::Log,
+        text: "still flowing".to_owned(),
+    });
+    wait_for(|| !feeds.entries(&page_id).is_empty()).await;
+    assert_eq!(feeds.entries(&page_id)[0].text, "still flowing");
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn feeds_are_isolated_per_page_and_removable() {
     let context = MockContext::new();
     let (first, _handle) = context.open_page().await.expect("mock open");

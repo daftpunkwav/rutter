@@ -53,7 +53,7 @@ Rendered, in document order:
 | paragraphs and stray block text | plain paragraphs, whitespace-collapsed |
 | `ul`/`ol`/nested lists | `-` / `n.` items, two spaces per nesting level |
 | `dl` terms and definitions | plain paragraphs |
-| `table` | GFM table; the first row is the header, `|` escaped in cells |
+| `table` | GFM table; the first row carrying cells is the header, every row is padded to the widest one so a colspan header never clips its data, `|` escaped in cells |
 | `pre` | fenced code block, fence length safe against embedded backticks |
 | `blockquote` | every inner line prefixed `> ` |
 | `hr` | `---` |

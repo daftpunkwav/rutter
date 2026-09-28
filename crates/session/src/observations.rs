@@ -42,7 +42,11 @@ pub(crate) struct ObservationFeeds {
 impl ObservationFeeds {
     /// Starts the background task that consumes `page`'s observations.
     /// Safe to call twice for one page: the first feed wins and the
-    /// duplicate task is aborted before its first poll.
+    /// duplicate is refused here rather than spawned and aborted. An
+    /// aborted task is already queued for the scheduler, so it can
+    /// still run one poll — enough, on the single-consumer feeds the
+    /// engines hand out, to claim the page's stream and then die,
+    /// leaving the page with no observations at all.
     pub(crate) fn spawn(
         self: &Arc<Self>,
         session: SessionId,
@@ -51,7 +55,9 @@ impl ObservationFeeds {
         backbone: Arc<Backbone>,
     ) {
         let mut feeds = self.lock();
-        let duplicate = feeds.contains_key(&page);
+        if feeds.contains_key(&page) {
+            return;
+        }
         let stop = tokio::spawn(run_feed(
             session,
             page.clone(),
@@ -60,21 +66,17 @@ impl ObservationFeeds {
             Arc::clone(self),
         ))
         .abort_handle();
-        if duplicate {
-            stop.abort();
-        } else {
-            // The map entry exists before the task's first poll (spawn
-            // never runs the task inline), so records from the task
-            // always find their buffer.
-            feeds.insert(
-                page,
-                Feed {
-                    entries: VecDeque::new(),
-                    requests: VecDeque::new(),
-                    stop,
-                },
-            );
-        }
+        // The map entry exists before the task's first poll (spawn
+        // never runs the task inline), so records from the task
+        // always find their buffer.
+        feeds.insert(
+            page,
+            Feed {
+                entries: VecDeque::new(),
+                requests: VecDeque::new(),
+                stop,
+            },
+        );
     }
 
     /// Records one console entry; the buffer keeps the newest
