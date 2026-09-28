@@ -160,7 +160,7 @@ async fn approval_request_ids(session: &Session) -> Vec<String> {
         || async {
             let ids: Vec<String> = session
                 .backbone()
-                .replay(&SessionId::new("s-test"))
+                .replay(session.id())
                 .iter()
                 .filter_map(|envelope| match &envelope.event {
                     Event::ApprovalRequested { request_id, .. } => Some(request_id.clone()),
@@ -510,8 +510,9 @@ async fn a_cancelled_wait_is_audited_and_resolved() {
         let cookie = cookie.clone();
         tokio::spawn(async move { session.set_cookies(std::slice::from_ref(&cookie)).await })
     };
-    // Let it reach the park, then cancel the caller mid-wait.
-    tokio::time::sleep(Duration::from_millis(80)).await;
+    // Wait until the park is real — the request is on the backbone and
+    // the card is parked — then cancel the caller mid-wait.
+    let _request_id = first_approval_request_id(&session).await;
     parked.abort();
     let _ = parked.await;
 
@@ -577,8 +578,6 @@ async fn a_cookie_grant_does_not_follow_a_page_that_moved_mid_park() {
     // after a grant re-reads the page too: a move during the window
     // sends the write back through review, which parks again and asks
     // the human about the page as it now is.
-    let context = MockContext::new();
-    let _ = context;
     let (_entered_tx, _entered_rx) = tokio::sync::mpsc::unbounded_channel();
     let (_release_tx, release_rx) = tokio::sync::oneshot::channel();
     let gated = Arc::new(GatedPage {

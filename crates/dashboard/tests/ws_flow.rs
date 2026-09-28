@@ -287,7 +287,7 @@ async fn ws_decisions_answer_parked_approvals_and_controls_are_acked() {
 
 #[tokio::test]
 async fn screencast_of_a_session_without_a_page_names_the_reason() {
-    // a session with no open page answers
+    // A session with no open page answers
     // `no open page to observe` rather than opening one. The ack used
     // to swallow the failure, leaving the operator a bare ack, no
     // frames, and no explanation.

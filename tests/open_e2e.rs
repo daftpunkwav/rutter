@@ -49,6 +49,38 @@ async fn open_prints_one_snapshot_and_exits() {
 }
 
 #[tokio::test]
+#[ignore = "requires the engine binary in the cache"]
+async fn open_flags_a_sabotaged_ref_store_as_truncated() {
+    // The serializer mints follow-up refs from `window.__rutterRefStore`.
+    // A page can hand over a truthy-but-broken store, which used to drop
+    // every element ref while the snapshot reported itself complete; the
+    // snapshot must own the omission with the truncation marker while
+    // the tree itself still renders.
+    let output = run_open(
+        &[],
+        "data:text/html,<title>ref-store</title>\
+         <script>window.__rutterRefStore={map:null,reverse:null,counter:0};</script>\
+         <button>Go</button>",
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "open must exit 0, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains("button \"Go\""),
+        "the tree still renders, refs aside: {stdout}"
+    );
+    assert!(
+        stdout.contains("truncated"),
+        "a broken ref store is a truncation, never a silent one: {stdout}"
+    );
+}
+
+#[tokio::test]
 async fn open_with_a_missing_engine_fails_with_a_hint() {
     // No engine needed: an explicit path that does not exist must fail
     // before any launch, with the error and its hint on stderr.

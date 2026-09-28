@@ -239,6 +239,32 @@ async fn setting_files_targets_the_resolved_input() {
 }
 
 #[tokio::test]
+async fn an_upload_without_files_is_refused_before_the_page_is_touched() {
+    // An empty `paths` list has nothing to set; the refusal happens in
+    // the executor, before the resolver or the engine is involved, so
+    // no upload call can reach the page.
+    let harness = Harness::new(Duration::from_secs(1), Duration::from_millis(1));
+    harness.page.set_url("https://example.com");
+
+    let error = harness
+        .executor()
+        .run(&Action::SetInputFiles {
+            reference: Reference::new("e1"),
+            paths: vec![],
+        })
+        .await
+        .expect_err("an empty upload is refused");
+    let SessionError::Action(ActionError::NotInteractable { reason, .. }) = error else {
+        panic!("unexpected error: {error}")
+    };
+    assert!(
+        reason.contains("no files"),
+        "the refusal says why: {reason}"
+    );
+    assert!(harness.page.input_files_calls().is_empty());
+}
+
+#[tokio::test]
 async fn setting_files_on_a_non_file_input_is_refused() {
     let harness = Harness::new(Duration::from_secs(1), Duration::from_millis(1));
     harness
