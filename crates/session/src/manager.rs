@@ -622,19 +622,21 @@ mod tests {
 
         // A remembered cookie: recovery must replay it into the fresh
         // context (the in-memory copy is what survives a dead engine).
-        *session.lock_last_storage() = crate::storage::StorageState {
-            cookies: vec![Cookie {
-                name: "session".to_owned(),
-                value: "42".to_owned(),
-                domain: "a.example".to_owned(),
-                path: None,
-                secure: false,
-                http_only: false,
-                same_site: None,
-                expires: None,
-            }],
-            origins: Vec::new(),
-        };
+        session
+            .seed_last_storage(crate::storage::StorageState {
+                cookies: vec![Cookie {
+                    name: "session".to_owned(),
+                    value: "42".to_owned(),
+                    domain: "a.example".to_owned(),
+                    path: None,
+                    secure: false,
+                    http_only: false,
+                    same_site: None,
+                    expires: None,
+                }],
+                origins: Vec::new(),
+            })
+            .await;
 
         let (tx, rx) = tokio::sync::watch::channel(0_u64);
         spawn_recovery(&inner, rx);
@@ -661,6 +663,11 @@ mod tests {
                 .flatten()
                 .any(|cookie| cookie.name == "session"),
             "the remembered cookie is replayed into the fresh context: {calls:?}"
+        );
+        assert_eq!(
+            calls.len(),
+            1,
+            "cookies are context-wide, so the rebuild replays them once, not once per restored page"
         );
 
         let pages = session.pages().await;

@@ -9,12 +9,14 @@
 mod approvals;
 mod observations;
 mod pages;
+mod storage;
 
 use super::*;
 use crate::mock::{MockContext, MockPage};
 use rutter_core::ids::ContextId;
 use rutter_policy::Verdict;
 use serde_json::{Value, json};
+use std::sync::Mutex;
 
 fn session_over(context: Arc<dyn ContextHandle>) -> Session {
     session_with_policy(context, RuleSet::default_set())
@@ -36,6 +38,19 @@ fn session_with_policy(context: Arc<dyn ContextHandle>, rules: RuleSet) -> Sessi
         Arc::new(rules),
         Arc::new(ApprovalBroker::new()),
         None,
+    )
+}
+
+/// A session with a persistence file, the only kind that ever writes.
+fn session_persisting_to(context: Arc<dyn ContextHandle>, path: PathBuf) -> Session {
+    Session::new(
+        SessionId::new("s-test"),
+        context,
+        Arc::new(Backbone::new()),
+        SessionConfig::default(),
+        Arc::new(RuleSet::default_set()),
+        Arc::new(ApprovalBroker::new()),
+        Some(path),
     )
 }
 

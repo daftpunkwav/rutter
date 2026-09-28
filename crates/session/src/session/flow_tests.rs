@@ -302,26 +302,27 @@ async fn recover_rebuilds_the_session_on_a_fresh_context() {
         .expect("navigate seeds the tracked url");
 
     // The in-memory state a dead engine cannot take with it.
-    *session.lock_last_storage() = StorageState {
-        cookies: vec![session_cookie("session", "42")],
-        origins: Vec::new(),
-    };
+    session
+        .seed_last_storage(StorageState {
+            cookies: vec![session_cookie("session", "42")],
+            origins: Vec::new(),
+        })
+        .await;
 
     let rebuilt = Arc::new(MockContext::new());
     session
         .recover(Arc::clone(&rebuilt) as Arc<dyn ContextHandle>)
         .await;
 
-    // Both replay paths carry the cookies: the direct context replay and
-    // the per-page storage restore (idempotent by design).
+    // Cookies are context-wide, so the rebuild replays them once; the
+    // per-page localStorage restore that follows must not repeat the
+    // round trip for every page it reopens.
     let calls = rebuilt.set_cookie_calls();
-    assert!(
-        calls
-            .iter()
-            .all(|call| *call == vec![session_cookie("session", "42")]),
-        "every replay path carries the remembered cookie: {calls:?}"
+    assert_eq!(
+        calls,
+        vec![vec![session_cookie("session", "42")]],
+        "the remembered cookie is replayed into the fresh context exactly once"
     );
-    assert!(!calls.is_empty());
 
     let pages = session.pages().await;
     assert_eq!(pages.len(), 1, "the tracked page is reopened");
@@ -428,7 +429,7 @@ async fn a_persistence_failure_is_remembered_and_retried() {
         .await
         .expect("the action itself still succeeds");
     assert!(
-        !*session.lock_last_persist_ok(),
+        !session.last_storage_is_persisted().await,
         "a failed write must not mark the file current"
     );
 }

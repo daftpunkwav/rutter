@@ -9,7 +9,6 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use rutter_core::action::{Action, Origin};
@@ -55,11 +54,28 @@ pub struct Session {
     /// Per-page observation feeds (dialogs answered, console kept);
     /// spawned with each tracked page.
     feeds: Arc<ObservationFeeds>,
-    last_storage: Mutex<StorageState>,
-    /// Whether the persistence file currently reflects `last_storage`;
-    /// a failed write forces a rewrite on the next capture even when
-    /// the captured state is unchanged.
-    last_persist_ok: Mutex<bool>,
+    /// What the persistence file is known to hold. Capture, comparison,
+    /// and write are one decision and share this one guard, so an
+    /// overlapping action can never publish an older capture after a
+    /// newer one and mark it as the state the file reflects.
+    persist: tokio::sync::Mutex<PersistState>,
+}
+
+/// The session's storage bookkeeping: the state the persistence file is
+/// known to reflect, and whether the last write of it landed.
+///
+/// The two belong in one unit because "the file holds this state" is a
+/// single claim: keeping them apart let a failed write's flag and a
+/// concurrent capture's state combine into a file nobody wrote.
+#[derive(Default)]
+struct PersistState {
+    /// The state the file is known to reflect. Recovery replays this
+    /// even when the write that produced it failed.
+    state: StorageState,
+    /// Whether the file actually holds `state`; a failed write forces a
+    /// rewrite on the next capture even when the captured state is
+    /// unchanged.
+    persisted: bool,
 }
 
 impl Session {
@@ -84,8 +100,7 @@ impl Session {
             audit: ApprovalAudit::beside_storage(state_path.as_deref()),
             feeds: Arc::new(ObservationFeeds::default()),
             state_path,
-            last_storage: Mutex::new(StorageState::default()),
-            last_persist_ok: Mutex::new(false),
+            persist: tokio::sync::Mutex::new(PersistState::default()),
         }
     }
 
@@ -329,16 +344,12 @@ impl Session {
         // concurrent `select_page` may have switched the active slot
         // while this action was in flight, and the new page's URL must
         // not be overwritten with this page's.
-        let url = match ops.url().await {
-            Some(url) => {
-                self.pages.set_url(&page_id, &url);
-                url
-            }
-            // The page would not answer: keep the last known URL
-            // instead of overwriting tracking with a placeholder.
-            None => self.last_known_url(&page_id),
-        };
-        self.persist_storage(&page, &url).await;
+        // A page that would not answer keeps the last known URL instead
+        // of overwriting tracking with a placeholder.
+        if let Some(url) = ops.url().await {
+            self.pages.set_url(&page_id, &url);
+        }
+        self.persist_storage().await;
 
         result
     }
@@ -603,15 +614,17 @@ impl Session {
         .await?;
         let context = self.context.read().await.clone();
         context.set_cookies(cookies).await.map_err(engine_error)?;
-        let url = url.unwrap_or_else(|| self.last_known_url(&page_id));
-        self.persist_storage(&page, &url).await;
+        if let Some(url) = &url {
+            self.pages.set_url(&page_id, url);
+        }
+        self.persist_storage().await;
         Ok(())
     }
 
     /// Captures the session's storage state (cookies plus localStorage
     /// of every open page). A read-only probe: nothing is persisted and
-    /// the in-memory `last_storage` copy is not touched, so a capture
-    /// never influences what the next persist-on-change run writes.
+    /// the state `persist` remembers is not touched, so a capture never
+    /// influences what the next persist-on-change run writes.
     pub async fn capture_storage(&self) -> StorageState {
         let context = self.context.read().await.clone();
         StorageState::capture(context.as_ref(), &self.pages.pairs()).await
@@ -621,14 +634,16 @@ impl Session {
     /// file (explicit save).
     pub async fn save_storage(&self) -> Result<(), SessionError> {
         let (page_id, page) = self.ensure_page().await?;
-        let url = PageOps {
+        if let Some(url) = (PageOps {
             page: page.as_ref(),
             config: &self.config,
-        }
+        })
         .url()
-        .await;
-        let url = url.unwrap_or_else(|| self.last_known_url(&page_id));
-        self.persist_storage(&page, &url).await;
+        .await
+        {
+            self.pages.set_url(&page_id, &url);
+        }
+        self.persist_storage().await;
         Ok(())
     }
 
@@ -648,7 +663,7 @@ impl Session {
         let context = self.context.read().await.clone();
         let pairs = self.pages.pairs();
         state.restore(context.as_ref(), &pairs).await;
-        *self.lock_last_storage() = state;
+        self.persist.lock().await.state = state;
         Ok(())
     }
 
@@ -666,7 +681,9 @@ impl Session {
         // The old engine's pages are gone; their feeds die with them and
         // the restored pages get fresh feeds.
         self.feeds.clear();
-        let state = self.lock_last_storage().clone();
+        // Read out and released before the context is swapped in: the
+        // guard must not be held across the engine round trips below.
+        let state = { self.persist.lock().await.state.clone() };
 
         let shared = Arc::clone(&context);
         *self.context.write().await = shared;
@@ -697,7 +714,7 @@ impl Session {
             .await
             .unwrap_or_else(|| slot.url.clone());
             state
-                .restore(context.as_ref(), &[(origin, Arc::clone(&handle))])
+                .restore_origins(&[(origin, Arc::clone(&handle))])
                 .await;
             let was_active = active_index == Some(index);
             restored.push(PageSlot {
@@ -716,42 +733,42 @@ impl Session {
             .publish(self.id.clone(), Event::EngineRestarted);
     }
 
-    /// The tracked URL of `page_id`, for bookkeeping only: it survives
-    /// an unreadable page instead of degrading tracking, and policy
-    /// judgments never consume it — they fail closed on `None` instead.
-    fn last_known_url(&self, page_id: &PageId) -> String {
-        self.pages
-            .url_of(page_id)
-            .unwrap_or_else(|| "about:blank".to_owned())
-    }
-
-    /// Captures and persists the storage state; the in-memory copy
-    /// updates first so recovery works even if the file write fails.
-    /// The disk write is skipped when the captured state is identical to
-    /// the last persisted one: "persist on change"
-    /// needs no rewrite when nothing changed, and rewriting identical
-    /// JSON on every action only burns file I/O.
-    async fn persist_storage(&self, page: &Arc<dyn PageHandle>, url: &str) {
+    /// Captures and persists the storage state of the whole session —
+    /// every tracked page's localStorage, not just the one an action
+    /// ran on, so a multi-tab session keeps each tab's origin. The
+    /// in-memory copy updates even when the file write fails, so
+    /// recovery still replays the newest state.
+    ///
+    /// Capture, comparison, and write share one guard: this takes
+    /// `&self`, so two overlapping actions reach it at once, and
+    /// splitting them let the older capture reach the file after the
+    /// newer one — while both recorded the newest state as persisted,
+    /// leaving the file stale with nothing to rewrite it. Only the
+    /// capture's own engine round trips are serialized; the action
+    /// itself runs before this is reached.
+    async fn persist_storage(&self) {
+        let mut persist = self.persist.lock().await;
         let context = self.context.read().await.clone();
-        let state =
-            StorageState::capture(context.as_ref(), &[(url.to_owned(), Arc::clone(page))]).await;
-        let (unchanged, persist_ok) = {
-            let mut last = self.lock_last_storage();
-            let unchanged = *last == state;
-            *last = state.clone();
-            (unchanged, *self.lock_last_persist_ok())
-        };
-        if unchanged && persist_ok {
+        let state = StorageState::capture(context.as_ref(), &self.pages.pairs()).await;
+        let unchanged = persist.state == state;
+        // "Persist on change" needs no rewrite when nothing changed,
+        // and rewriting identical JSON on every action only burns
+        // file I/O.
+        if unchanged && persist.persisted {
             return;
         }
-        if let Some(path) = &self.state_path {
-            match state.write(path) {
-                Ok(()) => *self.lock_last_persist_ok() = true,
-                Err(error) => {
-                    *self.lock_last_persist_ok() = false;
-                    eprintln!("rutter: cannot write storage state: {error}");
-                }
+        let written = self
+            .state_path
+            .as_deref()
+            .map(|path| state.write(path).map_err(|error| error.to_string()));
+        persist.state = state;
+        match written {
+            Some(Ok(())) => persist.persisted = true,
+            Some(Err(detail)) => {
+                persist.persisted = false;
+                eprintln!("rutter: cannot write storage state: {detail}");
             }
+            None => {}
         }
     }
 
@@ -814,16 +831,17 @@ impl Session {
         self.ensure_page().await.expect("test page opens")
     }
 
-    pub(crate) fn lock_last_storage(&self) -> std::sync::MutexGuard<'_, StorageState> {
-        self.last_storage
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    /// Test-only: seeds the state recovery replays, the way a session
+    /// that persisted earlier holds one.
+    #[cfg(test)]
+    pub(crate) async fn seed_last_storage(&self, state: StorageState) {
+        self.persist.lock().await.state = state;
     }
 
-    fn lock_last_persist_ok(&self) -> std::sync::MutexGuard<'_, bool> {
-        self.last_persist_ok
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    /// Test-only: whether the file is known to hold the captured state.
+    #[cfg(test)]
+    pub(crate) async fn last_storage_is_persisted(&self) -> bool {
+        self.persist.lock().await.persisted
     }
 }
 

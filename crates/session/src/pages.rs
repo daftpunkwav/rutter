@@ -136,15 +136,6 @@ impl PageRegistry {
         true
     }
 
-    /// The tracked URL of one page.
-    pub fn url_of(&self, id: &PageId) -> Option<String> {
-        self.lock()
-            .slots
-            .iter()
-            .find(|slot| slot.id == *id)
-            .map(|slot| slot.url.clone())
-    }
-
     /// Refreshes the tracked URL of every slot with this id. Filtering by
     /// id, not by the current active flag, because a page switch may have
     /// moved the flag while an action was in flight.
@@ -392,11 +383,6 @@ mod tests {
         let registry = PageRegistry::new();
         registry.admit_active(slot("p1", "https://a.example", true));
         registry.set_url(&PageId::new("p1"), "https://a.example/next");
-        assert_eq!(
-            registry.url_of(&PageId::new("p1")).as_deref(),
-            Some("https://a.example/next")
-        );
-        assert!(registry.url_of(&PageId::new("nope")).is_none());
         assert!(registry.contains(&PageId::new("p1")));
         assert!(!registry.contains(&PageId::new("nope")));
         let pairs = registry.pairs();

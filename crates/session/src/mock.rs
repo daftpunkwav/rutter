@@ -67,6 +67,9 @@ struct PageInner {
     viewport_calls: Mutex<Vec<(u32, u32)>>,
     /// What the file-input check script reports.
     file_check: Mutex<Option<Value>>,
+    /// What the localStorage dump script reports; `None` answers the
+    /// opaque-origin `{ unavailable: true }` shape.
+    storage: Mutex<Option<Value>>,
 }
 
 /// A scriptable page handle. Queued resolve answers are consumed one per
@@ -154,6 +157,19 @@ impl MockPage {
         lock(&self.inner.file_check, |check| *check = Some(answer));
     }
 
+    /// Makes the localStorage dump script report `entries` under
+    /// `origin`, the shape a real page answers with. Defaults to the
+    /// opaque-origin refusal.
+    pub fn set_storage(&self, origin: &str, entries: &[(&str, &str)]) {
+        let data: serde_json::Map<String, Value> = entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), json!(value)))
+            .collect();
+        lock(&self.inner.storage, |storage| {
+            *storage = Some(json!({ "origin": origin, "data": data }));
+        });
+    }
+
     /// The `(width, height)` calls `set_viewport` received, in order.
     pub fn viewport_calls(&self) -> Vec<(u32, u32)> {
         lock(&self.inner.viewport_calls, |calls| calls.clone())
@@ -229,7 +245,11 @@ impl PageHandle for MockPage {
         } else if expression.contains("innerWidth") {
             Ok(json!({ "x": 400.0, "y": 300.0 }))
         } else if expression.contains("localStorage") {
-            Ok(json!({ "unavailable": true }))
+            Ok(lock(&self.inner.storage, |storage| {
+                storage
+                    .clone()
+                    .unwrap_or_else(|| json!({ "unavailable": true }))
+            }))
         } else {
             Ok(Value::Null)
         }

@@ -8,6 +8,7 @@
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use rutter_core::cookie::Cookie;
 use serde::{Deserialize, Serialize};
@@ -80,6 +81,15 @@ impl StorageState {
         if !self.cookies.is_empty() {
             let _ = context.set_cookies(&self.cookies).await;
         }
+        self.restore_origins(pages).await;
+    }
+
+    /// Restores only the localStorage side, on pages whose origin
+    /// matches an entry. Split out because cookies are context-wide:
+    /// a caller replaying them once (recovery) must not repeat that
+    /// engine round trip for every page it rebuilds. Best effort, like
+    /// [`StorageState::restore`].
+    pub async fn restore_origins(&self, pages: &[(String, Arc<dyn PageHandle>)]) {
         for (origin, page) in pages {
             let Some(entries) = self
                 .origins
@@ -142,7 +152,7 @@ impl StorageState {
             let _ = std::fs::remove_file(&staging);
             return Err(error);
         }
-        match std::fs::rename(&staging, path) {
+        match publish(|| std::fs::rename(&staging, path)) {
             Ok(()) => Ok(()),
             Err(error) => {
                 let _ = std::fs::remove_file(&staging);
@@ -159,6 +169,51 @@ impl StorageState {
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default()
     }
+}
+
+/// How many times a publish is attempted before the failure is real.
+///
+/// The backoff tops out at 15 ms in total, so a transient refusal
+/// costs less than one poll interval while a genuinely unwritable
+/// destination still answers promptly.
+const PUBLISH_ATTEMPTS: u32 = 5;
+
+/// Moves the staged file into place, retrying the refusals a
+/// concurrent publish causes.
+///
+/// Windows answers a rename onto a destination another thread is
+/// renaming at that same moment with ERROR_ACCESS_DENIED or
+/// ERROR_SHARING_VIOLATION. The publish is atomic either way, so the
+/// loser is a timing victim, not a failed write: reporting it as one
+/// leaves the caller believing a perfectly readable file is behind and
+/// rewriting it on every later capture. Every other failure — a full
+/// disk, a read-only directory, a missing staging file — answers on
+/// the first attempt.
+fn publish(mut rename: impl FnMut() -> std::io::Result<()>) -> std::io::Result<()> {
+    let mut attempt = 0;
+    loop {
+        match rename() {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                attempt += 1;
+                if attempt >= PUBLISH_ATTEMPTS || !is_transient_publish_error(&error) {
+                    return Err(error);
+                }
+                std::thread::sleep(Duration::from_millis(1u64 << (attempt - 1)));
+            }
+        }
+    }
+}
+
+/// Whether a publish failure is the refusal a concurrent publish
+/// causes rather than a real one: ERROR_ACCESS_DENIED (5) and
+/// ERROR_SHARING_VIOLATION (32). `std::io::ErrorKind` has no variant
+/// for either, so the raw OS code is what names them. Unix failures
+/// carry no OS code at all, so nothing there is ever retried.
+fn is_transient_publish_error(error: &std::io::Error) -> bool {
+    error
+        .raw_os_error()
+        .is_some_and(|code| code == 5 || code == 32)
 }
 
 /// Parses the dump script's answer into an origin storage entry.
@@ -332,6 +387,76 @@ mod tests {
             vec![std::ffi::OsString::from("state.json")],
             "no staging files may survive"
         );
+    }
+
+    #[test]
+    fn a_concurrent_publish_refusal_is_retried_not_reported() {
+        // Windows refuses a rename onto a destination another thread is
+        // renaming at that moment. The publish is atomic, so the loser
+        // must retry: answering "the write failed" tells the session its
+        // file is behind and rewrites it on every later capture.
+        let mut attempts = 0;
+        let published = publish(|| {
+            attempts += 1;
+            if attempts < 3 {
+                Err(std::io::Error::from_raw_os_error(5))
+            } else {
+                Ok(())
+            }
+        });
+        assert!(published.is_ok(), "a transient refusal is not a failure");
+        assert_eq!(attempts, 3, "the refusal is retried, not given up on");
+    }
+
+    #[test]
+    fn a_real_publish_failure_answers_on_the_first_attempt() {
+        for error in [
+            std::io::Error::from(std::io::ErrorKind::NotFound),
+            std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+            std::io::Error::from_raw_os_error(2),
+        ] {
+            let mut attempts = 0;
+            let outcome = publish(|| {
+                attempts += 1;
+                Err(std::io::Error::from(error.kind()))
+            });
+            assert!(outcome.is_err());
+            assert_eq!(attempts, 1, "only the sharing refusals are retried");
+        }
+    }
+
+    #[test]
+    fn an_unwaivable_publish_failure_stops_after_its_attempts() {
+        let mut attempts = 0;
+        let outcome = publish(|| {
+            attempts += 1;
+            Err(std::io::Error::from_raw_os_error(32))
+        });
+        assert!(outcome.is_err(), "the last refusal is still a failure");
+        assert_eq!(
+            attempts, PUBLISH_ATTEMPTS as usize,
+            "the retry budget is bounded"
+        );
+    }
+
+    #[test]
+    fn only_the_sharing_refusals_count_as_transient() {
+        assert!(is_transient_publish_error(
+            &std::io::Error::from_raw_os_error(5)
+        ));
+        assert!(is_transient_publish_error(
+            &std::io::Error::from_raw_os_error(32)
+        ));
+        // A Unix failure carries no OS code, so it is never retried.
+        assert!(!is_transient_publish_error(&std::io::Error::from(
+            std::io::ErrorKind::PermissionDenied
+        )));
+        assert!(!is_transient_publish_error(&std::io::Error::from(
+            std::io::ErrorKind::NotFound
+        )));
+        assert!(!is_transient_publish_error(
+            &std::io::Error::from_raw_os_error(28)
+        ));
     }
 
     #[cfg(unix)]
