@@ -60,7 +60,7 @@ mod tests {
 
     #[test]
     fn a_truncated_rendering_carries_the_marker() {
-        // : the marker line follows the
+        // The marker line follows the
         // content, the same convention the MCP surface applies.
         assert_eq!(render_marked("body", false), "body");
         assert_eq!(render_marked("body", true), "body… truncated\n");

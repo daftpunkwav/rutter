@@ -41,8 +41,7 @@ use rutter_session::error::SessionError;
 use rutter_session::manager::SessionManager;
 use rutter_session::session::Session;
 
-/// Server error code for engine-level failures beyond a tool result
-/// .
+/// Server error code for engine-level failures beyond a tool result.
 const SERVER_ERROR_CODE: i32 = -32000;
 
 /// Default `wait_for` budget when the caller sends no timeout

@@ -59,8 +59,7 @@ pub async fn run(
         // hands its access URL to a per-port file under the cache root
         // instead of printing it, so the supervised process does not
         // read the token by inheritance and two rutter processes on one
-        // machine never race over one hand-off file
-        // .
+        // machine never race over one hand-off file.
         let access_dir = Some(settings.cache_root.clone());
         let dashboard =
             rutter_dashboard::DashboardServer::new(Arc::clone(&manager), port, access_dir);

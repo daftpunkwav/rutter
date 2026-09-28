@@ -53,7 +53,7 @@ impl History {
 
 /// Publishes events to live subscribers and per-session history.
 ///
-/// `publish` never blocks and never fails : the envelope
+/// `publish` never blocks and never fails: the envelope
 /// always lands in the ring and reaches every live subscriber that keeps
 /// up. Semantic events survive for late joiners through [`Backbone::replay`].
 #[derive(Debug)]

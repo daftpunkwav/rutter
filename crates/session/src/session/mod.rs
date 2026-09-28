@@ -262,7 +262,7 @@ impl Session {
     pub async fn execute(&self, action: Action, origin: Origin) -> Result<Snapshot, SessionError> {
         let (page_id, page) = self.ensure_page().await?;
 
-        // Supervision gate : agent-origin actions are
+        // Supervision gate: agent-origin actions are
         // judged at the URL the action leads to — a navigation at its
         // target, everything else at the page it acts on. Human-origin
         // actions bypass approval and are recorded identically.

@@ -195,8 +195,8 @@
   function refFor(el, store) {
     if (!store) {
       // Without a ref store no element can be named in a follow-up
-      // action; that is an omission the snapshot must own up to
-      // , never a silent one.
+      // action; that is an omission the snapshot must own up to,
+      // never a silent one.
       state.truncated = true;
       return null;
     }

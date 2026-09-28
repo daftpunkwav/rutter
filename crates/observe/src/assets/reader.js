@@ -22,8 +22,7 @@
   // Counted in UTF-16 code units (String.prototype.length): astral-plane
   // characters (emoji, CJK extensions) cost two units, so this guard
   // stops somewhat earlier than 100 000 characters on such pages. The
-  // converter's own clamp is character-counted and authoritative
-  // .
+  // converter's own clamp is character-counted and authoritative.
   var MAX_CHARS = 100000;
   var MAX_INLINE_CHARS = 20000;
   var TITLE_LIMIT = 200;

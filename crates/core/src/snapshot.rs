@@ -1,8 +1,8 @@
 //! Token-budgeted accessibility-tree views of pages.
 //!
 //! Boundary: pure data plus its text rendering. Building a snapshot from
-//! a serialized DOM tree lives in `rutter-observe`; culling and folding
-//! policy is specified by. The text
+//! a serialized DOM tree lives in `rutter-observe`, including the
+//! culling and folding policy. The text
 //! rendering follows a YAML style, one node per
 //! line: `- button "Sign in" [ref=e17]`, children indented two spaces.
 

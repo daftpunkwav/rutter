@@ -1,4 +1,4 @@
-//! Access control for every dashboard endpoint : the
+//! Access control for every dashboard endpoint: the
 //! `Host` header must name loopback (DNS rebinding), a present `Origin`
 //! must name loopback too (cross-site request forgery; the `Host` check
 //! alone cannot see who sent the request), and the request must carry

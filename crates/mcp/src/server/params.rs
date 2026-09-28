@@ -144,9 +144,9 @@ pub struct ScrollParams {
     /// Distance in pixels; must be greater than zero.
     ///
     /// Signed on purpose: a `u32` schema makes rmcp reject negatives at
-    /// deserialization, whose error text bypasses the `hint:` contract
-    /// . Signed keeps every bad `amount`
-    /// on the `invalid_params` path this crate validates itself.
+    /// deserialization, whose error text bypasses the `hint:` contract.
+    /// Signed keeps every bad `amount` on the `invalid_params` path
+    /// this crate validates itself.
     pub amount: i64,
     /// Reference of a container to scroll; omitted scrolls the page.
     pub reference: Option<String>,
