@@ -9,6 +9,8 @@
   "stop": "stop",
   "reconnecting": "connection lost; reconnecting...",
   "screencastRefused": "live view refused:",
+  "decisionRefused": "decision not accepted:",
+  "decisionUnreachable": "decision could not be sent:",
   "labelClass": "class",
   "labelEffect": "effect",
   "labelTarget": "target",

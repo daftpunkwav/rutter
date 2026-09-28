@@ -235,11 +235,22 @@
   }
 
   function decide(requestId, grant) {
+    // A decision that never lands leaves the agent parked until its
+    // window closes, so a failed post is surfaced in the timeline
+    // instead of looking like a grant that did nothing.
     fetch(withToken('/api/decisions'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ request_id: requestId, grant: grant })
-    });
+    })
+      .then(function (response) {
+        if (!response.ok) {
+          append(t('decisionRefused') + ' ' + requestId + ' (' + response.status + ')');
+        }
+      })
+      .catch(function () {
+        append(t('decisionUnreachable') + ' ' + requestId);
+      });
   }
 
   // Every line (events, notes, connection status) lands in the single
