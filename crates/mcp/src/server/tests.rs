@@ -175,7 +175,7 @@ fn truncated_snapshots_carry_the_spec_marker() {
 
 #[test]
 fn truncated_readouts_carry_the_spec_marker() {
-    // Same contract as snapshots : a cropped
+    // Same contract as snapshots: a cropped
     // readout must say so, or the agent trusts a partial document.
     let full = rutter_core::readout::Readout {
         title: "Example".to_owned(),
@@ -809,6 +809,29 @@ async fn tabs_select_unknown_page_is_invalid_params() {
     };
     assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
     assert!(error.message.contains("p99"), "names the id: {error}");
+}
+
+#[tokio::test]
+async fn upload_file_with_no_paths_is_invalid_params() {
+    // An empty `paths` names no file to set: the refusal is a
+    // validation rejection on this crate's invalid_params path, checked
+    // before the session gate, so no engine launches just to refuse.
+    let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
+    let error = match mcp
+        .upload_file(Parameters(UploadFileParams {
+            reference: "e1".to_owned(),
+            paths: Vec::new(),
+        }))
+        .await
+    {
+        Ok(_) => panic!("an empty paths list must be refused"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
+    assert!(
+        error.message.contains("must not be empty"),
+        "names the rule: {error}"
+    );
 }
 
 #[tokio::test]

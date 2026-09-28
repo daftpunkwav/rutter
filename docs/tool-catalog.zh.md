@@ -138,7 +138,8 @@ auto-wait；提取规则与守卫见[读取格式](read-format.zh.md)。站点�
 
 ### upload_file
 `{ reference: string, paths: string[] }` → snapshot。auto-wait，然后
-为 `reference` 指向的文件输入元素设置文件。`paths` 由引擎所在的机器
+为 `reference` 指向的文件输入元素设置文件。空的 `paths` 数组是
+`invalid_params`。`paths` 由引擎所在的机器
 解析；不存在的路径 → `NotInteractable`。其他拒绝情形：元素不是文件
 输入，或向单文件输入给了多个路径。
 
@@ -214,8 +215,10 @@ auto-wait、无 snapshot；没有页面的 session 直接报告为空，不会�
 ### close_session
 `{}` → 文本确认。关闭 session 的页面与 context 并释放引擎引用。
 该调用对连接是终态：同连接上后续的工具调用以 `invalid_params`
-失败并指名已关闭的 session。引擎继续服务其他 session，在服务器
-退出（client 断开或 Ctrl-C）时关闭，而不是在某个 session 关闭时。
+失败并指名已关闭的 session。从未打开过 session 的连接上，该调用是
+无副作用的成功，后续工具调用照常打开新 session。引擎继续服务其他
+session，在服务器退出（client 断开或 Ctrl-C）时关闭，而不是在某个
+session 关闭时。
 
 ## 5. 事件主干（不是工具）
 

@@ -157,7 +157,8 @@ selects options whose `value` is in `values` and dispatches
 
 ### upload_file
 `{ reference: string, paths: string[] }` → snapshot. Auto-wait, then
-sets the files of the file input `reference` points to. `paths` are
+sets the files of the file input `reference` points to. An empty
+`paths` array is `invalid_params`. `paths` are
 resolved by the machine the engine runs on; a path that does not exist
 → `NotInteractable`. Other refusals: the element is not a file input,
 or a single-file input was given more than one path.
@@ -245,7 +246,9 @@ of opening one.
 `{}` → text confirmation. Closes the session's pages and context and
 drops engine references. The call is terminal for the connection:
 later tool calls on the same connection fail with `invalid_params`
-naming the closed session. The engine keeps serving other sessions and
+naming the closed session. On a connection that never opened a
+session the call is a no-op success, and later tool calls open a
+session as usual. The engine keeps serving other sessions and
 shuts down when the server exits (client disconnect or Ctrl-C), not
 when a session closes.
 
