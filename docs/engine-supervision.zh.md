@@ -111,7 +111,7 @@ Chrome for Testing 下载。
   登录态）拉起浏览器，可见窗口是纯页面表面——agent 操作、人类观看。
   显式指定的 `--engine-executable` 保留自己的窗口形态——Electron 把
   `--app` 保留为“运行该应用”之意
-  （[browser README](../../browser/README.zh.md)）。rutter 自己拉起
+  （[browser README](../browser/README.zh.md)）。rutter 自己拉起
   浏览器进程并轮询调试端口来解析地址——启动器式可执行文件（Edge）与
   完整 Chrome 都能启动；靠解析浏览器 stderr
   的启动方式在 Windows 上做不到这一点。

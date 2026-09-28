@@ -34,9 +34,9 @@ MCP [read 工具](tool-catalog.zh.md#4-工具)与 `rutter read <url>` CLI 模式
 ```
 
 - `version` — reader 格式版本，当前为 `1`。
-- `truncated` — reader 触发了某个[守卫](#5-guards)，省略了部分内容。
+- `truncated` — reader 触发了某个[守卫](#5-守卫)，省略了部分内容。
 - `title` — `document.title`，空白折叠。
-- `markdown` — 页面可读内容组成的 markdown 文档（[抽取规则](#3-extraction-rules)）。
+- `markdown` — 页面可读内容组成的 markdown 文档（[抽取规则](#3-提取规则)）。
 
 ## 3. 提取规则
 

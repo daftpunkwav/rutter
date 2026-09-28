@@ -36,7 +36,7 @@ injected serializer (page)       rutter-observe
   节点守卫（50 000 节点）、深度守卫（200）、ref 存储创建失败，或
   单节点内部访问失败。
 - `viewport` / `scroll` —— 页面视口与滚动位置的 CSS 像素。预算只
-  消费 `viewport`：节点矩形是视口相对的（[节点形状](#3-node-shape)），滚动偏移不参与
+  消费 `viewport`：节点矩形是视口相对的（[节点形状](#3-节点形状)），滚动偏移不参与
   分类，而 `scroll` 目前没有任何消费者——它只是信息性字段。
   viewport 缺失或格式错误时，转换器视其为无界（不执行视口优先
   折叠），依赖其余预算。
@@ -54,7 +54,7 @@ injected serializer (page)       rutter-observe
 | `role` | string | ARIA role：先看显式 `role` 属性，再看标签的隐式 role（link、button、textbox、heading、list、listitem、image、…），否则 `generic` |
 | `name` | string, 可选 | 可访问名称，计算顺序：`aria-label` → `alt`（图片）→ 关联 `<label>`（表单控件）→ `placeholder`（文本框）→ `title` → 可见文本（仅限可承载文本的 role；`generic`、`list`、`group` 等容器保持无名），空白折叠，上限 120 字符 |
 | `value` | string, 可选 | 表单控件当前值，上限 200 字符 |
-| `ref` | string, 可选 | 稳定句柄（[引用铸造](#4-reference-minting-v1)）；出现在可操作且启用的元素上 |
+| `ref` | string, 可选 | 稳定句柄（[引用铸造](#4-引用铸造v1)）；出现在可操作且启用的元素上 |
 | `checked` | bool, 可选 | 复选框/单选框状态 |
 | `disabled` | bool | `disabled` 属性或 `aria-disabled="true"`；默认 false |
 | `rect` | object, 可选 | `{x, y, width, height}`，CSS 像素，整数，视口相对 |
@@ -93,7 +93,7 @@ injected serializer (page)       rutter-observe
 
 后缀按此顺序渲染：`"name"`（名称中的双引号转义为 `\"`）、
 `[checked]`（仅 true 时）、`[disabled]`（仅 true 时）、`[ref=eN]`、
-`× N`（折叠子树计数，[令牌预算](#6-token-budget-v1)）。折叠摘要行渲染为 `- listitem × 20`
+`× N`（折叠子树计数，[令牌预算](#6-token-预算v1)）。折叠摘要行渲染为 `- listitem × 20`
 （被折叠项的 role，数量 `× N`）。该格式由 `rutter-core` 中
 `Snapshot` 的 `Display` 实现，由其单元测试钉住。
 
@@ -118,4 +118,4 @@ injected serializer (page)       rutter-observe
    100 000；触发时置 `truncated` 并降级，绝不 panic。
 
 `snapshot_from_response(url, json)` 从不 panic、从不返回错误；
-敌意输入一律降级（[信封](#2-serializer-envelope)与[节点形状](#3-node-shape)）。
+敌意输入一律降级（[信封](#2-序列化器信封)与[节点形状](#3-节点形状)）。

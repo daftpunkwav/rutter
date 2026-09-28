@@ -31,6 +31,10 @@ and the project adheres to
 - The dashboard renders the known sessions in its header and offers
   them as suggestions for the live-view session field; the list was a
   clear-only no-op before.
+- A dashboard reconnect rebuilds the known-session set from the replay:
+  a session closed while the socket was down is absent from the replay
+  (its ring is dropped on close), and its chip used to linger until a
+  manual reload.
 - `scroll` and `set_viewport` rejections land on one `invalid_params`
   path with the hint contract intact for negatives as well as zero
   (the unsigned schemas used to let rmcp's deserializer answer
