@@ -3,11 +3,10 @@
 //! Boundary: session lifecycle, engine ownership, supervision wiring,
 //! and recovery. The engine starts lazily on the first session request
 //! and shuts down when the manager does; every session
-//! evaluates the shared policy and parks approvals on the shared broker
-//!. When the supervisor replaces a dead engine, a
+//! evaluates the shared policy and parks approvals on the shared broker.
+//! When the supervisor replaces a dead engine, a
 //! recovery task rebuilds each session: fresh context, storage-state
-//! replay, page restoration, and an `EngineRestarted` event per session
-//!.
+//! replay, page restoration, and an `EngineRestarted` event per session.
 //!
 //! Locking: three guards, each with one job, and none of them held across
 //! the slow work it does not protect. The engine slot is read-mostly, the

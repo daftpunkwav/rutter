@@ -1,7 +1,7 @@
 //! CDP engine backend for rutter, built on chromiumoxide.
 //!
-//! Boundary: the only crate in the workspace permitted to speak CDP
-//!. Everything above `rutter-engine`'s traits stays
+//! Boundary: the only crate in the workspace permitted to speak CDP.
+//! Everything above `rutter-engine`'s traits stays
 //! protocol-agnostic; swapping or adding engines is confined to this
 //! crate plus a registration point in the CLI. Chromiumoxide failures
 //! are folded into [`rutter_engine::EngineError`] here; no CDP type

@@ -16,8 +16,7 @@
 //! Limits worth stating: the entry records the decision's outcome and the
 //! brief it was made from, not a verified human identity. On one machine and
 //! one user account there is no way for rutter to tell a person at a
-//! dashboard from a process that holds the dashboard token
-//!.
+//! dashboard from a process that holds the dashboard token.
 
 use std::path::{Path, PathBuf};
 
