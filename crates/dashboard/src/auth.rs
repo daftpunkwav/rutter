@@ -22,6 +22,19 @@ fn loopback_name(name: &str) -> bool {
     name == "127.0.0.1" || name.eq_ignore_ascii_case("localhost") || name == "::1"
 }
 
+/// The host inside an `authority` (`host` or `host:port`, bracketed
+/// IPv6 included). Shared by the `Host` and `Origin` checks: the
+/// stripping rule is one rule, and a fix applied to only one copy would
+/// let the two gates disagree about the same name.
+fn authority_host(authority: &str) -> &str {
+    if let Some(rest) = authority.strip_prefix('[') {
+        // Bracketed IPv6 literal: "[::1]:port" -> "::1".
+        rest.split(']').next().unwrap_or("")
+    } else {
+        authority.split(':').next().unwrap_or("")
+    }
+}
+
 /// Host header validation: only loopback names pass (the DNS
 /// rebinding defense). The host name is compared after stripping any port;
 /// a prefix match would let `127.0.0.1.evil.com` through, and the
@@ -33,13 +46,7 @@ fn host_allowed(headers: &HeaderMap) -> bool {
     else {
         return false;
     };
-    let name = if let Some(rest) = host.strip_prefix('[') {
-        // Bracketed IPv6 literal: "[::1]:port" -> "::1".
-        rest.split(']').next().unwrap_or("")
-    } else {
-        host.split(':').next().unwrap_or("")
-    };
-    loopback_name(name)
+    loopback_name(authority_host(host))
 }
 
 /// Origin header validation: a request that carries an `Origin` is a
@@ -61,12 +68,7 @@ fn origin_allowed(headers: &HeaderMap) -> bool {
     let Some((_scheme, authority)) = origin.split_once("://") else {
         return false;
     };
-    let name = if let Some(rest) = authority.strip_prefix('[') {
-        rest.split(']').next().unwrap_or("")
-    } else {
-        authority.split(':').next().unwrap_or("")
-    };
-    loopback_name(name)
+    loopback_name(authority_host(authority))
 }
 
 fn token_ok(state: &Dashboard, headers: &HeaderMap, provided: Option<&String>) -> bool {
