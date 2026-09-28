@@ -17,26 +17,13 @@ use rutter_policy::Verdict;
 use serde_json::{Value, json};
 
 fn session_over(context: Arc<dyn ContextHandle>) -> Session {
-    Session::new(
-        SessionId::new("s-test"),
-        context,
-        Arc::new(Backbone::new()),
-        SessionConfig::default(),
-        Arc::new(RuleSet::default_set()),
-        Arc::new(ApprovalBroker::new()),
-        None,
-    )
+    session_with_policy(context, RuleSet::default_set())
 }
 
 fn session_with_short_approval(context: Arc<dyn ContextHandle>) -> Session {
-    Session::new(
-        SessionId::new("s-test"),
+    session_with_policy(
         context,
-        Arc::new(Backbone::new()),
-        SessionConfig::default(),
-        Arc::new(RuleSet::default_set().with_approval_timeout(Duration::from_millis(100))),
-        Arc::new(ApprovalBroker::new()),
-        None,
+        RuleSet::default_set().with_approval_timeout(Duration::from_millis(100)),
     )
 }
 
@@ -61,6 +48,8 @@ fn navigation_deny(pattern: &str) -> rutter_policy::rules::PolicyRule {
     }
 }
 
+/// A page whose `navigate` parks until the test releases it, so another
+/// session call can interleave mid-action deterministically.
 struct GatedPage {
     url: Mutex<String>,
     entered: tokio::sync::mpsc::UnboundedSender<()>,
@@ -192,6 +181,8 @@ impl ContextHandle for SinglePageContext {
     }
 }
 
+/// A page whose `evaluate` never answers (`Value::Null` for
+/// everything): the shape of a page caught mid-navigation or dead.
 struct BrokenLens;
 
 #[async_trait::async_trait]

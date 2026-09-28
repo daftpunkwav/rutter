@@ -47,9 +47,6 @@ async fn wait_for_timeout_names_the_requested_budget() {
     }
 }
 
-/// A page whose `navigate` parks until the test releases it, so another
-/// session call can interleave mid-action deterministically.
-
 #[tokio::test]
 async fn screenshot_capture_errors_map_to_the_internal_taxonomy() {
     // capture errors surface as `ActionError::Internal` —

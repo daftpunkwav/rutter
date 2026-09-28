@@ -222,9 +222,6 @@ async fn url_refresh_targets_the_page_the_action_ran_on() {
     assert!(b.active, "the selection survives the concurrent action");
 }
 
-/// A page whose `evaluate` never answers (`Value::Null` for
-/// everything): the shape of a page caught mid-navigation or dead.
-
 #[tokio::test]
 async fn an_action_during_recovery_leaves_no_untracked_page() {
     // The race the registry gate exists for: recovery read the list out and

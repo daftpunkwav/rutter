@@ -3,6 +3,21 @@
 //! what the audit trail records.
 
 use super::*;
+
+/// One cookie write as the set-cookies paths under test send it.
+fn cookie_write(domain: &str, value: &str) -> Cookie {
+    Cookie {
+        name: "session".to_owned(),
+        value: value.to_owned(),
+        domain: domain.to_owned(),
+        path: None,
+        secure: false,
+        http_only: false,
+        same_site: None,
+        expires: None,
+    }
+}
+
 #[tokio::test]
 async fn a_grant_does_not_follow_a_page_that_moved_mid_park() {
     // The window the approval opens: `execute` takes &self, so a
@@ -169,16 +184,7 @@ async fn set_cookies_requires_approval_by_the_default_policy() {
     session.active_page_for_test().await;
 
     let outcome = session
-        .set_cookies(&[Cookie {
-            name: "session".to_owned(),
-            value: "42".to_owned(),
-            domain: "example.com".to_owned(),
-            path: None,
-            secure: false,
-            http_only: false,
-            same_site: None,
-            expires: None,
-        }])
+        .set_cookies(&[cookie_write("example.com", "42")])
         .await;
     assert!(
         matches!(
@@ -401,16 +407,7 @@ async fn a_cookie_approval_asks_about_the_cookies_it_writes() {
         Arc::new(MockContext::new()),
         RuleSet::default_set().with_approval_timeout(Duration::from_millis(100)),
     );
-    let cookie = rutter_core::cookie::Cookie {
-        name: "session".to_owned(),
-        value: "1".to_owned(),
-        domain: "shop.example".to_owned(),
-        path: None,
-        secure: false,
-        http_only: false,
-        same_site: None,
-        expires: None,
-    };
+    let cookie = cookie_write("shop.example", "1");
 
     let error = session
         .set_cookies(std::slice::from_ref(&cookie))
@@ -460,16 +457,7 @@ async fn a_supervised_decision_leaves_an_audit_line() {
         Arc::new(ApprovalBroker::new()),
         Some(dir.path().join("s-audit.storage.json")),
     );
-    let cookie = rutter_core::cookie::Cookie {
-        name: "session".to_owned(),
-        value: "1".to_owned(),
-        domain: "shop.example".to_owned(),
-        path: None,
-        secure: false,
-        http_only: false,
-        same_site: None,
-        expires: None,
-    };
+    let cookie = cookie_write("shop.example", "1");
 
     session
         .set_cookies(std::slice::from_ref(&cookie))
@@ -513,16 +501,7 @@ async fn a_cancelled_wait_is_audited_and_resolved() {
         Arc::new(ApprovalBroker::new()),
         Some(dir.path().join("s-cancel.storage.json")),
     ));
-    let cookie = rutter_core::cookie::Cookie {
-        name: "session".to_owned(),
-        value: "1".to_owned(),
-        domain: "shop.example".to_owned(),
-        path: None,
-        secure: false,
-        http_only: false,
-        same_site: None,
-        expires: None,
-    };
+    let cookie = cookie_write("shop.example", "1");
 
     let parked = {
         let session = Arc::clone(&session);
@@ -620,16 +599,7 @@ async fn a_cookie_grant_does_not_follow_a_page_that_moved_mid_park() {
         let session = Arc::clone(&session);
         async move {
             session
-                .set_cookies(&[Cookie {
-                    name: "session".to_owned(),
-                    value: "1".to_owned(),
-                    domain: "shop.example".to_owned(),
-                    path: None,
-                    secure: false,
-                    http_only: false,
-                    same_site: None,
-                    expires: None,
-                }])
+                .set_cookies(&[cookie_write("shop.example", "1")])
                 .await
         }
     });
@@ -701,16 +671,7 @@ async fn a_grant_without_a_readable_url_fails_closed_to_a_fresh_park() {
         let session = Arc::clone(&session);
         async move {
             session
-                .set_cookies(&[Cookie {
-                    name: "session".to_owned(),
-                    value: "1".to_owned(),
-                    domain: "shop.example".to_owned(),
-                    path: None,
-                    secure: false,
-                    http_only: false,
-                    same_site: None,
-                    expires: None,
-                }])
+                .set_cookies(&[cookie_write("shop.example", "1")])
                 .await
         }
     });
