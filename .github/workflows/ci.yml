@@ -1,4 +1,4 @@
-# Continuous integration: the release gates of run on
+# Continuous integration: the release gates run on
 # every push and pull request. The engine jobs share one composite
 # action (engine cache + Linux engine dependencies); the integration
 # and e2e jobs drive the real Chrome for Testing engine, and the
