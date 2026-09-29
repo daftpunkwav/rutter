@@ -677,7 +677,7 @@ impl Session {
     /// the write-back — leaving a live tab the new engine kept, `tabs_list`
     /// never showed, and the page cap never counted.
     pub(crate) async fn recover(&self, context: Arc<dyn ContextHandle>) {
-        let saved = self.pages.begin_recovery();
+        let (saved, gate) = self.pages.begin_recovery();
         // The old engine's pages are gone; their feeds die with them and
         // the restored pages get fresh feeds.
         self.feeds.clear();
@@ -727,7 +727,7 @@ impl Session {
             self.backbone
                 .publish(self.id.clone(), Event::PageOpened { page: id });
         }
-        self.pages.finish_recovery(restored);
+        self.pages.finish_recovery(restored, gate);
 
         self.backbone
             .publish(self.id.clone(), Event::EngineRestarted);

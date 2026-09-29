@@ -234,7 +234,7 @@ async fn an_action_during_recovery_leaves_no_untracked_page() {
     assert_eq!(context.pages().len(), 1, "the seeded page is open");
 
     // Stand in for the window recovery owns: read-out done, write-back not.
-    session.registry().begin_recovery();
+    let _gate = session.registry().begin_recovery().1;
     let error = session
         .execute(Action::Back, Origin::Agent)
         .await
@@ -354,7 +354,7 @@ async fn adoption_waits_for_recovery_to_release_the_list() {
     let (tracked_id, _) = session.active_page_for_test().await;
     context.add_foreign_page("https://popup.example");
 
-    session.registry().begin_recovery();
+    let (_saved, gate) = session.registry().begin_recovery();
     assert_eq!(
         session.pages().await.len(),
         1,
@@ -365,12 +365,15 @@ async fn adoption_waits_for_recovery_to_release_the_list() {
     // discovery resumes with the next listing — a surface the engine
     // still reports is adopted again, one that died with the old
     // engine (the real restart case) is simply never reported.
-    session.registry().finish_recovery(vec![PageSlot {
-        id: tracked_id.clone(),
-        url: "https://example.com".to_owned(),
-        handle: Arc::new(MockPage::new()),
-        active: true,
-    }]);
+    session.registry().finish_recovery(
+        vec![PageSlot {
+            id: tracked_id.clone(),
+            url: "https://example.com".to_owned(),
+            handle: Arc::new(MockPage::new()),
+            active: true,
+        }],
+        gate,
+    );
     let listed = session.pages().await;
     assert_eq!(listed.len(), 2, "discovery resumes after the gate lifts");
     assert_eq!(listed[0].id, tracked_id, "the rebuilt page keeps focus");

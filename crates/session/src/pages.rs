@@ -63,6 +63,26 @@ struct State {
     recovering: bool,
 }
 
+/// The recovery gate, held for as long as a rebuild owns the registry.
+///
+/// The flag used to be cleared on one line of one function, so anything
+/// that stopped the rebuild short of it — a panic in an engine round
+/// trip, a future dropped mid-rebuild — left the registry refusing
+/// lookups and new pages permanently, and every later action on that
+/// session failed with a `Terminated` that named nothing. Owning the
+/// release in `Drop` makes the reopen the one thing that cannot be
+/// skipped; [`PageRegistry::finish_recovery`] already reopened before
+/// the drop ran, so the drop is a no-op on the normal path.
+pub(crate) struct RecoveryGate<'a> {
+    registry: &'a PageRegistry,
+}
+
+impl Drop for RecoveryGate<'_> {
+    fn drop(&mut self) {
+        self.registry.lock().recovering = false;
+    }
+}
+
 /// The session's tracked pages.
 pub(crate) struct PageRegistry {
     state: Mutex<State>,
@@ -215,30 +235,47 @@ impl PageRegistry {
     }
 
     /// Takes the list over for recovery: lookups stop answering, new
-    /// registrations are refused, and the URLs to rebuild come back.
-    pub fn begin_recovery(&self) -> Vec<RecoveryPoint> {
-        let mut state = self.lock();
-        state.recovering = true;
-        state
-            .slots
-            .iter()
-            .map(|slot| RecoveryPoint {
-                url: slot.url.clone(),
-                active: slot.active,
-            })
-            .collect()
+    /// registrations are refused, and the URLs to rebuild come back —
+    /// together with the gate that opens the registry again. The gate is
+    /// released by [`PageRegistry::finish_recovery`], which takes it, or
+    /// by dropping it, so a rebuild that panics or is cancelled halfway
+    /// reopens the registry instead of refusing every lookup and every
+    /// new page for the rest of the session's life.
+    pub fn begin_recovery(&self) -> (Vec<RecoveryPoint>, RecoveryGate<'_>) {
+        let saved = {
+            let mut state = self.lock();
+            state.recovering = true;
+            state
+                .slots
+                .iter()
+                .map(|slot| RecoveryPoint {
+                    url: slot.url.clone(),
+                    active: slot.active,
+                })
+                .collect()
+        };
+        (saved, RecoveryGate { registry: self })
     }
 
     /// Installs the rebuilt list and reopens the registry to lookups. An
     /// empty rebuild leaves the session without an active page, which is
     /// the same state a fresh session starts in.
-    pub fn finish_recovery(&self, slots: Vec<PageSlot>) {
-        let mut state = self.lock();
-        state.slots = slots;
-        if !state.slots.is_empty() && !state.slots.iter().any(|slot| slot.active) {
-            state.slots[0].active = true;
+    ///
+    /// `gate` is the one [`PageRegistry::begin_recovery`] handed out, so
+    /// a rebuild cannot finish without handing the gate back, and one
+    /// that never gets here releases it by dropping it.
+    pub fn finish_recovery(&self, slots: Vec<PageSlot>, gate: RecoveryGate<'_>) {
+        {
+            let mut state = self.lock();
+            state.slots = slots;
+            if !state.slots.is_empty() && !state.slots.iter().any(|slot| slot.active) {
+                state.slots[0].active = true;
+            }
+            state.recovering = false;
         }
-        state.recovering = false;
+        // The registry lock is released first: the gate's drop takes it
+        // again, and the std mutex is not reentrant.
+        drop(gate);
     }
 
     /// Forgets every page; the session is closing.
@@ -303,7 +340,7 @@ mod tests {
     fn active_lookup_refuses_while_recovery_owns_the_list() {
         let registry = PageRegistry::new();
         registry.admit_active(slot("p1", "https://a.example", true));
-        let saved = registry.begin_recovery();
+        let (saved, gate) = registry.begin_recovery();
         assert_eq!(saved.len(), 1, "the read-out carries the tracked urls");
         assert!(saved[0].active);
         assert!(
@@ -314,7 +351,7 @@ mod tests {
             !registry.accepts_new_page(),
             "new registrations are refused during the rebuild"
         );
-        registry.finish_recovery(vec![]);
+        registry.finish_recovery(vec![], gate);
         assert!(
             registry.active().is_none(),
             "an empty rebuild leaves no active page, like a fresh session"
@@ -346,7 +383,7 @@ mod tests {
             !registry.admit(slot("p2", "https://b.example", false)),
             "a duplicated discovery is refused"
         );
-        registry.begin_recovery();
+        let _gate = registry.begin_recovery().1;
         assert!(
             !registry.admit(slot("p3", "https://c.example", false)),
             "recovery owns the list"
@@ -357,10 +394,10 @@ mod tests {
     fn finish_recovery_promotes_the_first_slot_when_none_is_active() {
         let registry = PageRegistry::new();
         registry.admit_active(slot("p1", "https://a.example", true));
-        registry.begin_recovery();
+        let (_saved, gate) = registry.begin_recovery();
         let mut rebuilt = slot("p2", "https://b.example", false);
         rebuilt.active = false;
-        registry.finish_recovery(vec![rebuilt]);
+        registry.finish_recovery(vec![rebuilt], gate);
         let listed = registry.list();
         assert!(listed[0].active, "exactly one page ends up active");
     }
@@ -401,10 +438,36 @@ mod tests {
     }
 
     #[test]
+    fn a_rebuild_that_never_finishes_still_reopens_the_registry() {
+        // The gate used to be cleared on the last line of one function,
+        // so a rebuild stopped short of it — a panic, a dropped future —
+        // left the registry refusing lookups and new pages for the rest
+        // of the session's life, and every later action failed with a
+        // `Terminated` that named nothing. Dropping the gate reopens it:
+        // a half-rebuilt session then fails where it actually breaks.
+        let registry = PageRegistry::new();
+        registry.admit_active(slot("p1", "https://a.example", true));
+        {
+            let (_saved, gate) = registry.begin_recovery();
+            assert!(!registry.accepts_new_page(), "the rebuild owns the list");
+            assert!(registry.active().is_none(), "lookups stop answering");
+            drop(gate);
+        }
+        assert!(
+            registry.accepts_new_page(),
+            "a rebuild that never wrote back must not wedge the session"
+        );
+        assert!(
+            registry.active().is_some(),
+            "the tracked list is still answerable"
+        );
+    }
+
+    #[test]
     fn clear_forgets_every_page_and_the_gate_with_it() {
         let registry = PageRegistry::new();
         registry.admit_active(slot("p1", "https://a.example", true));
-        registry.begin_recovery();
+        let _gate = registry.begin_recovery().1;
         registry.clear();
         assert!(registry.list().is_empty());
         assert!(registry.accepts_new_page());
