@@ -54,6 +54,12 @@ trait 之上的任何 API。
 缓存根默认为 `<OS 缓存目录>/rutter`，可由 `--cache-dir` /
 `RUTTER_CACHE_DIR` 覆盖。进度输出到 stderr；stdout 保留给数据。
 
+第 3 步默认从 Google 发布的端点读取 manifest，除非
+`RUTTER_ENGINE_MANIFEST_URL` 指向镜像；该变量未设置或为空白时保持
+默认值。覆盖只移动版本指针：`parse_stable_artifact` 仍会拒绝任何非
+`storage.googleapis.com` 上的 https 工件 URL，因此镜像无法把下载的
+二进制重定向到别的主机。
+
 有头运行（browse 模式）在无显式路径时优先使用系统安装的浏览器：
 `discover_system_browser()` 检查标准安装位置中的 Chrome、Edge 或
 Chromium（不搜 `PATH`，不探测注册表），找不到则回退到完整的

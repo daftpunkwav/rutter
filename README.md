@@ -83,7 +83,11 @@ Testing stable channel (headless shell for `open`, full Chrome for
 browse mode when no system browser is found). The download happens
 once; the cached version is reused until the cache directory is
 cleared, including offline. Browse mode prefers a system-installed
-Chrome or Edge when present.
+Chrome or Edge when present. Hosts that cannot reach
+`googlechromelabs.github.io` can point the manifest at a mirror with
+`RUTTER_ENGINE_MANIFEST_URL`; the artifact the manifest names must
+still be an https URL on `storage.googleapis.com`, so a mirror decides
+which version is fetched, never where the binary comes from.
 
 The engine is supervised: heartbeats detect a dead process, restarts
 use capped exponential backoff, and a sliding-window circuit breaker

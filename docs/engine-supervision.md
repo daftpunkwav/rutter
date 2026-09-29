@@ -61,6 +61,13 @@ The cache root defaults to `<OS cache dir>/rutter` and is overridable
 by `--cache-dir` / `RUTTER_CACHE_DIR`. Progress goes to stderr; stdout
 stays reserved for data.
 
+Step 3 reads the manifest from the Google-published endpoint unless
+`RUTTER_ENGINE_MANIFEST_URL` points at a mirror; an unset or blank
+value keeps the default. The override moves only the version pointer:
+`parse_stable_artifact` still rejects any artifact URL that is not
+https on `storage.googleapis.com`, so a mirror cannot redirect the
+downloaded binary to another host.
+
 Headed runs (browse mode) prefer a system-installed browser when no
 explicit path is set: `discover_system_browser()` checks standard
 install locations for Chrome, Edge, or Chromium (no `PATH` search, no

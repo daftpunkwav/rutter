@@ -8,7 +8,7 @@ manifest（TLS），随后下载、解压并原子安装。
 | 文件 | 职责 |
 |---|---|
 | `mod.rs` | `ensure(product)`：解析或下载流水线，竞态安全 |
-| `manifest.rs` | 解析 CfT manifest；artifact URL 钉在 CfT 存储主机上 |
+| `manifest.rs` | 解析 CfT manifest；端点可由 `RUTTER_ENGINE_MANIFEST_URL` 覆盖，artifact URL 钉在 CfT 存储主机上 |
 | `fetch.rs` | HTTP 客户端：连接/总超时，重试 5xx 不重试 4xx |
 | `store.rs` | 缓存布局、防 zip-slip 的解压、原子安装 |
 

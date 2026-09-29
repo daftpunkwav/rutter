@@ -78,6 +78,11 @@ Serve 旗标（所有模式均接受，仅对 `rutter serve` 生效）：
 只发生一次；在缓存目录清空之前，缓存版本始终复用，离线亦可用。浏览
 模式在存在系统安装的 Chrome 或 Edge 时优先使用它们。
 
+无法访问 `googlechromelabs.github.io` 的主机可用
+`RUTTER_ENGINE_MANIFEST_URL` 把 manifest 指向镜像；但 manifest 指名的
+工件仍必须是 `storage.googleapis.com` 上的 https URL——镜像能决定下载
+哪个版本，却不能决定二进制来自哪里。
+
 引擎是受监管的：心跳检测进程死亡，重启采用有上限的指数退避，滑动窗
 口熔断器阻止重启风暴——引擎崩溃表现为受影响操作上的错误，绝不会是
 rutter 自身的崩溃。

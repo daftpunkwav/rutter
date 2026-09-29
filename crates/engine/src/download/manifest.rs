@@ -8,9 +8,17 @@ use serde_json::Value;
 
 use crate::error::EngineError;
 
-/// Endpoint publishing the last-known-good version per channel with
-/// download URLs for every platform.
+/// Default endpoint publishing the last-known-good version per channel
+/// with download URLs for every platform.
 pub const MANIFEST_URL: &str = "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json";
+
+/// Environment variable overriding [`MANIFEST_URL`], so an operator
+/// whose hosts cannot reach Google can point rutter at a mirror that
+/// republishes the same document. It names where the version pointer
+/// is read from and nothing else: the artifact URL it resolves to is
+/// still pinned to [`ARTIFACT_HOST`] over TLS, so a mirror cannot move
+/// the downloaded binary off the Chrome for Testing storage host.
+const MANIFEST_URL_ENV: &str = "RUTTER_ENGINE_MANIFEST_URL";
 
 /// Host every artifact URL must live on. The manifest is the trust
 /// anchor for which version to fetch; the URL it names is code rutter
@@ -18,6 +26,23 @@ pub const MANIFEST_URL: &str = "https://googlechromelabs.github.io/chrome-for-te
 /// redirect that download to an arbitrary server. Chrome for Testing
 /// artifacts are published on this host only.
 const ARTIFACT_HOST: &str = "storage.googleapis.com";
+
+/// The manifest endpoint to fetch: the [`MANIFEST_URL_ENV`] override
+/// when it is set to something, the published default otherwise.
+pub fn manifest_url() -> String {
+    resolve_manifest_url(std::env::var(MANIFEST_URL_ENV).ok().as_deref())
+}
+
+/// Resolves the endpoint from an already-read override value. Split
+/// from the environment read so the rule is testable without mutating
+/// process state; an absent or blank override keeps the default.
+fn resolve_manifest_url(override_url: Option<&str>) -> String {
+    override_url
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+        .unwrap_or(MANIFEST_URL)
+        .to_owned()
+}
 
 /// One downloadable engine binary from the manifest.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -231,5 +256,29 @@ mod tests {
     fn host_platform_is_recognized() {
         let platform = platform_for_host().expect("host must be supported in tests");
         assert!(["linux64", "mac-x64", "mac-arm64", "win64"].contains(&platform));
+    }
+
+    #[test]
+    fn an_unset_or_blank_override_keeps_the_published_endpoint() {
+        assert_eq!(resolve_manifest_url(None), MANIFEST_URL);
+        assert_eq!(resolve_manifest_url(Some("")), MANIFEST_URL);
+        assert_eq!(resolve_manifest_url(Some("   ")), MANIFEST_URL);
+        // The live path with no variable in the environment must agree
+        // with the pure rule above.
+        assert_eq!(manifest_url(), resolve_manifest_url(None));
+    }
+
+    #[test]
+    fn an_override_replaces_the_endpoint() {
+        assert_eq!(
+            resolve_manifest_url(Some("http://mirror.internal/cft.json")),
+            "http://mirror.internal/cft.json"
+        );
+        // Surrounding whitespace is a copy-paste artifact, not part of
+        // the URL the fetcher will be handed.
+        assert_eq!(
+            resolve_manifest_url(Some("  https://mirror.internal/cft.json \n")),
+            "https://mirror.internal/cft.json"
+        );
     }
 }

@@ -9,7 +9,7 @@ atomically.
 | File | Role |
 |---|---|
 | `mod.rs` | `ensure(product)`: the resolve-or-download pipeline, race-safe |
-| `manifest.rs` | Parses the CfT manifest; artifact URLs pinned to the CfT storage host |
+| `manifest.rs` | Parses the CfT manifest; endpoint overridable via `RUTTER_ENGINE_MANIFEST_URL`, artifact URLs pinned to the CfT storage host |
 | `fetch.rs` | HTTP client: connect/total timeouts, retries 5xx not 4xx |
 | `store.rs` | Cache layout, zip-slip-safe extraction, atomic install |
 

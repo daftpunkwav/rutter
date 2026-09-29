@@ -124,7 +124,7 @@ pub async fn ensure(
         "rutter: fetching engine manifest for {} ({platform})",
         product.name()
     );
-    let manifest_value = fetch::fetch_json(manifest::MANIFEST_URL).await?;
+    let manifest_value = fetch::fetch_json(&manifest::manifest_url()).await?;
     let artifact = manifest::parse_stable_artifact(&manifest_value, product.name(), platform)?;
 
     // Unreachable in a single process (the cache was already a miss),
