@@ -51,6 +51,11 @@ impl Executor<'_> {
                         url: effective,
                     },
                 );
+                // The one arm that does not settle: `navigate` already
+                // returned the loaded page, so the pause before the
+                // snapshot would only delay the answer the caller is
+                // already waiting on. Every other arm mutates a page
+                // that keeps moving afterwards and settles.
                 self.page_ops().snapshot().await
             }
             Action::Back => {
@@ -74,28 +79,18 @@ impl Executor<'_> {
             Action::Hover { reference } => {
                 let element_box = self.auto_wait(reference).await?;
                 let (x, y) = element_box.center();
-                self.page
-                    .dispatch_input(rutter_engine::input::InputEvent::MouseMove { x, y })
-                    .await
-                    .map_err(SessionError::Engine)?;
+                self.dispatch(rutter_engine::input::InputEvent::MouseMove { x, y })
+                    .await?;
                 self.settle_snapshot().await
             }
             Action::Type { reference, text } => {
                 self.auto_wait(reference).await?;
-                let focused = self
-                    .page
-                    .evaluate(&focus_script(reference.as_str()))
-                    .await
-                    .map_err(SessionError::Engine)?;
+                let focused = self.evaluate(&focus_script(reference.as_str())).await?;
                 if focused.get("missing") == Some(&serde_json::Value::Bool(true)) {
                     return Err(expired(reference.as_str()));
                 }
-                self.page
-                    .dispatch_input(rutter_engine::input::InputEvent::InsertText {
-                        text: text.clone(),
-                    })
-                    .await
-                    .map_err(SessionError::Engine)?;
+                self.dispatch(rutter_engine::input::InputEvent::InsertText { text: text.clone() })
+                    .await?;
                 self.settle_snapshot().await
             }
             Action::PressKey { key } => {
@@ -103,10 +98,7 @@ impl Executor<'_> {
                     rutter_engine::input::InputEvent::KeyPressed { key: key.clone() },
                     rutter_engine::input::InputEvent::KeyReleased { key: key.clone() },
                 ] {
-                    self.page
-                        .dispatch_input(event)
-                        .await
-                        .map_err(SessionError::Engine)?;
+                    self.dispatch(event).await?;
                 }
                 self.settle_snapshot().await
             }
@@ -118,10 +110,8 @@ impl Executor<'_> {
                     })
                 })?;
                 let answer = self
-                    .page
                     .evaluate(&select_script(reference.as_str(), &values_json))
-                    .await
-                    .map_err(SessionError::Engine)?;
+                    .await?;
                 if answer.get("missing") == Some(&serde_json::Value::Bool(true)) {
                     return Err(expired(reference.as_str()));
                 }
@@ -156,15 +146,13 @@ impl Executor<'_> {
                     None => self.viewport_center().await,
                 };
                 let (delta_x, delta_y) = wheel_deltas(*direction, *amount);
-                self.page
-                    .dispatch_input(rutter_engine::input::InputEvent::MouseWheel {
-                        x,
-                        y,
-                        delta_x,
-                        delta_y,
-                    })
-                    .await
-                    .map_err(SessionError::Engine)?;
+                self.dispatch(rutter_engine::input::InputEvent::MouseWheel {
+                    x,
+                    y,
+                    delta_x,
+                    delta_y,
+                })
+                .await?;
                 self.settle_snapshot().await
             }
             Action::SetInputFiles { reference, paths } => {
@@ -176,10 +164,8 @@ impl Executor<'_> {
                 }
                 self.auto_wait(reference).await?;
                 let check = self
-                    .page
                     .evaluate(&files_check_script(reference.as_str()))
-                    .await
-                    .map_err(SessionError::Engine)?;
+                    .await?;
                 if check.get("missing") == Some(&serde_json::Value::Bool(true)) {
                     return Err(expired(reference.as_str()));
                 }
@@ -288,6 +274,24 @@ impl Executor<'_> {
         }
     }
 
+    /// One engine call whose only question is whether it succeeded.
+    /// Every action in [`Executor::run`] reaches the page through one
+    /// of the two helpers below, so the engine-to-session error mapping
+    /// is written once instead of once per arm.
+    async fn dispatch(&self, event: rutter_engine::input::InputEvent) -> Result<(), SessionError> {
+        self.page
+            .dispatch_input(event)
+            .await
+            .map_err(SessionError::Engine)
+    }
+
+    async fn evaluate(&self, script: &str) -> Result<serde_json::Value, SessionError> {
+        self.page
+            .evaluate(script)
+            .await
+            .map_err(SessionError::Engine)
+    }
+
     async fn dispatch_press(&self, x: f64, y: f64) -> Result<(), SessionError> {
         use rutter_engine::input::{InputEvent, MouseButton};
         for event in [
@@ -302,10 +306,7 @@ impl Executor<'_> {
                 button: MouseButton::Left,
             },
         ] {
-            self.page
-                .dispatch_input(event)
-                .await
-                .map_err(SessionError::Engine)?;
+            self.dispatch(event).await?;
         }
         Ok(())
     }
