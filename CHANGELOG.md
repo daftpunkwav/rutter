@@ -9,6 +9,30 @@ and the project adheres to
 
 ### Fixed
 
+- The tool catalog described the wrong failure vocabulary. An `isError`
+  result renders the *session* error verbatim, so an engine-layer
+  failure — the navigation that could not be sent, a dead engine, a
+  page cap — reported the engine's own message and hint, while the
+  catalog claimed every failure speaks `ActionError` and pointed
+  agents at a transport classification (`DnsFailed`, an HTTP status)
+  that only ever reached them through the `ActionFailed` event. The
+  catalog now names both shapes, states that the closed `ActionError`
+  taxonomy is what the event backbone carries, and pins the part that
+  holds for every failure — message first, a non-empty `hint: ` line
+  on its own — with a test over the whole session-error surface.
+- A storage-state file carrying only one of `cookies` / `origins` no
+  longer reads back as an empty state, which silently logged the
+  session out. Both keys default on read, so a file written by a build
+  that knew only one of them keeps the half it has. A file whose
+  values are of the wrong type still reads as empty, unchanged.
+- The streamable HTTP transport now states on *every* bind that it
+  carries no authentication, not only on a non-loopback one: a loopback
+  bind is exactly as unauthenticated as a LAN bind, and loopback is
+  the default. `rutter serve --http --help` and the README say so too.
+- A failed `Settings::resolve` printed its hint with a `-` where the
+  other two CLI hint sites print `—`; the separator is the same on all
+  three now.
+
 - An approval grant can no longer be forged cross-site from a page on
   another loopback port. The dashboard's `Origin` check matched the host
   name alone, and a browser's `SameSite=Strict` is a *site* check — a

@@ -24,11 +24,19 @@ use rutter_observe::{storage_dump_script, storage_restore_script};
 static WRITE_ATTEMPT: AtomicU64 = AtomicU64::new(0);
 
 /// Everything needed to rebuild a session's login state.
+///
+/// Both fields default on read: a file written by a build that knew
+/// only one of them — or by a build that knew one this one does not —
+/// keeps the half it does carry instead of failing the whole parse and
+/// reading back as an empty state, which is the one outcome the atomic
+/// write exists to prevent ("silently drop the session's login").
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct StorageState {
     /// Context-scoped cookies.
+    #[serde(default)]
     pub cookies: Vec<Cookie>,
     /// localStorage per origin.
+    #[serde(default)]
     pub origins: Vec<OriginStorage>,
 }
 
@@ -269,6 +277,46 @@ mod tests {
         let state = StorageState::read(&dir.path().join("missing.json"));
         assert!(state.cookies.is_empty());
         assert!(state.origins.is_empty());
+    }
+
+    #[test]
+    fn a_state_missing_one_half_keeps_the_other() {
+        // Forward compatibility of the on-disk format. `read` answers an
+        // empty state for anything it cannot parse, and an empty state is
+        // the outcome the atomic write exists to prevent — the session
+        // comes back logged out with no complaint. A file written by a
+        // build that knew only one of the two halves must therefore keep
+        // the half it does carry instead of failing the whole parse.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("partial.json");
+
+        std::fs::write(
+            &path,
+            r#"{"cookies":[{"name":"session","value":"42","domain":"example.com",
+               "path":null,"secure":false,"http_only":false,"same_site":null,"expires":null}]}"#,
+        )
+        .expect("write cookies only");
+        let cookies_only = StorageState::read(&path);
+        assert_eq!(cookies_only.cookies.len(), 1, "the cookies survive");
+        assert!(cookies_only.origins.is_empty(), "no origins were stored");
+
+        std::fs::write(
+            &path,
+            r#"{"origins":[{"origin":"https://example.com","entries":[["token","abc"]]}]}"#,
+        )
+        .expect("write origins only");
+        let origins_only = StorageState::read(&path);
+        assert!(origins_only.cookies.is_empty(), "no cookies were stored");
+        assert_eq!(origins_only.origins.len(), 1, "the localStorage survives");
+        assert_eq!(origins_only.origins[0].entries[0].1, "abc");
+
+        // A file that carries neither key is still the empty state, and
+        // one whose values are of the wrong type still fails loudly
+        // enough to read as empty — the default never invents content.
+        std::fs::write(&path, "{}").expect("write empty object");
+        assert_eq!(StorageState::read(&path), StorageState::default());
+        std::fs::write(&path, r#"{"cookies":"not a list"}"#).expect("write junk");
+        assert_eq!(StorageState::read(&path), StorageState::default());
     }
 
     /// One state whose serialized length grows with `padding`, so the

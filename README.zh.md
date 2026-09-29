@@ -65,10 +65,10 @@ Serve 旗标（所有模式均接受，仅对 `rutter serve` 生效）：
 
 | 旗标 | 含义 |
 |------|------|
-| `--http <ADDR>` | 在该地址以 streamable HTTP 提供 MCP（替代 stdio） |
+| `--http <ADDR>` | 在该地址以 streamable HTTP 提供 MCP（替代 stdio）。**该传输在任何绑定上都没有认证**，环回也不例外：任何能连上该地址的东西都能用本用户的 session 驱动浏览器 |
 | `--dashboard <PORT>` | 在 127.0.0.1:`<PORT>` 附带监督面板 |
 | `--policy <FILE>` | 从 TOML 文件加载监督规则集 |
-| `--allow-remote` | 确认非环回 `--http` 绑定（该传输没有认证） |
+| `--allow-remote` | 确认非环回 `--http` 绑定 |
 
 ### 引擎获取
 

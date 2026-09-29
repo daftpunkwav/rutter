@@ -62,13 +62,16 @@ resolve active page
 `{ cookies, origins }`——context cookie 加每个 origin 的
 localStorage：
 
-- **捕获**：每次动作之后与 `set_cookies` 之后，从 context 与动作
-  所在的那个页面捕获。
+- **捕获**：每次动作之后与 `set_cookies` 之后，从 context 与该
+  session 的**每一个已打开页面**捕获 localStorage。只捕获动作所在的
+  那个页面，会让第二个标签页的登录在下一次持久化时消失。
 - **变更即持久化**：写入
   `<cache-root>/sessions/<session-id>.storage.json`。写入是原子
   的：JSON 先落在同目录临时文件中，再以一次 rename 替换正式文件；
   Unix 上仅属主可读写。状态未变则不重写；写入失败会在下次捕获时
-  强制重写。
+  强制重写。两个键在读取时都有默认值，因此只携带其中一个键的文件
+  ——由只认识那一半的版本写下的——会保留它拥有的那一半，而不是
+  被解析成空状态。
 - **重载**：恢复流程与显式 `load_storage` 会重载（`save_storage`
   只写不读）。这就是登录状态在引擎重启之间存活的方式。
 

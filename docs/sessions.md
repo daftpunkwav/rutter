@@ -69,13 +69,18 @@ resolve active page
 [`StorageState`](../crates/session/src/storage.rs) is `{ cookies,
 origins }` — context cookies plus localStorage per origin:
 
-- **Captured** from the context and the page the action ran on, after
-  every action and after `set_cookies`.
+- **Captured** from the context plus the localStorage of **every open
+  page** in the session, after every action and after `set_cookies`.
+  Capturing only the page an action ran on would let a second tab's
+  login disappear on the next persist.
 - **Persisted on change** to
   `<cache-root>/sessions/<session-id>.storage.json`. The write is
   atomic: the JSON lands in a sibling temporary file that replaces the
   real one in one rename, owner-only on Unix. An unchanged state is
   not rewritten; a failed write forces a rewrite on the next capture.
+  Both keys default on read, so a file carrying only one of them —
+  written by a build that knew only that half — keeps the half it has
+  instead of parsing as an empty state.
 - **Reloaded** by recovery and by an explicit `load_storage`
   (`save_storage` only writes). This is how login state survives
   engine restarts.

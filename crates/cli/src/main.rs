@@ -47,7 +47,9 @@ struct Cli {
     dashboard: Option<u16>,
 
     /// Serve MCP over streamable HTTP at ADDR instead of stdio
-    /// (serve mode), for example 127.0.0.1:9800.
+    /// (serve mode), for example 127.0.0.1:9800. The transport has no
+    /// authentication on any bind: anyone who can reach the address can
+    /// drive the browser with this user's sessions.
     #[arg(long, global = true, value_name = "ADDR")]
     http: Option<std::net::SocketAddr>,
 
@@ -91,7 +93,7 @@ fn main() -> ExitCode {
         Ok(settings) => settings,
         Err(error) => {
             eprintln!("rutter: {error}");
-            eprintln!("rutter: hint - set RUTTER_CACHE_DIR to a writable path");
+            eprintln!("rutter: hint — set RUTTER_CACHE_DIR to a writable path");
             return ExitCode::FAILURE;
         }
     };

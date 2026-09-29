@@ -59,7 +59,15 @@ pub async fn serve_http(
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|error| format!("cannot bind {addr}: {error}"))?;
-    eprintln!("rutter: MCP over streamable HTTP on http://{addr}/mcp");
+    // The authentication fact is on the unconditional line, not only on
+    // the non-loopback warning: the transport carries no credentials at
+    // all, so a loopback bind is exactly as unauthenticated as a LAN
+    // one, and the loopback case is the default. An operator reading
+    // only the line for their own address must see it.
+    eprintln!(
+        "rutter: MCP over streamable HTTP on http://{addr}/mcp — no authentication; \
+         anyone who can reach this address can drive the browser"
+    );
     axum::serve(listener, app)
         .await
         .map_err(|error| format!("http server failed: {error}"))

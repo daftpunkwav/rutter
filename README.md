@@ -70,10 +70,10 @@ Serve flags (accepted on every mode, effective on `rutter serve` only):
 
 | Flag | Meaning |
 |------|---------|
-| `--http <ADDR>` | Serve MCP over streamable HTTP on that address instead of stdio |
+| `--http <ADDR>` | Serve MCP over streamable HTTP on that address instead of stdio. **The transport has no authentication on any bind**, loopback included: anything that can open a connection to it can drive the browser with this user's sessions |
 | `--dashboard <PORT>` | Attach the supervision dashboard on 127.0.0.1:`<PORT>` |
 | `--policy <FILE>` | Load the supervision rule set from a TOML file |
-| `--allow-remote` | Confirm a non-loopback `--http` bind (the transport has no authentication) |
+| `--allow-remote` | Confirm a non-loopback `--http` bind |
 
 ### Engine acquisition
 
