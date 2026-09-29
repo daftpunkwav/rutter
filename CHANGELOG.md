@@ -9,6 +9,17 @@ and the project adheres to
 
 ### Fixed
 
+- A dashboard WebSocket connection no longer outlives the peer that
+  opened it. A client that vanished without a close — a dropped
+  network, a killed browser — left the loop parked in `recv` forever,
+  and a client that stopped reading parked it inside a send instead,
+  holding the socket, a broadcast subscription, and a screencast
+  capture that kept acking frames nobody would ever see. The server
+  now pings an idle socket every 20 s and closes the connection when a
+  ping goes unanswered for a full interval, and bounds every write to
+  30 s. The pong comes from the client's protocol stack rather than
+  its page, so a slow-but-alive client is never dropped.
+
 - The tool catalog described the wrong failure vocabulary. An `isError`
   result renders the *session* error verbatim, so an engine-layer
   failure — the navigation that could not be sent, a dead engine, a
@@ -124,8 +135,19 @@ and the project adheres to
 - The dashboard's gap refill after a broadcast lag filters inside the
   ring (`replay_after`), so envelopes the client already received are
   no longer cloned only to be dropped.
+- Storage capture no longer runs its CDP round trips one after another.
+  The cookie read and every localStorage dump are independent and now go
+  out together, so persisting a state costs roughly one round trip
+  instead of one per origin on the critical path of every action. The
+  captured state, its comparison, and its write are unchanged.
 
 ### Added
+
+- `RUTTER_ENGINE_MANIFEST_URL` points the engine download at a mirror of
+  the Chrome for Testing last-known-good document, for hosts that cannot
+  reach Google. The version pointer moves; the artifact URL it resolves
+  to is still pinned to the CfT storage host over TLS, so a mirror cannot
+  redirect the download.
 
 - CI quality gates now also compile and test the workspace on macOS,
   which the release archives ship for.

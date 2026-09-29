@@ -111,8 +111,8 @@ frames carry JPEG screencast images.
 
 A connection lives only as long as its peer answers. The server pings
 an otherwise idle socket every 20 s and closes the connection when a
-ping goes unanswered for a full interval; every write is bounded the
-same way, so a client that stops reading cannot park the loop inside a
+ping goes unanswered for a full interval; every write is bounded at
+30 s, so a client that stops reading cannot park the loop inside a
 send and hold the socket, its subscription, and its screencast capture
 for good. The pong comes from the client's protocol stack, not from its
 page, so a slow-but-alive client answers and is never dropped.
