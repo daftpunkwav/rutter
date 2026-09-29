@@ -36,6 +36,11 @@ struct Serving {
 }
 
 async fn serve() -> Serving {
+    serve_with_keepalive(Duration::from_secs(20)).await
+}
+
+/// The same server with a liveness cadence the tests can wait out.
+async fn serve_with_keepalive(keepalive: Duration) -> Serving {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a free loopback port");
     let port = listener.local_addr().expect("local addr").port();
     drop(listener);
@@ -53,7 +58,8 @@ async fn serve() -> Serving {
         Arc::clone(&manager),
         port,
         Some(access_dir.path().to_path_buf()),
-    );
+    )
+    .with_keepalive(keepalive);
     let token = server.token();
     tokio::spawn(async move {
         let _ = server.run().await;
@@ -385,6 +391,98 @@ async fn a_decision_flood_is_acked_without_wedging_the_loop() {
         answered.is_ok(),
         "every one of the {DECISIONS} decisions must be acked; the loop wedged otherwise"
     );
+}
+
+#[tokio::test]
+async fn a_peer_that_stops_answering_is_disconnected() {
+    // A client that vanishes without a close — a dropped network, a
+    // killed browser — leaves the loop parked in `recv` forever, and
+    // with it the socket, a full broadcast receiver, and whatever
+    // screencast capture it was holding. One unanswered ping ends it.
+    const KEEPALIVE: Duration = Duration::from_millis(50);
+
+    let serving = serve_with_keepalive(KEEPALIVE).await;
+    serving
+        .manager
+        .session(SessionId::new("s1"))
+        .await
+        .expect("session starts");
+    let mut stream = connect(&serving).await;
+    // Read the replay, then go silent. A peer that never reads cannot
+    // answer a ping — reading one would flush the pong the stack queued
+    // for it — so this is the shape of a client that vanished: the
+    // socket stays open on both ends and nothing more crosses it.
+    loop {
+        let frame = next_json(&mut stream).await;
+        if frame["event"]["type"] == "session_started" {
+            break;
+        }
+    }
+    tokio::time::sleep(KEEPALIVE * 8).await;
+
+    let ended = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match stream.next().await {
+                None | Some(Err(_)) => return true,
+                Some(Ok(Message::Close(_))) => return true,
+                Some(Ok(_)) => continue,
+            }
+        }
+    })
+    .await;
+    assert!(
+        ended.is_ok(),
+        "an unanswered ping must end the connection, or the loop holds it forever"
+    );
+}
+
+#[tokio::test]
+async fn a_peer_that_answers_keeps_its_connection() {
+    // The other half of the liveness contract: a client that answers
+    // its pings is never dropped, however long it stays connected. The
+    // pong comes from the peer's protocol stack, so this is exactly
+    // what a slow-but-alive client does.
+    const KEEPALIVE: Duration = Duration::from_millis(50);
+    const PING_ROUNDS: usize = 6;
+
+    let serving = serve_with_keepalive(KEEPALIVE).await;
+    let id = SessionId::new("s1");
+    serving
+        .manager
+        .session(id.clone())
+        .await
+        .expect("session starts");
+    let backbone = serving
+        .manager
+        .backbone()
+        .await
+        .expect("the engine is running");
+    let mut stream = connect(&serving).await;
+
+    let mut answered = 0;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while answered < PING_ROUNDS {
+            match stream.next().await {
+                Some(Ok(Message::Ping(payload))) => {
+                    stream.send(Message::Pong(payload)).await.expect("pong");
+                    answered += 1;
+                }
+                Some(Ok(_)) => continue,
+                // The server closed: a responsive peer must not lose it.
+                other => panic!("the connection ended at ping {answered}: {other:?}"),
+            }
+        }
+    })
+    .await
+    .expect("every ping is answered in time");
+
+    // Still delivering after the ping rounds: the pings cost a healthy
+    // connection nothing.
+    backbone.publish(id, Event::SessionClosed);
+    let live = tokio::time::timeout(Duration::from_secs(5), next_json(&mut stream))
+        .await
+        .expect("events still flow");
+    assert_eq!(live["event"]["type"], "session_closed");
 }
 
 #[tokio::test]

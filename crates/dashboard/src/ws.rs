@@ -1,18 +1,39 @@
 //! The dashboard WebSocket: replay first, then live events; approval
 //! decisions arrive as client messages, screencast frames leave as
 //! binary frames on demand.
+//!
+//! A connection lives only as long as its peer answers: every write is
+//! bounded and a silent peer is asked to prove it is there (see
+//! [`WRITE_TIMEOUT`]).
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket};
 use rutter_core::ids::SessionId;
 use rutter_events::Envelope;
 use rutter_session::{ScreencastStream, SessionError};
 use serde_json::Value;
+use std::time::Duration;
 
 use crate::Dashboard;
+
+/// How long one write to a client may block before the connection is
+/// declared dead. Sends are the only thing backpressure stops at, and a
+/// peer that stopped reading — a suspended tab, a laptop that went to
+/// sleep mid-stream — would otherwise park this loop inside a send for
+/// good, holding the socket, a full broadcast receiver, and a running
+/// screencast capture that keeps acking frames nobody will ever see.
+///
+/// The budget cannot cut a healthy client short: the listener is bound
+/// to loopback, so a client is always on this machine, and the heaviest
+/// thing this loop writes is a screencast frame at the channel's rate
+/// (2 per second, ~150 KB). A local reader drains that in
+/// milliseconds, which leaves this budget three orders of magnitude of
+/// headroom rather than a guess at link speed.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Replays history per session, then forwards live events; client
 /// messages carry approval decisions.
@@ -40,7 +61,10 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
     replay.sort_by_key(|envelope| envelope.seq);
     let watermark = replay.last().map(|envelope| envelope.seq);
     for envelope in replay {
-        if send_envelope(&mut socket, &envelope).await.is_err() {
+        if send_within(&mut socket, Message::text(encode(&envelope)))
+            .await
+            .is_err()
+        {
             return;
         }
     }
@@ -57,6 +81,19 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
     // Highest sequence number sent to this client; live envelopes at or
     // below it are duplicates and are skipped.
     let mut sent_up_to = watermark;
+    // A connection that never speaks again is not one this loop can
+    // tell from a healthy one: a peer that vanishes without a close
+    // (a dropped network, a killed browser) leaves the socket parked in
+    // `recv` forever. A ping asks the peer to prove it is there, and
+    // one unanswered ping — a full interval, not a round-trip budget —
+    // ends the connection. It cannot misfire on a slow client: the pong
+    // comes from the peer's protocol stack, not from the page, and the
+    // deadline is measured from the previous ping.
+    let mut keepalive = tokio::time::interval_at(
+        tokio::time::Instant::now() + state.keepalive,
+        state.keepalive,
+    );
+    let mut awaiting_pong = false;
 
     loop {
         tokio::select! {
@@ -67,10 +104,10 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                         if sent_up_to.is_some_and(|seen| envelope.seq <= seen) {
                             continue;
                         }
-                        let Ok(json) = serde_json::to_string(&envelope) else {
-                            continue;
-                        };
-                        if socket.send(Message::text(json)).await.is_err() {
+                        if send_within(&mut socket, Message::text(encode(&envelope)))
+                            .await
+                            .is_err()
+                        {
                             break;
                         }
                         sent_up_to = Some(envelope.seq);
@@ -90,7 +127,10 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                         }
                         gap.sort_by_key(|envelope| envelope.seq);
                         for envelope in gap {
-                            if send_envelope(&mut socket, &envelope).await.is_err() {
+                            if send_within(&mut socket, Message::text(encode(&envelope)))
+                                .await
+                                .is_err()
+                            {
                                 return;
                             }
                             sent_up_to = Some(envelope.seq);
@@ -108,8 +148,7 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
             } => {
                 match frame {
                     Some(jpeg_frame) => {
-                        if socket
-                            .send(Message::binary(jpeg_frame.jpeg))
+                        if send_within(&mut socket, Message::binary(jpeg_frame.jpeg))
                             .await
                             .is_err()
                         {
@@ -172,7 +211,12 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                             serde_json::json!("the request names no session");
                                     }
                                 }
-                                let _ = socket.send(Message::text(ack.to_string())).await;
+                                if send_within(&mut socket, Message::text(ack.to_string()))
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
                             }
                             Some("subscribe") => {
                                 // `subscribe` is accepted as a client
@@ -181,15 +225,34 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                 // so there is nothing further to do.
                             }
                             _ => {
-                                if let Some(reply) = handle_client_message(&state, &text) {
-                                    let _ = socket.send(Message::text(reply)).await;
+                                if let Some(reply) = handle_client_message(&state, &text)
+                                    && send_within(&mut socket, Message::text(reply))
+                                        .await
+                                        .is_err()
+                                {
+                                    break;
                                 }
                             }
                         }
                     }
+                    // The peer's answer to the liveness ping; the next
+                    // tick sends another one instead of giving up on it.
+                    Some(Ok(Message::Pong(_))) => awaiting_pong = false,
                     Some(Ok(_)) => {}
                     Some(Err(_)) | None => break,
                 }
+            }
+            _ = keepalive.tick() => {
+                if awaiting_pong {
+                    break;
+                }
+                if send_within(&mut socket, Message::Ping(Bytes::new()))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+                awaiting_pong = true;
             }
         }
     }
@@ -218,9 +281,22 @@ fn handle_client_message(state: &Dashboard, text: &str) -> Option<String> {
     }
 }
 
-async fn send_envelope(socket: &mut WebSocket, envelope: &Envelope) -> Result<(), axum::Error> {
-    let json = serde_json::to_string(envelope).unwrap_or_else(|_| "{}".to_owned());
-    socket.send(Message::text(json)).await
+/// One bounded write to the client. `Err` means the connection is over:
+/// either the peer is gone or it stopped reading for longer than
+/// [`WRITE_TIMEOUT`], and in both cases this loop has nothing left to do
+/// but stop.
+async fn send_within(socket: &mut WebSocket, message: Message) -> Result<(), ()> {
+    tokio::time::timeout(WRITE_TIMEOUT, socket.send(message))
+        .await
+        .map_err(|_| ())
+        .and_then(|sent| sent.map_err(|_| ()))
+}
+
+/// The wire form of one envelope. Serialization of a known-shaped value
+/// does not fail, so a `{}` placeholder keeps an unencodable envelope
+/// from taking the whole connection down with it.
+fn encode(envelope: &Envelope) -> String {
+    serde_json::to_string(envelope).unwrap_or_else(|_| "{}".to_owned())
 }
 
 #[cfg(test)]
@@ -245,6 +321,7 @@ mod tests {
             broker: Arc::new(rutter_policy::ApprovalBroker::new()),
             token: "t".to_owned(),
             port: 7700,
+            keepalive: std::time::Duration::from_secs(20),
         };
         // A hostile id: if the reply were built by string concatenation,
         // these quotes would terminate the id and forge extra fields.

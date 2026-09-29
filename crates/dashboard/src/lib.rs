@@ -35,6 +35,7 @@ use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use axum::extract::ws::WebSocketUpgrade;
@@ -67,7 +68,16 @@ pub(crate) struct Dashboard {
     /// the loopback name alone does not identify one, because a site
     /// spans every port on a host.
     pub(crate) port: u16,
+    /// How often a WebSocket connection must prove it is still there
+    /// (see [`crate::ws`]).
+    pub(crate) keepalive: Duration,
 }
+
+/// Default interval between the liveness pings a WebSocket connection
+/// gets while it is otherwise idle. Long enough that a healthy dashboard
+/// is never disturbed, short enough that a vanished client is reclaimed
+/// while a long serve process is still running.
+const DEFAULT_KEEPALIVE: Duration = Duration::from_secs(20);
 
 /// The dashboard server; bind and serve until the process exits.
 pub struct DashboardServer {
@@ -81,6 +91,8 @@ pub struct DashboardServer {
     /// terminal. The file is named inside `run`, after the bind, so the
     /// name carries the port the server actually owns.
     access_dir: Option<PathBuf>,
+    /// The liveness ping cadence handed to every WebSocket connection.
+    keepalive: Duration,
 }
 
 impl DashboardServer {
@@ -96,7 +108,15 @@ impl DashboardServer {
             manager,
             port,
             access_dir,
+            keepalive: DEFAULT_KEEPALIVE,
         }
+    }
+
+    /// Overrides the WebSocket liveness ping cadence; tests use a short
+    /// interval so they do not have to wait out the production one.
+    pub fn with_keepalive(mut self, interval: Duration) -> Self {
+        self.keepalive = interval;
+        self
     }
 
     /// The per-launch access token.
@@ -126,6 +146,7 @@ impl DashboardServer {
             // The port the bind actually settled on, not the one asked
             // for: `--dashboard 0` must gate against the port it owns.
             port: bound_port,
+            keepalive: self.keepalive,
         };
 
         let app = Router::new()

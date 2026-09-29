@@ -93,6 +93,12 @@ client 消息（JSON 文本帧）：
 服务器帧：文本帧承载 JSON 信封与 ack；二进制帧承载 JPEG
 screencast 图像。
 
+连接只在对端仍应答时存在。服务器每 20 s 对空闲 socket 发一次 ping，
+一个 ping 在整整一个间隔内没有得到应答即关闭连接；每次写同样有界，
+因此停止读取的 client 无法把循环卡在 send 里，永久占住 socket、
+它的订阅与它的 screencast 捕获。pong 来自 client 的协议栈而非页面，
+所以"慢但活着"的 client 会应答，永远不会被踢掉。
+
 ## 4. 决策 HTTP API
 
 `POST /api/decisions`，体为
