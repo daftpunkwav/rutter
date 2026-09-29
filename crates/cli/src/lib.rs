@@ -23,6 +23,7 @@ pub mod error;
 
 mod browse;
 mod launcher;
+mod one_shot;
 mod open;
 mod read;
 mod serve;
