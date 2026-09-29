@@ -56,6 +56,12 @@ rutter-mcp = { path = "crates/mcp" }
 rutter-observe = { path = "crates/observe" }
 rutter-policy = { path = "crates/policy" }
 rutter-session = { path = "crates/session" }
+# Test-only: the engine-cdp isolation test stands up a fake CDP
+# endpoint. The version tracks the one chromiumoxide 0.9 pulls in, so
+# the fake endpoint speaks the same websocket stack as the real
+# connection. Merging it into tokio-tungstenite is not an option: that
+# would test against a different tungstenite than the engine uses.
+async-tungstenite = { version = "0.32", features = ["tokio-runtime", "handshake"] }
 axum = { version = "0.8", features = ["ws"] }
 # Server-side surface only: stdio (transport-io) + streamable HTTP.
 # The client-side transports are test-only: the root tests/ package

@@ -32,4 +32,8 @@ futures = { workspace = true }
 reqwest = { workspace = true }
 rutter-engine = { workspace = true }
 tempfile = { workspace = true }
-tokio-tungstenite = { workspace = true }
+# The flow tests dial the dashboard's own WebSocket route with a real
+# client, so they need the connect feature. axum's `ws` feature pulls
+# the same one in today; asking for it here states the requirement
+# instead of inheriting it from another crate's feature set.
+tokio-tungstenite = { workspace = true, features = ["connect"] }

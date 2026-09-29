@@ -15,6 +15,9 @@ workspace = true
 [dependencies]
 rutter-core = { workspace = true }
 rutter-engine = { workspace = true }
+# Production code evaluates the in-page scripts (page.rs), and the
+# read tests convert their responses with the same pure layer; test
+# targets link [dependencies], so no second dev-dependencies entry.
 rutter-observe = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
@@ -30,9 +33,6 @@ tokio = { workspace = true, features = ["process"] }
 # The isolation fallback test dials a fake CDP endpoint that refuses
 # browser-context creation the way the Electron engine does; it rides
 # the same websocket stack the real connection uses.
-async-tungstenite = { version = "0.32", features = ["tokio-runtime", "handshake"] }
-# The read test converts the reader script's response with the pure
-# observation layer.
-rutter-observe = { workspace = true }
+async-tungstenite = { workspace = true }
 # TcpListener for the fake endpoint.
 tokio = { workspace = true, features = ["net"] }
