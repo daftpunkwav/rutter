@@ -13,7 +13,7 @@
 use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket};
 use rutter_core::ids::SessionId;
-use rutter_events::Envelope;
+use rutter_events::{Backbone, Envelope};
 use rutter_session::{ScreencastStream, SessionError};
 use serde_json::Value;
 use std::time::Duration;
@@ -53,21 +53,12 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
     // duplicates and are skipped.
     let mut live = backbone.subscribe();
 
-    // Replay: every session's history, ordered by sequence number.
-    let mut replay: Vec<Envelope> = Vec::new();
-    for session in state.manager.session_ids().await {
-        replay.extend(backbone.replay(&session));
-    }
-    replay.sort_by_key(|envelope| envelope.seq);
-    let watermark = replay.last().map(|envelope| envelope.seq);
-    for envelope in replay {
-        if send_within(&mut socket, Message::text(encode(&envelope)))
-            .await
-            .is_err()
-        {
-            return;
-        }
-    }
+    // Highest sequence number sent to this client; live envelopes at or
+    // below it are duplicates and are skipped.
+    let mut sent_up_to = match drain_history(&state, &backbone, None, &mut socket).await {
+        Ok(watermark) => watermark,
+        Err(()) => return,
+    };
 
     // Live: forward the broadcast stream; client decisions come back on
     // the same socket, so every write happens in this loop and replies
@@ -78,9 +69,6 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
     // on-demand: they flow only while a viewer asked for them, as
     // binary WebSocket frames.
     let mut current: Option<ScreencastStream> = None;
-    // Highest sequence number sent to this client; live envelopes at or
-    // below it are duplicates and are skipped.
-    let mut sent_up_to = watermark;
     // A connection that never speaks again is not one this loop can
     // tell from a healthy one: a peer that vanishes without a close
     // (a dropped network, a killed browser) leaves the socket parked in
@@ -118,24 +106,10 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                         // events: resync from the last
                         // sequence sent instead of losing the gap until a
                         // reconnect.
-                        // The watermark filter is pushed down into the
-                        // ring, so entries at or below it are never
-                        // cloned.
-                        let mut gap: Vec<Envelope> = Vec::new();
-                        for session in state.manager.session_ids().await {
-                            gap.extend(backbone.replay_after(&session, sent_up_to));
+                        match drain_history(&state, &backbone, sent_up_to, &mut socket).await {
+                            Ok(watermark) => sent_up_to = watermark,
+                            Err(()) => break,
                         }
-                        gap.sort_by_key(|envelope| envelope.seq);
-                        for envelope in gap {
-                            if send_within(&mut socket, Message::text(encode(&envelope)))
-                                .await
-                                .is_err()
-                            {
-                                return;
-                            }
-                            sent_up_to = Some(envelope.seq);
-                        }
-                        continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
@@ -166,52 +140,17 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                         let value: Option<Value> = serde_json::from_str(&text).ok();
                         match value.as_ref().and_then(|v| v.get("type")).and_then(Value::as_str) {
                             Some("screencast") => {
-                                // Dropping the previous stream stops
-                                // its capture task.
-                                current = None;
-                                let on = value
-                                    .as_ref()
-                                    .and_then(|v| v.get("on"))
-                                    .and_then(Value::as_bool)
-                                    .unwrap_or(false);
-                                let mut ack =
-                                    serde_json::json!({ "type": "screencast-ack", "started": false });
-                                if on {
-                                    let session_id = value
-                                        .as_ref()
-                                        .and_then(|v| v.get("session"))
-                                        .and_then(Value::as_str)
-                                        .map(|s| SessionId::new(s.to_owned()));
-                                    if let Some(session_id) = session_id {
-                                        match state.manager.get_session(&session_id).await {
-                                            Some(session) => match session.screencast().await {
-                                                Ok(stream) => {
-                                                    current = Some(stream);
-                                                    ack["started"] = serde_json::json!(true);
-                                                }
-                                                // The refusal names its cause instead of
-                                                // acking a stream that never comes.
-                                                Err(SessionError::NoOpenPage) => {
-                                                    ack["reason"] = serde_json::json!(
-                                                        "no open page to observe"
-                                                    );
-                                                }
-                                                Err(other) => {
-                                                    ack["reason"] =
-                                                        serde_json::json!(other.to_string());
-                                                }
-                                            },
-                                            None => {
-                                                ack["reason"] =
-                                                    serde_json::json!("no such session");
-                                            }
-                                        }
-                                    } else {
-                                        ack["reason"] =
-                                            serde_json::json!("the request names no session");
-                                    }
-                                }
-                                if send_within(&mut socket, Message::text(ack.to_string()))
+                                // Screencast control lives here because
+                                // the stream itself must live in this
+                                // loop. The previous stream is dropped
+                                // before a second one is registered:
+                                // its task would otherwise tear the new
+                                // capture down on its way out.
+                                drop(current.take());
+                                let (stream, ack) =
+                                    screencast_control(&state, value.as_ref()).await;
+                                current = stream;
+                                if send_within(&mut socket, Message::text(ack))
                                     .await
                                     .is_err()
                                 {
@@ -257,6 +196,75 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
         }
     }
     // Dropping `current` stops the capture task.
+}
+
+/// Writes every session's history at or above `after` in sequence
+/// order and answers the new watermark. `Err` means a write failed and
+/// the connection is over.
+///
+/// The first call replays from the start (`after` is `None`); the
+/// `Lagged` refill passes the highest sequence already sent, and the
+/// filter runs inside the ring so entries at or below it are never
+/// cloned. An empty batch keeps the watermark the caller already had.
+async fn drain_history(
+    state: &Dashboard,
+    backbone: &Backbone,
+    after: Option<u64>,
+    socket: &mut WebSocket,
+) -> Result<Option<u64>, ()> {
+    let mut batch: Vec<Envelope> = Vec::new();
+    for session in state.manager.session_ids().await {
+        batch.extend(backbone.replay_after(&session, after));
+    }
+    batch.sort_by_key(|envelope| envelope.seq);
+    for envelope in &batch {
+        send_within(socket, Message::text(encode(envelope))).await?;
+    }
+    Ok(batch.last().map(|envelope| envelope.seq).or(after))
+}
+
+/// Answers one `screencast` control message: the stream the loop should
+/// keep running and the ack to write. A refusal names its cause instead
+/// of acking a stream that never comes, and a request that names no
+/// session refuses the same way a body that never parsed does.
+async fn screencast_control(
+    state: &Dashboard,
+    request: Option<&Value>,
+) -> (Option<ScreencastStream>, String) {
+    let mut ack = serde_json::json!({ "type": "screencast-ack", "started": false });
+    if !request
+        .and_then(|value| value.get("on"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return (None, ack.to_string());
+    }
+    let Some(session_id) = request
+        .and_then(|value| value.get("session"))
+        .and_then(Value::as_str)
+        .map(|session| SessionId::new(session.to_owned()))
+    else {
+        ack["reason"] = serde_json::json!("the request names no session");
+        return (None, ack.to_string());
+    };
+    let Some(session) = state.manager.get_session(&session_id).await else {
+        ack["reason"] = serde_json::json!("no such session");
+        return (None, ack.to_string());
+    };
+    match session.screencast().await {
+        Ok(stream) => {
+            ack["started"] = serde_json::json!(true);
+            (Some(stream), ack.to_string())
+        }
+        Err(SessionError::NoOpenPage) => {
+            ack["reason"] = serde_json::json!("no open page to observe");
+            (None, ack.to_string())
+        }
+        Err(other) => {
+            ack["reason"] = serde_json::json!(other.to_string());
+            (None, ack.to_string())
+        }
+    }
 }
 
 /// Applies one client message; approvals answer the broker. The
