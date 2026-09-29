@@ -141,7 +141,8 @@ impl ObservationFeeds {
 }
 
 /// Pushes an entry with the capacity bound; free-standing so the rule
-/// is unit-testable without a feed map.
+/// is unit-testable without a feed map. The oldest entry falls off
+/// first once the buffer holds [`FEED_CAPACITY`] of them.
 fn push_bounded(entries: &mut VecDeque<ConsoleEntry>, entry: ConsoleEntry) {
     if entries.len() >= FEED_CAPACITY {
         entries.pop_front();

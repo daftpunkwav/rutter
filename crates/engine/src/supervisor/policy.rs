@@ -56,6 +56,10 @@ pub struct RestartPolicy {
 impl RestartPolicy {
     /// Production defaults: 1 s..30 s backoff, breaker opens after
     /// `max_restarts` attempts within `window`.
+    ///
+    /// `max_restarts` is floored at one attempt: a zero budget would
+    /// read as "never try again", turning a policy meant to bound a
+    /// crash loop into the thing that makes it permanent.
     pub fn new(max_restarts: u32, window: Duration) -> Self {
         Self {
             backoff: Backoff::new(Duration::from_secs(1), Duration::from_secs(30)),
@@ -65,7 +69,8 @@ impl RestartPolicy {
     }
 
     /// Overrides the backoff shape; used by tests and callers hosting
-    /// engines with unusual startup latency.
+    /// engines with unusual startup latency. `max_restarts` carries the
+    /// same floor as [`RestartPolicy::new`].
     pub fn with_backoff(
         max_restarts: u32,
         window: Duration,

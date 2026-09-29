@@ -37,9 +37,9 @@ mod tests {
         // and a long-lived document that re-renders grows the browser
         // process with it.
         //
-        // Behaviour is covered by the page-side harness; these
-        // assertions pin that the sweep exists, runs on the way out of
-        // the store accessor, and actually deletes what it finds.
+        // These assertions pin the sweep's shape in the embedded text.
+        // No test in the repository runs the script, so the shape is
+        // all that is checked here.
         assert!(
             SERIALIZER_JS.contains("function pruneRefs"),
             "the serializer must sweep collected refs"

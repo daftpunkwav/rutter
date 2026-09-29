@@ -1,9 +1,9 @@
 //! Serializer envelope parsing: page JSON to snapshot conversion entry.
 //!
-//! Boundary: adapts the in-page serializer's envelope to the pure
-//! `snapshot_builder`. The caller evaluates `serializer_script()` in a
-//! page and hands the returned JSON here; the engine stays out of this
-//! crate entirely.
+//! Boundary: adapts the in-page serializer's envelope to the
+//! token-budgeted `snapshot_builder`. The caller evaluates
+//! `serializer_script()` in a page and hands the returned JSON here;
+//! the engine stays out of this crate entirely.
 
 use serde_json::Value;
 

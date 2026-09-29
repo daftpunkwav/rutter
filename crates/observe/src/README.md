@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 | `assets.rs` | `include_str!` embedding of the scripts |
 | `snapshot_builder/` | DOM tree → `Snapshot` pipeline (see its README) |
 | `read.rs` | Reader envelope → `Readout` (version/truncation/clamping) |
-| `response.rs` | Serializer envelope → snapshot_builder input (version/truncation flags) |
+| `response.rs` | Serializer envelope → `snapshot_builder` input (version/truncation flags) |
 | `resolver.rs` | Reference/focus/select/wait/storage helper scripts |
 
 Pure transformation only: if you are about to add a dependency on

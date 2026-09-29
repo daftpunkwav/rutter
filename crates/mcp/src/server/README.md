@@ -5,7 +5,7 @@ English | [中文](README.zh.md)
 | File | Role |
 |---|---|
 | `mod.rs` | `RutterMcp`: session lifecycle (OnceCell + fail-fast after close), the 25 tools, result/protocol error mapping |
-| `params.rs` | Pure input types: parameter structs, `Direction`, `SameSiteInput`, `CookieInput` → `Cookie` |
+| `params.rs` | Pure input types: parameter structs, `ScrollDirectionInput`, `SameSiteInput`, `CookieInput` → `Cookie` |
 | `tests.rs` | Lifecycle tests over a stub engine, truncation-marker mapping (private paths) |
 
 Parameter-mapping tests live in the crate's `tests/tool_params.rs`.

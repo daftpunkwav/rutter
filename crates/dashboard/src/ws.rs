@@ -1,10 +1,12 @@
-//! The dashboard WebSocket: replay first, then live events; approval
-//! decisions arrive as client messages, screencast frames leave as
-//! binary frames on demand.
+//! The dashboard WebSocket: replay first, then live events. Inbound
+//! text frames are one of three kinds, dispatched on their `type`
+//! field — an approval decision, screencast control, or the accepted
+//! no-op `subscribe`; screencast frames leave as binary frames on
+//! demand.
 //!
-//! A connection lives only as long as its peer answers: every write is
-//! bounded and a silent peer is asked to prove it is there (see
-//! [`WRITE_TIMEOUT`]).
+//! A connection lives only as long as its peer answers: a silent peer
+//! is asked to prove it is there on the [`Dashboard::keepalive`]
+//! cadence, and every write is bounded by [`WRITE_TIMEOUT`].
 
 // Restriction lints are denied workspace-wide; tests may use plain
 // assertions and unwrapping on fixtures.
@@ -35,8 +37,10 @@ use crate::Dashboard;
 /// headroom rather than a guess at link speed.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Replays history per session, then forwards live events; client
-/// messages carry approval decisions.
+/// Replays history per session, then forwards live events until the
+/// peer stops answering. Inbound text frames are dispatched on their
+/// `type` field: `screencast` and `subscribe` are handled in this
+/// loop, everything else goes to [`handle_decision`].
 pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
     let Some(backbone) = state.manager.backbone().await else {
         let _ = socket
@@ -135,8 +139,6 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
             incoming = socket.recv() => {
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
-                        // Screencast control lives here because the
-                        // stream itself must live in this loop.
                         let value: Option<Value> = serde_json::from_str(&text).ok();
                         match value.as_ref().and_then(|v| v.get("type")).and_then(Value::as_str) {
                             Some("screencast") => {
@@ -164,6 +166,12 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                 // so there is nothing further to do.
                             }
                             _ => {
+                                // The decision path, and the only one
+                                // that answers. A message that names
+                                // no known type — or one whose body
+                                // does not parse — is dropped without
+                                // a reply rather than closing the
+                                // connection.
                                 if let Some(reply) = handle_decision(&state, &text)
                                     && send_within(&mut socket, Message::text(reply))
                                         .await

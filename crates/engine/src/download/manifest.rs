@@ -27,8 +27,10 @@ const MANIFEST_URL_ENV: &str = "RUTTER_ENGINE_MANIFEST_URL";
 /// artifacts are published on this host only.
 const ARTIFACT_HOST: &str = "storage.googleapis.com";
 
-/// The manifest endpoint to fetch: the [`MANIFEST_URL_ENV`] override
-/// when it is set to something, the published default otherwise.
+/// The manifest endpoint to fetch: the `RUTTER_ENGINE_MANIFEST_URL`
+/// override when it is set to something, the published default
+/// otherwise. The variable is named outright because the constant
+/// holding its name is private to this module and does not render.
 pub fn manifest_url() -> String {
     resolve_manifest_url(std::env::var(MANIFEST_URL_ENV).ok().as_deref())
 }
