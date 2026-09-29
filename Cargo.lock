@@ -1709,6 +1709,7 @@ dependencies = [
  "rutter-observe",
  "rutter-policy",
  "rutter-session",
+ "serde_json",
  "thiserror",
  "tokio",
 ]

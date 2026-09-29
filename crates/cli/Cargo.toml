@@ -37,3 +37,8 @@ rmcp = { workspace = true }
 clap = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+# The one-shot engine double answers `evaluate` with an envelope, so
+# the test needs the JSON value type the page scripts return.
+serde_json = { workspace = true }

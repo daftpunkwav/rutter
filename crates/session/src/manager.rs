@@ -275,11 +275,21 @@ async fn start_running(inner: &Arc<Inner>) -> Result<Running, EngineError> {
 /// Watches for engine replacements and rebuilds every session:
 /// fresh context, storage-state replay, page restoration, and an
 /// `EngineRestarted` event per session.
-fn spawn_recovery_watcher(inner: &Arc<Inner>, mut watcher: tokio::sync::watch::Receiver<u64>) {
+///
+/// The returned receiver fires once the task has taken its baseline.
+/// A bump that lands before that would be swallowed as the baseline
+/// itself, so a caller that sends one has to wait for this first
+/// rather than sleep and hope.
+fn spawn_recovery_watcher(
+    inner: &Arc<Inner>,
+    mut watcher: tokio::sync::watch::Receiver<u64>,
+) -> tokio::sync::oneshot::Receiver<()> {
     let weak = Arc::downgrade(inner);
+    let (announced, baselined) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
         // The current value is the baseline; only real bumps recover.
         let _baseline = *watcher.borrow_and_update();
+        let _ = announced.send(());
         while watcher.changed().await.is_ok() {
             let Some(inner) = weak.upgrade() else {
                 break;
@@ -342,6 +352,7 @@ fn spawn_recovery_watcher(inner: &Arc<Inner>, mut watcher: tokio::sync::watch::R
             }
         }
     });
+    baselined
 }
 
 #[cfg(test)]
@@ -539,6 +550,18 @@ mod tests {
         session
     }
 
+    /// The signal the recovery task sends once it has taken its
+    /// baseline. A bump sent before this would be mistaken for the
+    /// baseline itself, so a fixed sleep here is a race on a loaded
+    /// machine: it is long enough on a fast one and too short on a
+    /// slow one, and it fails as a flake nobody can reproduce.
+    async fn baselined(announced: tokio::sync::oneshot::Receiver<()>) {
+        tokio::time::timeout(std::time::Duration::from_secs(5), announced)
+            .await
+            .expect("the recovery task starts")
+            .expect("it announces its baseline");
+    }
+
     async fn wait_for_event(
         backbone: &Backbone,
         session: &SessionId,
@@ -568,10 +591,12 @@ mod tests {
         });
         let inner = test_inner(Arc::clone(&launcher));
         let (tx, rx) = tokio::sync::watch::channel(0_u64);
-        spawn_recovery_watcher(&inner, rx);
-        // The task must establish its baseline before the bump lands.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        baselined(spawn_recovery_watcher(&inner, rx)).await;
         tx.send_modify(|count| *count += 1);
+        // Nothing signals a bump that correctly does nothing, so this
+        // one assertion has to wait out a window. It is a window, not
+        // a baseline: the baseline handshake above is what the machine
+        // speed would actually have broken.
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert!(
             launcher
@@ -593,10 +618,9 @@ mod tests {
         let (running, engine) = start_test_running(Arc::clone(&launcher)).await;
         *inner.engine.write().await = Some(Arc::clone(&running));
         let (tx, rx) = tokio::sync::watch::channel(0_u64);
-        spawn_recovery_watcher(&inner, rx);
-        // The task must establish its baseline before the bump lands.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        baselined(spawn_recovery_watcher(&inner, rx)).await;
         tx.send_modify(|count| *count += 1);
+        // As above: an absent action leaves nothing to wait on.
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert!(
             engine
@@ -639,10 +663,7 @@ mod tests {
             .await;
 
         let (tx, rx) = tokio::sync::watch::channel(0_u64);
-        spawn_recovery_watcher(&inner, rx);
-        // Let the task establish its baseline; a bump that lands before
-        // the first poll would be mistaken for it.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        baselined(spawn_recovery_watcher(&inner, rx)).await;
         tx.send_modify(|count| *count += 1);
 
         wait_for_event(&running.backbone, &SessionId::new("s1"), |event| {
@@ -684,9 +705,16 @@ mod tests {
 
     #[tokio::test]
     async fn a_recovery_context_failure_leaves_the_session_as_it_was() {
+        // The gate is the completion barrier: the rebuild parks inside
+        // `create_context` and the test holds it there, so "no restart
+        // event yet" is observed while the rebuild provably has not
+        // finished. A fixed wait instead would race the rebuild on a
+        // loaded machine and could pass for the wrong reason.
+        let (entered, entered_rx) = tokio::sync::oneshot::channel::<()>();
+        let (release, release_rx) = tokio::sync::oneshot::channel::<()>();
         let launcher = Arc::new(RecoveryLauncher {
             engines: Mutex::new(Vec::new()),
-            context_gate: Mutex::new(None),
+            context_gate: Mutex::new(Some((entered, release_rx))),
         });
         let inner = test_inner(Arc::clone(&launcher));
         let (running, engine) = start_test_running(Arc::clone(&launcher)).await;
@@ -695,11 +723,25 @@ mod tests {
 
         engine.fail_contexts.store(true, Ordering::SeqCst);
         let (tx, rx) = tokio::sync::watch::channel(0_u64);
-        spawn_recovery_watcher(&inner, rx);
-        // The task must establish its baseline before the bump lands.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        baselined(spawn_recovery_watcher(&inner, rx)).await;
         tx.send_modify(|count| *count += 1);
-        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+        tokio::time::timeout(std::time::Duration::from_secs(5), entered_rx)
+            .await
+            .expect("the rebuild reached create_context")
+            .expect("entry signal");
+        assert!(
+            running
+                .backbone
+                .replay(&SessionId::new("s1"))
+                .iter()
+                .all(|envelope| !matches!(envelope.event, Event::EngineRestarted)),
+            "no restart event while the rebuild is still in flight"
+        );
+        release.send(()).expect("release the rebuild");
+        // Let the failed rebuild run out; the assertion below is what
+        // it must not have done.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         assert!(
             running
@@ -737,9 +779,7 @@ mod tests {
         let _session = seeded_session(&running, &inner).await;
 
         let (tx, rx) = tokio::sync::watch::channel(0_u64);
-        spawn_recovery_watcher(&inner, rx);
-        // The task must establish its baseline before the bump lands.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        baselined(spawn_recovery_watcher(&inner, rx)).await;
         tx.send_modify(|count| *count += 1);
 
         // The rebuild parks inside create_context; the close lands in

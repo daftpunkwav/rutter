@@ -292,6 +292,83 @@ async fn ws_decisions_answer_parked_approvals_and_controls_are_acked() {
 }
 
 #[tokio::test]
+async fn an_unknown_message_type_is_dropped_without_ending_the_stream() {
+    // The dispatch loop's catch-all drops a message that names no
+    // known type: no reply, but also no close. If that branch took
+    // the connection down, a client on a newer protocol -- or one that
+    // sent a frame the server does not model -- would lose its replay
+    // and its live events rather than being told nothing.
+    let serving = serve().await;
+    let id = SessionId::new("s1");
+    serving
+        .manager
+        .session(id.clone())
+        .await
+        .expect("session starts");
+    let backbone = serving
+        .manager
+        .backbone()
+        .await
+        .expect("the engine is running");
+    let mut stream = connect(&serving).await;
+
+    // Drain the replay so the assertions below are about the live
+    // branch alone.
+    loop {
+        let frame = next_json(&mut stream).await;
+        if frame["event"]["type"] == "session_started" {
+            break;
+        }
+    }
+
+    // A body that names no known type, and one that does not parse at
+    // all, take the same branch. Neither may be answered.
+    stream
+        .send(Message::text(
+            serde_json::json!({"type": "nonsense", "request_id": "apr-1"}).to_string(),
+        ))
+        .await
+        .expect("send unknown type");
+    stream
+        .send(Message::text("{not json".to_string()))
+        .await
+        .expect("send unparsable body");
+
+    // The decision that follows is the barrier: one socket carries one
+    // ordered stream and this loop handles its frames in order, so an
+    // ack can only exist if the two frames before it were received
+    // and neither ended the connection. Publishing first would race
+    // the `select!` and prove nothing.
+    let (approval, receiver) = serving.manager.broker().open();
+    stream
+        .send(Message::text(
+            serde_json::json!({
+                "type": "decision",
+                "request_id": approval.as_str(),
+                "grant": false,
+            })
+            .to_string(),
+        ))
+        .await
+        .expect("send decision after the noise");
+    let ack = tokio::time::timeout(
+        Duration::from_secs(5),
+        next_of_type(&mut stream, "decision-ack"),
+    )
+    .await
+    .expect("the loop still answers after an unknown type");
+    assert_eq!(ack["accepted"], true, "the decision is still delivered");
+    assert_eq!(receiver.await.expect("delivered"), Decision::Deny);
+
+    // And the live branch is untouched too.
+    backbone.publish(id, Event::SessionClosed);
+    let live = tokio::time::timeout(Duration::from_secs(5), next_json(&mut stream))
+        .await
+        .expect("events still flow after an unknown type");
+    assert_eq!(live["event"]["type"], "session_closed");
+}
+
+#[tokio::test]
 async fn screencast_of_a_session_without_a_page_names_the_reason() {
     // A session with no open page answers
     // `no open page to observe` rather than opening one. The ack used
