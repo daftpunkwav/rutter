@@ -15,6 +15,15 @@ the payload vocabulary.
   `serve --dashboard PORT` and the rule set through `serve --policy
   FILE`. A non-loopback `--http` bind is refused unless confirmed with
   `serve --allow-remote` — the transport has no authentication.
+- **The streamable HTTP transport carries no credentials of any
+  kind.** A loopback bind is exactly as unauthenticated as a LAN one:
+  the Origin and Host checks below keep *browsers* out, but any
+  process that can open a TCP connection to the address — another
+  program running as this user, anything in a container sharing the
+  network namespace — speaks the protocol and drives the browser with
+  this user's sessions. Isolation must come from who can reach the
+  socket, not from a token. Use stdio (the default) for an
+  agent-supervised server.
 - One MCP client connection is one Session. The `SessionId` is minted
   at connection start ([glossary](glossary.md#identifiers)) and
   reported in the `SessionStarted` event; it appears in error payloads
@@ -35,7 +44,7 @@ the payload vocabulary.
 
 - Tools return MCP content blocks; text results use one `text` block.
 - **Action failures are results, not protocol errors.** A failed
-  action returns `isError: true` whose text carries the `ActionError`
+  action returns `isError: true` whose text carries the failure
   message plus its actionable hint on a second line (`hint: …`).
   Agents read them as data. Validation rejections (`amount` <= 0, a
   viewport out of range) are `invalid_params` protocol errors whose
@@ -54,9 +63,35 @@ the payload vocabulary.
 - Every mutating tool returns a fresh snapshot by default, unless
   stated otherwise below.
 
-The complete failure vocabulary is
-[`ActionError`](../crates/core/src/error.rs); every variant carries an
-English hint an agent can act on:
+### Which vocabulary a failure speaks
+
+A tool result renders the *session-layer* error
+([`SessionError`](../crates/session/src/error.rs)) verbatim, so two
+vocabularies can reach the same agent, distinguished by which arm the
+failure took:
+
+- **Action failures** speak [`ActionError`](../crates/core/src/error.rs)
+  — the table below — message and hint both included, unchanged.
+- **Engine-layer failures** (a navigation that could not be sent, a
+  dead engine, a page cap, a read-only operation the backend refuses)
+  keep the engine's own classification
+  ([`EngineError`](../crates/engine/src/error.rs)) and its hint. The
+  agent therefore sees engine text such as `engine terminated` or
+  `capacity exceeded: …` — a failure the engine reports before any
+  action taxonomy applies.
+- **Session-layer failures** the engine never sees — `Capacity`
+  (too many concurrent clients), `NoOpenPage` (nothing open to
+  observe), `Internal` — speak their own three messages.
+
+What holds for **all** of them, and what an agent may rely on, is the
+envelope rather than the wording: one text block, the message first,
+the hint on its own `hint: ` line, and never empty.
+
+The [`ActionError`](../crates/core/src/error.rs) taxonomy is also what
+the [event backbone](events.md#2-event-vocabulary) carries: an
+`ActionFailed` event reports its `error` in that vocabulary even when
+the tool result reported the same failure in the engine's. Every
+variant carries an English hint an agent can act on:
 
 | Variant | Meaning |
 |---|---|
@@ -110,7 +145,11 @@ waiting on it.
 ### navigate
 `{ url: string }` → snapshot. Navigates the active page (opening the
 first page when needed). Navigation uses the context's navigation
-timeout; failure → `ActionError::NavigationFailed`.
+timeout; a failure to load reports the engine's own
+`navigation to '<url>' failed: <cause>` message, with the transport
+classification (`DnsFailed`, `TlsFailed`, an HTTP status, …) in the
+cause field. The [event](#2-result-conventions) for the same failure
+carries `ActionError::NavigationFailed`.
 
 ### back / forward / reload
 `{}` → snapshot. History operations on the active page.
@@ -128,7 +167,8 @@ when a guard cropped the document.
 
 ### screenshot
 `{}` → `image` content block (PNG, base64). Honors the context's
-screenshot rate cap; capture errors map to `ActionError::Internal`.
+screenshot rate cap; a capture failure reports the engine's own
+message ([result conventions](#2-result-conventions)).
 
 ### click
 `{ reference: string }` → snapshot. Auto-wait, then mouse
@@ -184,8 +224,11 @@ error reports the effective budget.
 
 ### tabs_list
 `{}` → text block, one line per page: `<page-id> <url>`; the active
-page is suffixed ` (active)`. Listing first reconciles with the
-engine: windows that appeared without rutter opening them — a
+page is suffixed ` (active)`. Two boundary texts complete the format:
+a page whose URL is not known yet prints `(unknown url)` in its
+place, and a session with no page at all prints
+`no pages open; navigate to open one`. Listing first reconciles with
+the engine: windows that appeared without rutter opening them — a
 `target=_blank`/`window.open` popup, a window the human opened — are
 reported under stable `target:…` ids and become selectable. Such ids
 select and close like any other; closing one that the session's own

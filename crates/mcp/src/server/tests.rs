@@ -374,6 +374,97 @@ fn action_failures_carry_the_message_plus_hint_contract() {
     assert!(!hint.trim().is_empty(), "the hint is not empty: {hint}");
 }
 
+#[test]
+fn every_agent_visible_failure_carries_the_message_plus_hint_contract() {
+    // The tool boundary renders whatever `SessionError` it is handed, and
+    // that error is not always an `ActionError`: an engine-layer failure
+    // (a navigation that could not be sent, a dead engine, a page cap)
+    // keeps the engine's own classification and its own hint.
+    // `docs/tool-catalog.md` §2 documents both shapes, so what must hold
+    // for all of them — the part an agent parses — is the envelope: the
+    // message first, the hint on its own `hint: ` line, never empty. If
+    // this test fails, some failure stopped speaking the contract; the
+    // fix belongs at the boundary, not in the docs.
+    let session = SessionId::new("s1");
+    let reference = rutter_core::reference::Reference::new("e17");
+    let failures: Vec<SessionError> = vec![
+        // The action taxonomy, as every action failure reports it.
+        SessionError::Action(rutter_core::error::ActionError::NavigationFailed {
+            url: "https://example.com".to_owned(),
+            cause: rutter_core::error::TransportCause::DnsFailed,
+        }),
+        SessionError::Action(rutter_core::error::ActionError::ReferenceExpired {
+            reference: reference.clone(),
+        }),
+        SessionError::Action(rutter_core::error::ActionError::NotInteractable {
+            reference: reference.clone(),
+            reason: "covered by another element".to_owned(),
+        }),
+        SessionError::Action(rutter_core::error::ActionError::TimedOut {
+            phase: rutter_core::error::WaitPhase::Visible,
+            elapsed: std::time::Duration::from_secs(5),
+        }),
+        SessionError::Action(rutter_core::error::ActionError::ApprovalDenied {
+            reference: reference.clone(),
+        }),
+        SessionError::Action(rutter_core::error::ActionError::ApprovalTimedOut {
+            waited: std::time::Duration::from_secs(120),
+        }),
+        SessionError::Action(rutter_core::error::ActionError::EngineTerminated {
+            session: session.clone(),
+        }),
+        SessionError::Action(rutter_core::error::ActionError::Internal {
+            detail: "unreachable state".to_owned(),
+        }),
+        // The engine layer, which an action surfaces unchanged.
+        SessionError::Engine(EngineError::NavigationFailed {
+            url: "https://example.com".to_owned(),
+            cause: rutter_core::error::TransportCause::DnsFailed,
+            detail: "dns error".to_owned(),
+        }),
+        SessionError::Engine(EngineError::Terminated),
+        SessionError::Engine(EngineError::Timeout {
+            operation: "navigate".to_owned(),
+            elapsed: std::time::Duration::from_secs(30),
+        }),
+        SessionError::Engine(EngineError::Capacity {
+            detail: "page cap reached".to_owned(),
+        }),
+        SessionError::Engine(EngineError::Internal {
+            detail: "capture failed".to_owned(),
+        }),
+        // The session layer's own answers.
+        SessionError::Capacity {
+            detail: "session cap reached".to_owned(),
+        },
+        SessionError::NoOpenPage,
+        SessionError::Internal {
+            detail: "unreachable state".to_owned(),
+        },
+    ];
+
+    for failure in failures {
+        let result = error_result(&failure);
+        assert!(is_error(&result), "reported as an isError: {failure}");
+        let text = first_text_block(&result);
+        let (message, hint) = text
+            .split_once("\nhint: ")
+            .unwrap_or_else(|| panic!("the hint rides on its own line: {text}"));
+        assert!(!message.is_empty(), "the message is not empty: {failure}");
+        assert!(
+            !hint.trim().is_empty(),
+            "every failure carries an actionable hint: {failure}"
+        );
+        // The same rendering whether the failure arrives as a tool result
+        // or as a protocol error: one envelope, one contract.
+        let protocol = protocol_error(failure);
+        assert!(
+            protocol.message.contains(&text),
+            "protocol errors carry the same message-plus-hint text"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------
 // Tool handlers over a scripted page: the bodies map results and
 // failures; the stub engine above (no pages) only reaches the failure

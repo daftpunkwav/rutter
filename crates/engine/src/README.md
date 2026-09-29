@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 | `health.rs` | `HealthReport` |
 | `input.rs` | Protocol-neutral input events dispatched through `PageHandle` |
 | `config.rs` | `LaunchMode`, `ContextConfig` (page caps, screenshot interval) |
-| `error.rs` | `EngineError` + per-variant hints; session maps these to `ActionError` |
+| `error.rs` | `EngineError` + per-variant hints; tool results report these unchanged, the event backbone maps them to `ActionError` |
 | `backoff.rs` | Capped exponential backoff |
 | `download/` | Chrome-for-Testing resolution and install (see its README) |
 | `supervisor/` | Heartbeat, restarts, breaker (see its README) |

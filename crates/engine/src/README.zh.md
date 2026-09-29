@@ -11,7 +11,7 @@
 | `health.rs` | `HealthReport` |
 | `input.rs` | 经 `PageHandle` 派发的协议中立输入 Event（事件） |
 | `config.rs` | `LaunchMode`、`ContextConfig`（页面上限、截图间隔） |
-| `error.rs` | `EngineError` + 每个变体的提示；session 把它们映射为 `ActionError` |
+| `error.rs` | `EngineError` + 每个变体的提示；工具结果原样报告它们，事件骨干把它们映射为 `ActionError` |
 | `backoff.rs` | 有上限的指数退避 |
 | `download/` | Chrome-for-Testing 解析与安装（见其 README） |
 | `supervisor/` | 心跳、重启、熔断器（见其 README） |

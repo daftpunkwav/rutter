@@ -1,8 +1,11 @@
 //! The public error contract of the engine layer.
 //!
 //! Boundary: these variants describe failures of the engine process and
-//! its protocol; the session layer maps them onto
-//! [`rutter_core::error::ActionError`] for agents.
+//! its protocol. A tool result reports one of them unchanged — this
+//! crate's own message and hint reach the agent as written — while the
+//! event backbone's `ActionFailed` payload folds the same failure into
+//! [`rutter_core::error::ActionError`], which is where consumers read
+//! one vocabulary (see `docs/sessions.md`).
 
 use std::time::Duration;
 

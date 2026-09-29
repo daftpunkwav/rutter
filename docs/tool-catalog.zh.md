@@ -14,6 +14,12 @@
   挂载，规则集通过 `serve --policy FILE` 加载。非 loopback 的
   `--http` 绑定必须用 `serve --allow-remote` 确认——该传输没有
   认证。
+- **streamable HTTP 传输不携带任何凭据。** 环回绑定与局域网绑定
+  一样没有认证：下面的 Origin 与 Host 校验挡的是*浏览器*，但任何
+  能对该地址建立 TCP 连接的进程——本用户下运行的另一个程序、共享
+  网络命名空间的容器中的任何东西——都能说这个协议，并用本用户的
+  session 驱动浏览器。隔离必须来自谁能连上该套接字，而不是来自
+  token。面向受 agent 监管的服务器请使用 stdio（默认）。
 - 一条 MCP client 连接是一个 Session。`SessionId` 在连接开始时
   铸造（[术语表](glossary.zh.md#标识符)），通过 `SessionStarted`
   事件报告；引用 session 的错误载荷中也会出现。
@@ -31,7 +37,7 @@
 
 - 工具返回 MCP content block；文本结果使用一个 `text` block。
 - **动作失败是结果，不是协议错误。** 失败的动作返回
-  `isError: true`，其文本携带 `ActionError` 消息，第二行是可执行
+  `isError: true`，其文本携带失败消息，第二行是可执行
   的提示（`hint: …`）。agent 将其作为数据读取。校验类拒绝
   （`amount` <= 0、视口越界）是 `invalid_params` 协议错误，消息指
   明规则；这些值在 schema 中声明为有符号类型，正是为了不让 rmcp
@@ -44,9 +50,32 @@
   置位时文本以 `… truncated` 标记行结尾。
 - 除非下文另有说明，每个变更类工具默认返回一份新快照。
 
-完整的失败词汇是
-[`ActionError`](../crates/core/src/error.rs)；每个变体都携带
-agent 可执行的英文提示：
+### 失败说的是哪一种词汇
+
+工具结果原样渲染 *session 层* 的错误
+（[`SessionError`](../crates/session/src/error.rs)），因此有两套
+词汇可能抵达同一个 agent，区别在于失败走了哪一条分支：
+
+- **动作失败**说
+  [`ActionError`](../crates/core/src/error.rs)——即下表——
+  消息与提示都原样带出。
+- **引擎层失败**（导航发不出去、引擎死亡、页面 cap、后端拒绝的
+  只读操作）保留引擎自己的分类
+  （[`EngineError`](../crates/engine/src/error.rs)）与它自己的提示。
+  agent 因此会看到 `engine terminated`、`capacity exceeded: …` 这类
+  引擎文本——即在任何动作词汇生效之前引擎就报告了的失败。
+- **session 层自己的失败**——`Capacity`（并发 client 过多）、
+  `NoOpenPage`（没有可观察的页面）、`Internal`——说它们自己的三条
+  消息。
+
+对**所有**这些失败都成立、也是 agent 可以依赖的，是外层信封而不是
+具体措辞：一个 text block，消息在前，提示独占一行 `hint: `，且
+永不为空。
+
+[`ActionError`](../crates/core/src/error.rs) 分类同时也是
+[事件骨干](events.zh.md#2-事件词汇) 所携带的：`ActionFailed` 事件的
+`error` 字段使用该词汇，即便同一次失败在工具结果中是以引擎词汇
+报告的。每个变体都携带 agent 可执行的英文提示：
 
 | 变体 | 含义 |
 |---|---|
@@ -95,8 +124,10 @@ agent 可执行的英文提示：
 
 ### navigate
 `{ url: string }` → snapshot。导航活动页面（需要时打开第一个
-页面）。导航使用 context 的导航超时；失败 →
-`ActionError::NavigationFailed`。
+页面）。导航使用 context 的导航超时；加载失败报告的是引擎自己的
+`navigation to '<url>' failed: <cause>` 消息，传输分类（`DnsFailed`、
+`TlsFailed`、HTTP 状态码等）在 `cause` 字段中。同一次失败的
+[事件](#2-结果约定) 携带 `ActionError::NavigationFailed`。
 
 ### back / forward / reload
 `{}` → snapshot。活动页面的历史操作。
@@ -112,7 +143,8 @@ auto-wait；提取规则与守卫见[读取格式](read-format.zh.md)。站点�
 
 ### screenshot
 `{}` → `image` content block（PNG，base64）。遵守 context 的
-截图频率上限；截取错误映射为 `ActionError::Internal`。
+截图频率上限；截取失败报告的是引擎自己的消息
+（见[结果约定](#2-结果约定)）。
 
 ### click
 `{ reference: string }` → snapshot。auto-wait，然后在解析盒中心
@@ -162,11 +194,13 @@ auto-wait；提取规则与守卫见[读取格式](read-format.zh.md)。站点�
 
 ### tabs_list
 `{}` → 文本块，每页一行：`<page-id> <url>`；活动页面后缀
-` (active)`。列出前先与引擎对账：非 rutter 打开的窗口——
-`target=_blank`/`window.open` 弹窗、人类开的窗口——会以稳定的
-`target:…` id 呈现并变为可选。这类 id 的 select/close 与普通页面
-一致；属于会话自身 context 的窗口会被真正关闭，引擎自有表面
-（app 窗口）只解除跟踪。
+` (active)`。还有两处边界文案补全该格式：URL 尚未知知的页面在
+URL 位置打印 `(unknown url)`；完全没有页面的 session 打印
+`no pages open; navigate to open one`。列出前先与引擎对账：非
+rutter 打开的窗口——`target=_blank`/`window.open` 弹窗、人类开的
+窗口——会以稳定的 `target:…` id 呈现并变为可选。这类 id 的
+select/close 与普通页面一致；属于会话自身 context 的窗口会被真正
+关闭，引擎自有表面（app 窗口）只解除跟踪。
 
 ### tabs_select
 `{ page_id: string }` → snapshot。未知 id → `invalid_params`。
