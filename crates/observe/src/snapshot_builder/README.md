@@ -1,4 +1,4 @@
-# builder/ — snapshot pipeline
+# snapshot_builder/ — snapshot pipeline
 
 English | [中文](README.zh.md)
 

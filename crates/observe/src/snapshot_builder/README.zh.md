@@ -1,4 +1,4 @@
-# builder/ — 快照流水线
+# snapshot_builder/ — 快照流水线
 
 [English](README.md) | 中文
 

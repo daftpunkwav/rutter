@@ -1,7 +1,7 @@
 //! Serializer envelope parsing: page JSON to snapshot conversion entry.
 //!
 //! Boundary: adapts the in-page serializer's envelope to the pure
-//! builder. The caller evaluates `serializer_script()` in a
+//! `snapshot_builder`. The caller evaluates `serializer_script()` in a
 //! page and hands the returned JSON here; the engine stays out of this
 //! crate entirely.
 
@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use rutter_core::snapshot::Snapshot;
 
-use crate::builder::{self, PageMeta};
+use crate::snapshot_builder::{self, PageMeta};
 
 /// Serializer envelope format version accepted by this build.
 const ENVELOPE_VERSION: f64 = 1.0;
@@ -22,7 +22,7 @@ const ENVELOPE_VERSION: f64 = 1.0;
 /// an error; an unknown viewport disables viewport-first culling.
 pub fn snapshot_from_response(url: &str, response: &Value) -> Snapshot {
     // Borrow the envelope when possible: a large DOM tree must not be
-    // deep-copied before the builder reads it. Only a JSON-string
+    // deep-copied before `snapshot_builder` reads it. Only a JSON-string
     // envelope needs an owned parse.
     let parsed;
     let envelope = match response {
@@ -65,7 +65,7 @@ pub fn snapshot_from_response(url: &str, response: &Value) -> Snapshot {
         .filter(|value| value.is_object())
         .unwrap_or(&empty);
 
-    let mut snapshot = builder::build(url, &meta, root);
+    let mut snapshot = snapshot_builder::build(url, &meta, root);
     snapshot.truncated = snapshot.truncated || serializer_flagged || !version_ok || !root_present;
     snapshot
 }

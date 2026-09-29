@@ -6,7 +6,7 @@
 //!   [`serializer_script`], the reader through [`reader_script`]).
 //! - Convert the serializer's response into a
 //!   [`rutter_core::snapshot::Snapshot`] via [`snapshot_from_response`],
-//!   with the pure conversion in the internal builder.
+//!   with the pure conversion in the internal `snapshot_builder`.
 //! - Convert the reader's response into a
 //!   [`rutter_core::readout::Readout`] via [`read_from_response`].
 //!
@@ -24,10 +24,10 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 mod assets;
-mod builder;
 mod read;
 mod resolver;
 mod response;
+mod snapshot_builder;
 
 pub use read::read_from_response;
 pub use resolver::{
