@@ -9,7 +9,6 @@
 use axum::extract::ws::{Message, WebSocket};
 use rutter_core::ids::SessionId;
 use rutter_events::Envelope;
-use rutter_policy::{ApprovalId, Decision};
 use rutter_session::{ScreencastStream, SessionError};
 use serde_json::Value;
 
@@ -197,26 +196,20 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
     // Dropping `current` stops the capture task.
 }
 
-/// Applies one client message; approvals answer the broker.
+/// Applies one client message; approvals answer the broker. The
+/// decision body is the crate's shared contract (see
+/// [`crate::parse_decision`]); only the reply shape is this loop's.
 fn handle_client_message(state: &Dashboard, text: &str) -> Option<String> {
     let value: Value = serde_json::from_str(text).ok()?;
     match value.get("type")?.as_str()? {
         "decision" => {
-            let request_id = value.get("request_id")?.as_str()?;
-            let granted = value.get("grant")?.as_bool()?;
-            let decision = if granted {
-                Decision::Grant
-            } else {
-                Decision::Deny
-            };
-            let accepted = state
-                .broker
-                .decide(&ApprovalId::new(request_id.to_owned()), decision);
+            let (request_id, decision) = crate::parse_decision(&value)?;
+            let accepted = state.broker.decide(&request_id, decision);
             // Built through serde_json so a hostile request_id cannot
             // produce a malformed reply.
             serde_json::to_string(&serde_json::json!({
                 "type": "decision-ack",
-                "request_id": request_id,
+                "request_id": request_id.as_str(),
                 "accepted": accepted,
             }))
             .ok()

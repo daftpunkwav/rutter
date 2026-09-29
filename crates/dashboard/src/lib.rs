@@ -295,6 +295,28 @@ async fn ws_upgrade(
     Ok(upgrade.on_upgrade(move |socket| ws::ws_loop(state, socket)))
 }
 
+/// The decision both transports accept: `{"request_id": "apr-7",
+/// "grant": true|false}`. The WebSocket carries it inside a
+/// `{"type": "decision", ...}` message, the HTTP post as the bare
+/// object; `frontend/src/app.js` writes it, over the socket first and
+/// over the post as its fallback.
+///
+/// One parser for both, so the two transports cannot drift into
+/// disagreeing about what a decision is. Only the answer differs: the
+/// post answers with a status code, the socket with a `decision-ack`.
+fn parse_decision(body: &Value) -> Option<(ApprovalId, Decision)> {
+    let request_id = body.get("request_id")?.as_str()?;
+    let granted = body.get("grant")?.as_bool()?;
+    Some((
+        ApprovalId::new(request_id.to_owned()),
+        if granted {
+            Decision::Grant
+        } else {
+            Decision::Deny
+        },
+    ))
+}
+
 /// Decisions may also arrive as plain HTTP posts from scripts.
 async fn decide(
     State(state): State<Dashboard>,
@@ -305,24 +327,13 @@ async fn decide(
     if !auth::access_allowed(&state, &headers, &query) {
         return Err(StatusCode::FORBIDDEN);
     }
-    let value: Value = serde_json::from_str(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let request_id = value
-        .get("request_id")
-        .and_then(Value::as_str)
-        .ok_or(StatusCode::BAD_REQUEST)?;
-    let granted = value
-        .get("grant")
-        .and_then(Value::as_bool)
-        .ok_or(StatusCode::BAD_REQUEST)?;
-    let decision = if granted {
-        Decision::Grant
-    } else {
-        Decision::Deny
+    // Unparseable JSON and a well-formed object that is not a decision
+    // are the same refusal to a script: the body carries no decision.
+    let value: Option<Value> = serde_json::from_str(&body).ok();
+    let Some((request_id, decision)) = value.as_ref().and_then(parse_decision) else {
+        return Err(StatusCode::BAD_REQUEST);
     };
-    if state
-        .broker
-        .decide(&ApprovalId::new(request_id.to_owned()), decision)
-    {
+    if state.broker.decide(&request_id, decision) {
         Ok(StatusCode::OK)
     } else {
         Ok(StatusCode::NOT_FOUND)
@@ -365,6 +376,37 @@ async fn harden_responses(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Both transports read a decision through one parser, so the
+    /// shapes the socket accepts and the shapes the post accepts are
+    /// the same shapes. Pins the refusals too: anything that is not a
+    /// decision is no decision, never a default grant.
+    #[test]
+    fn one_parser_decides_what_a_decision_is() {
+        let grant = serde_json::json!({"request_id": "apr-7", "grant": true});
+        assert_eq!(
+            parse_decision(&grant),
+            Some((ApprovalId::new("apr-7"), Decision::Grant))
+        );
+        let deny = serde_json::json!({"type": "decision", "request_id": "apr-8", "grant": false});
+        assert_eq!(
+            parse_decision(&deny),
+            Some((ApprovalId::new("apr-8"), Decision::Deny)),
+            "the socket's envelope is the post's body plus a type tag"
+        );
+        for refused in [
+            serde_json::json!({"request_id": "apr-7"}),
+            serde_json::json!({"grant": true}),
+            serde_json::json!({"request_id": 7, "grant": true}),
+            serde_json::json!({"request_id": "apr-7", "grant": "yes"}),
+            serde_json::json!([]),
+        ] {
+            assert!(
+                parse_decision(&refused).is_none(),
+                "not a decision: {refused}"
+            );
+        }
+    }
 
     #[test]
     fn generated_tokens_are_cookie_safe_and_hex() {
