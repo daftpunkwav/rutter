@@ -19,3 +19,8 @@ The engine-touching tests are `#[ignore]`d by default; run them with
 
 The binary is located via `CARGO_BIN_EXE_rutter` when set, else the
 `RUTTER_BIN` override, else the workspace `target/debug` layout.
+
+`js/` is not a Cargo target: it holds the behavioural suite for the
+JavaScript this repository ships (the injected page scripts and the
+dashboard client), run by `scripts/check_js.sh`. See
+[`js/README.md`](js/README.md).

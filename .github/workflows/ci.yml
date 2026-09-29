@@ -51,6 +51,14 @@ jobs:
         run: bash scripts/check_headers.sh
       - name: Encoding gate
         run: bash scripts/check_encoding.sh
+      - name: JavaScript behaviour gate
+        shell: bash
+        # The page scripts and the dashboard client are executed
+        # against a fake DOM, not just parsed: their ref sweep, table
+        # rules and reconnect reset are unreachable from a string
+        # assertion. `node --test` is a builtin, so this adds no
+        # dependency; the gate reports "skipped" without Node.
+        run: bash scripts/check_js.sh
       - name: JavaScript syntax gate
         shell: bash
         # The dashboard and the Electron shell carry security-relevant

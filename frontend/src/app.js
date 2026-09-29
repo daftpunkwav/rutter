@@ -50,6 +50,11 @@
     var timeline = document.getElementById('events');
     if (timeline) { timeline.textContent = ''; }
     knownSessions = {};
+    // The set is re-rendered, not just reset: a dashboard whose last
+    // sessions all closed while the socket was down receives no
+    // session event at all, so nothing would ever take the stale
+    // chips (and the stale id options) off the screen.
+    renderSessions();
     var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     socket = new WebSocket(
       protocol + '//' + window.location.host + withToken('/ws'));

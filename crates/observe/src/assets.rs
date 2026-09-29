@@ -30,47 +30,30 @@ mod tests {
     }
 
     #[test]
-    fn the_reverse_ref_store_sweeps_collected_entries() {
-        // The reverse store is a strong Map keyed by the ref string, so
-        // nothing in it can be collected while its entry lives: without
-        // a sweep it grows with every element the page has ever shown,
-        // and a long-lived document that re-renders grows the browser
-        // process with it.
-        //
-        // These assertions pin the sweep's shape in the embedded text.
-        // No test in the repository runs the script, so the shape is
-        // all that is checked here.
-        assert!(
-            SERIALIZER_JS.contains("function pruneRefs"),
-            "the serializer must sweep collected refs"
-        );
-        assert!(
-            SERIALIZER_JS.contains("pruneRefs(window.__rutterRefStore)"),
-            "every snapshot that reaches the accessor sweeps first"
-        );
-        assert!(
-            SERIALIZER_JS.contains("store.reverse.delete(collected[i])"),
-            "a sweep that finds nothing to remove is not a sweep"
-        );
-    }
-
-    #[test]
-    fn the_reader_never_clips_a_row_to_the_header() {
-        // A colspan header spans fewer cells than the rows under it, and
-        // clipping those rows to the header's cell count dropped their
-        // trailing cells while the readout still claimed to be complete.
-        assert!(
-            !READER_JS.contains("cells.slice(0"),
-            "data cells must not be clipped to the header width"
-        );
-        assert!(
-            READER_JS.contains("while (cells.length < width)"),
-            "rows are padded to the widest row instead"
-        );
-        assert!(
-            READER_JS.contains("if (headerIndex === -1) return;"),
-            "a leading row with no cells must not swallow the table"
-        );
+    fn the_page_scripts_have_a_behavioural_suite() {
+        // These constants used to be pinned by string assertions --
+        // `SERIALIZER_JS.contains("function pruneRefs")` and
+        // `!READER_JS.contains("cells.slice(0")`. Neither could tell
+        // a working rule from a dead one: a rule that was renamed, or
+        // one that was defined and never called, passed both. The
+        // scripts are now executed instead (see `tests/js/` and
+        // `crates/observe/tests/page_scripts.rs`); what is left here
+        // is that the suites they run still name these assets, so a
+        // moved file fails the gate instead of silently emptying it.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("tests")
+            .join("js");
+        for suite in ["serializer.test.mjs", "reader.test.mjs"] {
+            let path = root.join(suite);
+            assert!(path.is_file(), "the suite {} is missing", path.display());
+            let source = std::fs::read_to_string(&path).expect("the suite is readable");
+            assert!(
+                source.contains("assets/serializer.js") || source.contains("assets/reader.js"),
+                "{suite} must load a shipped asset, not a copy"
+            );
+        }
     }
 
     #[test]
