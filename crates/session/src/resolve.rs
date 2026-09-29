@@ -59,7 +59,7 @@ impl ElementBox {
 /// Resolves a reference through the page. `None` means the reference no
 /// longer maps to a live element (`ReferenceExpired` for callers);
 /// malformed page answers degrade to `None` instead of failing.
-pub async fn resolve(
+pub async fn element_box(
     page: &dyn PageHandle,
     reference: &str,
 ) -> Result<Option<ElementBox>, EngineError> {

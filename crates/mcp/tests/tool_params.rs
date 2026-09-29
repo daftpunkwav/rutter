@@ -9,7 +9,7 @@
 
 use rutter_core::action::ScrollDirection;
 use rutter_core::cookie::{Cookie, SameSite};
-use rutter_mcp::server::{CookieInput, Direction, SameSiteInput};
+use rutter_mcp::server::{CookieInput, SameSiteInput, ScrollDirectionInput};
 
 #[test]
 fn cookie_inputs_map_with_defaults() {
@@ -50,10 +50,10 @@ fn scroll_directions_map_onto_the_core_vocabulary() {
     // The scroll tool's validation relies on this mapping staying
     // identity-shaped.
     for (input, expected) in [
-        (Direction::Up, ScrollDirection::Up),
-        (Direction::Down, ScrollDirection::Down),
-        (Direction::Left, ScrollDirection::Left),
-        (Direction::Right, ScrollDirection::Right),
+        (ScrollDirectionInput::Up, ScrollDirection::Up),
+        (ScrollDirectionInput::Down, ScrollDirection::Down),
+        (ScrollDirectionInput::Left, ScrollDirection::Left),
+        (ScrollDirectionInput::Right, ScrollDirection::Right),
     ] {
         assert_eq!(ScrollDirection::from(input), expected);
     }

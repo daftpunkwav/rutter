@@ -18,9 +18,9 @@
 mod params;
 
 pub use params::{
-    CookieInput, CookiesParams, Direction, NavigateParams, PageParams, PressKeyParams,
-    ReferenceParams, SameSiteInput, ScrollParams, SelectOptionParams, TabsOpenParams, TypeParams,
-    UploadFileParams, ViewportParams, WaitForParams,
+    CookieInput, CookiesParams, NavigateParams, PageParams, PressKeyParams, ReferenceParams,
+    SameSiteInput, ScrollDirectionInput, ScrollParams, SelectOptionParams, TabsOpenParams,
+    TypeParams, UploadFileParams, ViewportParams, WaitForParams,
 };
 
 use std::sync::Arc;

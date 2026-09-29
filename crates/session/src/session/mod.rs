@@ -904,12 +904,12 @@ impl ParkTicket<'_> {
     /// The audit label for whatever state the ticket ended in.
     fn label(&self) -> &'static str {
         match self.outcome {
-            Some(ApprovalOutcome::Granted) => audit::GRANTED,
-            Some(ApprovalOutcome::Denied) => audit::DENIED,
-            Some(ApprovalOutcome::TimedOut) => audit::TIMED_OUT,
+            Some(ApprovalOutcome::Granted) => audit::OUTCOME_GRANTED,
+            Some(ApprovalOutcome::Denied) => audit::OUTCOME_DENIED,
+            Some(ApprovalOutcome::TimedOut) => audit::OUTCOME_TIMED_OUT,
             // Cancelled mid-park: nobody granted it and nobody timed out
             // waiting either.
-            None => audit::CANCELLED,
+            None => audit::OUTCOME_CANCELLED,
         }
     }
 }

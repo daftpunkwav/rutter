@@ -227,7 +227,7 @@ impl Executor<'_> {
         let mut pending = WaitPhase::Visible;
         let mut previous: Option<ElementBox> = None;
         loop {
-            match resolve::resolve(self.page, reference).await {
+            match resolve::element_box(self.page, reference).await {
                 Ok(None) => return Err(expired(reference)),
                 Ok(Some(element_box)) => {
                     let visible = element_box.visible();

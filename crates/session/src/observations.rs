@@ -84,7 +84,7 @@ impl ObservationFeeds {
     pub(crate) fn record(&self, page: &PageId, entry: ConsoleEntry) {
         let mut feeds = self.lock();
         if let Some(feed) = feeds.get_mut(page) {
-            push(&mut feed.entries, entry);
+            push_bounded(&mut feed.entries, entry);
         }
     }
 
@@ -142,7 +142,7 @@ impl ObservationFeeds {
 
 /// Pushes an entry with the capacity bound; free-standing so the rule
 /// is unit-testable without a feed map.
-fn push(entries: &mut VecDeque<ConsoleEntry>, entry: ConsoleEntry) {
+fn push_bounded(entries: &mut VecDeque<ConsoleEntry>, entry: ConsoleEntry) {
     if entries.len() >= FEED_CAPACITY {
         entries.pop_front();
     }

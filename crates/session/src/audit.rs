@@ -28,13 +28,13 @@ use serde::Serialize;
 /// it knows about endings the broker's three outcomes do not cover: an MCP
 /// client that disconnected mid-park cancelled the wait rather than letting
 /// anyone time out on it.
-pub(crate) const GRANTED: &str = "granted";
+pub(crate) const OUTCOME_GRANTED: &str = "granted";
 /// A human refused the operation.
-pub(crate) const DENIED: &str = "denied";
+pub(crate) const OUTCOME_DENIED: &str = "denied";
 /// The answer window closed with nobody replying.
-pub(crate) const TIMED_OUT: &str = "timed_out";
+pub(crate) const OUTCOME_TIMED_OUT: &str = "timed_out";
 /// The waiting operation went away with its client; no human answered.
-pub(crate) const CANCELLED: &str = "cancelled";
+pub(crate) const OUTCOME_CANCELLED: &str = "cancelled";
 
 /// One supervised decision, as it goes to disk.
 #[derive(Serialize)]
@@ -229,7 +229,7 @@ mod tests {
                 &PageId::new("p1"),
                 "apr-9",
                 &brief(basis.clone()),
-                DENIED,
+                OUTCOME_DENIED,
                 std::time::Duration::from_millis(12),
             );
         }
@@ -267,7 +267,7 @@ mod tests {
             &PageId::new("p1"),
             "apr-1",
             &brief,
-            TIMED_OUT,
+            OUTCOME_TIMED_OUT,
             std::time::Duration::ZERO,
         );
         let record = read_single_line(&path);
@@ -289,7 +289,7 @@ mod tests {
             &PageId::new("p1"),
             "apr-1",
             &brief(VerdictBasis::SetDefault),
-            CANCELLED,
+            OUTCOME_CANCELLED,
             std::time::Duration::ZERO,
         );
     }
@@ -304,7 +304,7 @@ mod tests {
             &PageId::new("p1"),
             "apr-1",
             &brief(VerdictBasis::SetDefault),
-            GRANTED,
+            OUTCOME_GRANTED,
             std::time::Duration::ZERO,
         );
         assert!(path.exists(), "append creates the tree on first use");
@@ -323,7 +323,7 @@ mod tests {
             &PageId::new("p1"),
             "apr-1",
             &brief(VerdictBasis::SetDefault),
-            GRANTED,
+            OUTCOME_GRANTED,
             std::time::Duration::ZERO,
         );
         let mode = std::fs::metadata(&path)
@@ -351,7 +351,7 @@ mod tests {
             &PageId::new("p1"),
             "apr-1",
             &brief(VerdictBasis::SetDefault),
-            GRANTED,
+            OUTCOME_GRANTED,
             std::time::Duration::ZERO,
         );
     }

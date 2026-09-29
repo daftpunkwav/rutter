@@ -238,7 +238,7 @@ async fn scroll_zero_and_negatives_are_invalid_params() {
     for amount in [0, -1] {
         let error = match mcp
             .scroll(Parameters(ScrollParams {
-                direction: Direction::Down,
+                direction: ScrollDirectionInput::Down,
                 amount,
                 reference: None,
             }))
@@ -257,7 +257,7 @@ async fn scroll_zero_and_negatives_are_invalid_params() {
     // the bound instead of silently truncating.
     let error = match mcp
         .scroll(Parameters(ScrollParams {
-            direction: Direction::Down,
+            direction: ScrollDirectionInput::Down,
             amount: i64::MAX,
             reference: None,
         }))
@@ -720,7 +720,7 @@ async fn action_tools_report_failures_as_iserror_results() {
         }))
         .await,
         mcp.scroll(Parameters(ScrollParams {
-            direction: Direction::Down,
+            direction: ScrollDirectionInput::Down,
             amount: 120,
             reference: None,
         }))
@@ -775,7 +775,7 @@ async fn navigation_tools_return_snapshots_on_success() {
         (
             "scroll",
             mcp.scroll(Parameters(ScrollParams {
-                direction: Direction::Up,
+                direction: ScrollDirectionInput::Up,
                 amount: 60,
                 reference: Some("e1".to_owned()),
             }))

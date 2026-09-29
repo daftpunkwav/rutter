@@ -265,7 +265,7 @@ async fn start_running(inner: &Arc<Inner>) -> Result<Running, EngineError> {
         supervisor.shutdown().await;
         return Err(error);
     }
-    spawn_recovery(inner, supervisor.restart_watcher());
+    spawn_recovery_watcher(inner, supervisor.restart_watcher());
     Ok(Running {
         supervisor,
         backbone: Arc::new(Backbone::new()),
@@ -275,7 +275,7 @@ async fn start_running(inner: &Arc<Inner>) -> Result<Running, EngineError> {
 /// Watches for engine replacements and rebuilds every session:
 /// fresh context, storage-state replay, page restoration, and an
 /// `EngineRestarted` event per session.
-fn spawn_recovery(inner: &Arc<Inner>, mut watcher: tokio::sync::watch::Receiver<u64>) {
+fn spawn_recovery_watcher(inner: &Arc<Inner>, mut watcher: tokio::sync::watch::Receiver<u64>) {
     let weak = Arc::downgrade(inner);
     tokio::spawn(async move {
         // The current value is the baseline; only real bumps recover.
@@ -568,7 +568,7 @@ mod tests {
         });
         let inner = test_inner(Arc::clone(&launcher));
         let (tx, rx) = tokio::sync::watch::channel(0_u64);
-        spawn_recovery(&inner, rx);
+        spawn_recovery_watcher(&inner, rx);
         // The task must establish its baseline before the bump lands.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         tx.send_modify(|count| *count += 1);
@@ -593,7 +593,7 @@ mod tests {
         let (running, engine) = start_test_running(Arc::clone(&launcher)).await;
         *inner.engine.write().await = Some(Arc::clone(&running));
         let (tx, rx) = tokio::sync::watch::channel(0_u64);
-        spawn_recovery(&inner, rx);
+        spawn_recovery_watcher(&inner, rx);
         // The task must establish its baseline before the bump lands.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         tx.send_modify(|count| *count += 1);
@@ -639,7 +639,7 @@ mod tests {
             .await;
 
         let (tx, rx) = tokio::sync::watch::channel(0_u64);
-        spawn_recovery(&inner, rx);
+        spawn_recovery_watcher(&inner, rx);
         // Let the task establish its baseline; a bump that lands before
         // the first poll would be mistaken for it.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -695,7 +695,7 @@ mod tests {
 
         engine.fail_contexts.store(true, Ordering::SeqCst);
         let (tx, rx) = tokio::sync::watch::channel(0_u64);
-        spawn_recovery(&inner, rx);
+        spawn_recovery_watcher(&inner, rx);
         // The task must establish its baseline before the bump lands.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         tx.send_modify(|count| *count += 1);
@@ -737,7 +737,7 @@ mod tests {
         let _session = seeded_session(&running, &inner).await;
 
         let (tx, rx) = tokio::sync::watch::channel(0_u64);
-        spawn_recovery(&inner, rx);
+        spawn_recovery_watcher(&inner, rx);
         // The task must establish its baseline before the bump lands.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         tx.send_modify(|count| *count += 1);

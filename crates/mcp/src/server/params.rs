@@ -14,7 +14,7 @@ use rutter_core::cookie::{Cookie, SameSite};
 /// Scroll directions accepted by the scroll tool.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum Direction {
+pub enum ScrollDirectionInput {
     /// Toward the top of the page.
     Up,
     /// Toward the bottom of the page.
@@ -25,13 +25,13 @@ pub enum Direction {
     Right,
 }
 
-impl From<Direction> for ScrollDirection {
-    fn from(direction: Direction) -> Self {
+impl From<ScrollDirectionInput> for ScrollDirection {
+    fn from(direction: ScrollDirectionInput) -> Self {
         match direction {
-            Direction::Up => Self::Up,
-            Direction::Down => Self::Down,
-            Direction::Left => Self::Left,
-            Direction::Right => Self::Right,
+            ScrollDirectionInput::Up => Self::Up,
+            ScrollDirectionInput::Down => Self::Down,
+            ScrollDirectionInput::Left => Self::Left,
+            ScrollDirectionInput::Right => Self::Right,
         }
     }
 }
@@ -140,7 +140,7 @@ pub struct SelectOptionParams {
 /// Parameters of the scroll tool.
 pub struct ScrollParams {
     /// Scroll direction.
-    pub direction: Direction,
+    pub direction: ScrollDirectionInput,
     /// Distance in pixels; must be greater than zero.
     ///
     /// Signed on purpose: a `u32` schema makes rmcp reject negatives at

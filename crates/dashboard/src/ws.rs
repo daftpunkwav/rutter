@@ -164,7 +164,7 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                                 // so there is nothing further to do.
                             }
                             _ => {
-                                if let Some(reply) = handle_client_message(&state, &text)
+                                if let Some(reply) = handle_decision(&state, &text)
                                     && send_within(&mut socket, Message::text(reply))
                                         .await
                                         .is_err()
@@ -267,10 +267,10 @@ async fn screencast_control(
     }
 }
 
-/// Applies one client message; approvals answer the broker. The
+/// Applies one decision message; approvals answer the broker. The
 /// decision body is the crate's shared contract (see
 /// [`crate::parse_decision`]); only the reply shape is this loop's.
-fn handle_client_message(state: &Dashboard, text: &str) -> Option<String> {
+fn handle_decision(state: &Dashboard, text: &str) -> Option<String> {
     let value: Value = serde_json::from_str(text).ok()?;
     match value.get("type")?.as_str()? {
         "decision" => {
@@ -340,7 +340,7 @@ mod tests {
             "grant": true,
         })
         .to_string();
-        let reply = handle_client_message(&state, &message).expect("a decision-ack reply");
+        let reply = handle_decision(&state, &message).expect("a decision-ack reply");
         let ack: Value = serde_json::from_str(&reply).expect("the reply must be valid JSON");
         assert_eq!(ack["type"], "decision-ack");
         assert_eq!(ack["request_id"], hostile, "the id round-trips verbatim");

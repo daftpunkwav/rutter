@@ -11,14 +11,14 @@ use rutter_engine::context::ContextHandle;
 use rutter_engine::page::{ConsoleEntry, ConsoleLevel, DialogKind, PageObservation, RequestEntry};
 use rutter_events::Backbone;
 
-use super::{FEED_CAPACITY, ObservationFeeds, push};
+use super::{FEED_CAPACITY, ObservationFeeds, push_bounded};
 use crate::mock::MockContext;
 
 #[test]
 fn the_buffer_keeps_the_newest_capacity_entries() {
     let mut entries = VecDeque::new();
     for index in 0..FEED_CAPACITY + 10 {
-        push(
+        push_bounded(
             &mut entries,
             ConsoleEntry {
                 level: ConsoleLevel::Log,
