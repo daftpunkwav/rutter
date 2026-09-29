@@ -56,12 +56,31 @@ Every endpoint, including the WebSocket upgrade, passes the same gate
   cookie-safe; a `RUTTER_DASHBOARD_TOKEN` override that is not keeps
   authenticating through the query parameter.
 - **`Host` validation** defends against DNS rebinding, and a present
-  **`Origin`** header must name loopback too, matched exactly the same
-  way: state-changing requests (`POST /api/decisions`, WebSocket
-  messages) must come from the dashboard's own origin, so relaxing the
-  cookie's `SameSite` for a second dashboard origin would not open the
-  approval surface to cross-site submits. No `Origin` header (a
-  non-browser client) falls back to the `Host` and token checks.
+  **`Origin`** header must name the dashboard's *own* origin: a loopback
+  name **and the port the listener actually bound**, compared exactly.
+  State-changing requests (`POST /api/decisions`, WebSocket messages)
+  must come from there, so relaxing the cookie's `SameSite` for a second
+  dashboard origin would not open the approval surface to cross-site
+  submits. The port is the half that carries the defence: `SameSite` is
+  a *site* check and a site spans every port on a host, so a page served
+  from `http://127.0.0.1:<any other port>` is same-site with the
+  dashboard, has the token cookie attached to its request, and is a
+  loopback origin — matching the host alone let it submit an approval
+  grant. An authority that omits the port is read as the scheme's
+  default, so a dashboard on port 80 still accepts its own origin. No
+  `Origin` header (a non-browser client) falls back to the `Host` and
+  token checks.
+- **Response headers**, stamped on every answer — the routes, a refused
+  gate, and the fallback alike — by one middleware, so a route added
+  later inherits them instead of having to remember them
+  ([`auth::harden`](../crates/dashboard/src/auth.rs)):
+
+  | Header | Why |
+  |---|---|
+  | `Cache-Control: no-store` | The first visit's URL is the one place the token itself appears; it must not settle in the browser's disk cache or back/forward cache |
+  | `Referrer-Policy: no-referrer` | Keeps that URL out of the `Referer` of anything the page ever loads or navigates to. The dashboard loads nothing cross-origin today; the header makes that a property of the server rather than of the frontend |
+  | `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` | Refuse to frame the approval UI. The cookie's `SameSite=Strict` does not cover the first visit: that one authenticates from the query string, so a holder of the URL could otherwise embed the card its own token opened and overlay the Grant button |
+  | `X-Content-Type-Options: nosniff` | Keeps `/app.js` and `/i18n/en.json` from being read as anything but what they are |
 
 ## 3. WebSocket protocol
 

@@ -45,12 +45,28 @@ UI 字符串来自 `frontend/i18n/en.json` 目录。
   `SameSite=Strict` 的会话 cookie；之后的请求仅凭 cookie 认证。
   生成的 token 必定可安全放入 cookie；不可安全放入的
   `RUTTER_DASHBOARD_TOKEN` 覆盖值继续以 query 参数认证。
-- **`Host` 校验**防范 DNS rebinding；出现的 **`Origin`** 头同样必须
-  指向 loopback，且以完全相同的方式精确匹配：改变状态的请求
-  （`POST /api/decisions`、WebSocket 消息）必须来自仪表盘自己的
-  origin，因此将来为第二个仪表盘 origin 放宽 cookie 的 `SameSite`
-  也不会把审批面暴露给跨站提交。没有 `Origin` 头（非浏览器客户端）
-  则回落到 `Host` 与 token 检查。
+- **`Host` 校验**防范 DNS rebinding；出现的 **`Origin`** 头必须指向
+  仪表盘**自己的** origin：一个 loopback 名字**加上监听器实际绑定的
+  端口**，精确比较。改变状态的请求（`POST /api/decisions`、
+  WebSocket 消息）必须来自这里，因此将来为第二个仪表盘 origin 放宽
+  cookie 的 `SameSite` 也不会把审批面暴露给跨站提交。真正承担防御
+  的是端口这一半：`SameSite` 是 *站点* 判定，而一个站点横跨同一主机
+  上的所有端口，所以从 `http://127.0.0.1:<其他任意端口>` 提供的页面
+  与仪表盘同站点、其请求会带上 token cookie、且本身就是一个 loopback
+  origin——只匹配主机名会让它提交审批放行。authority 省略端口时按
+  该 scheme 的默认端口解读，因此跑在 80 端口的仪表盘仍接受自己的
+  origin。没有 `Origin` 头（非浏览器客户端）则回落到 `Host` 与
+  token 检查。
+- **响应头**由单个中间件盖在**每一个**应答上——路由、门禁拒绝的应答
+  与 404 回退一视同仁——这样以后新增的路由自动继承，而不必记得
+  逐个添加（[`auth::harden`](../crates/dashboard/src/auth.rs)）：
+
+  | 响应头 | 原因 |
+  |---|---|
+  | `Cache-Control: no-store` | 首次访问的 URL 是令牌本身唯一出现的地方；它不应留在浏览器的磁盘缓存或前进/后退缓存里 |
+  | `Referrer-Policy: no-referrer` | 把该 URL 挡在页面加载或跳转的任何东西的 `Referer` 之外。仪表盘今天不加载任何跨源资源；这个头让「不泄漏」成为服务器的性质，而不是前端的性质 |
+  | `X-Frame-Options: DENY`、`Content-Security-Policy: frame-ancestors 'none'` | 拒绝被嵌入 frame。cookie 的 `SameSite=Strict` 覆盖不到首次访问：那次是用 query 串认证的，因此持有 URL 的一方本可以把自己 token 打开的审批卡片嵌进页面并覆盖放行按钮 |
+  | `X-Content-Type-Options: nosniff` | 让 `/app.js` 与 `/i18n/en.json` 不会被当成别的东西读取 |
 
 ## 3. WebSocket 协议
 

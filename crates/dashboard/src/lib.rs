@@ -5,7 +5,9 @@
 //! - Serve the static frontend (embedded, no build step) on
 //!   127.0.0.1 only, gated by a per-launch random token; the first
 //!   visit exchanges the query token for an HttpOnly session cookie,
-//!   and `Host` headers are validated against DNS rebinding.
+//!   `Host` headers are validated against DNS rebinding, and every
+//!   response carries the headers that keep the token-bearing URL out
+//!   of caches and referrers and the approval UI out of a frame.
 //! - Hand that token's URL to a human through a channel chosen by who
 //!   owns stderr: a terminal gets the URL, a piped stderr (the MCP
 //!   client's case) gets an owner-only file and only its path is
@@ -17,8 +19,9 @@
 //! executes actions. The screencast live view
 //! streams binary frames on demand through the same WebSocket.
 //!
-//! Module layout: `auth` owns the endpoint gate (host + token),
-//! `ws` owns the WebSocket loop; this file owns the server, routes,
+//! Module layout: `auth` owns the endpoint gate (host + token) and the
+//! response headers, `ws` owns the WebSocket loop; this file owns the
+//! server, routes,
 //! and static handlers.
 
 // Restriction lints are denied workspace-wide; tests may use plain
@@ -59,6 +62,11 @@ pub(crate) struct Dashboard {
     pub(crate) manager: Arc<SessionManager>,
     pub(crate) broker: Arc<ApprovalBroker>,
     pub(crate) token: String,
+    /// The port the listener actually owns. The endpoint gate needs it:
+    /// an `Origin` header must name the dashboard's *own* origin, and
+    /// the loopback name alone does not identify one, because a site
+    /// spans every port on a host.
+    pub(crate) port: u16,
 }
 
 /// The dashboard server; bind and serve until the process exits.
@@ -115,6 +123,9 @@ impl DashboardServer {
             manager: self.manager,
             broker: self.broker,
             token: self.token,
+            // The port the bind actually settled on, not the one asked
+            // for: `--dashboard 0` must gate against the port it owns.
+            port: bound_port,
         };
 
         let app = Router::new()
@@ -125,6 +136,10 @@ impl DashboardServer {
             .route("/api/decisions", post(decide))
             .route("/api/pending", get(pending))
             .fallback(not_found)
+            // After every route, so the layer covers them all: the
+            // response headers are a property of the server, not a
+            // step each handler remembers.
+            .layer(axum::middleware::from_fn(harden_responses))
             .with_state(state);
 
         axum::serve(listener, app)
@@ -333,6 +348,18 @@ async fn pending(
 
 async fn not_found() -> StatusCode {
     StatusCode::NOT_FOUND
+}
+
+/// Stamps [`auth::harden`] onto every response the router produces —
+/// the routes, the refusal a failed gate returns, and the fallback.
+/// One choke point, so a route added later cannot ship without them.
+async fn harden_responses(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    auth::harden(&mut response);
+    response
 }
 
 #[cfg(test)]

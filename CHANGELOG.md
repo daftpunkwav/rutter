@@ -9,6 +9,22 @@ and the project adheres to
 
 ### Fixed
 
+- An approval grant can no longer be forged cross-site from a page on
+  another loopback port. The dashboard's `Origin` check matched the host
+  name alone, and a browser's `SameSite=Strict` is a *site* check — a
+  site spans every port on a host — so a page served from
+  `http://127.0.0.1:<any other port>` was same-site, carried the token
+  cookie, and passed the gate. It could then `POST /api/decisions` a
+  grant, or open the decision WebSocket and drive it itself. The origin
+  must now name the dashboard's own host *and* the port the listener
+  bound.
+- Every dashboard response now carries `Cache-Control: no-store`,
+  `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, and `Content-Security-Policy: frame-ancestors
+  'none'`, stamped by one middleware so a route added later inherits
+  them. The token-bearing first-visit URL no longer settles in a browser
+  cache or a `Referer`, and the approval UI can no longer be framed with
+  an overlay on top of its Grant button.
 - Host-scoped policy rules can no longer be slipped past with a
   trailing root dot: `https://bank.example./` canonicalizes to
   `https://bank.example/` before judgment, the same host the DNS layer

@@ -251,6 +251,7 @@ mod tests {
             )),
             broker: Arc::new(rutter_policy::ApprovalBroker::new()),
             token: "t".to_owned(),
+            port: 7700,
         };
         // A hostile id: if the reply were built by string concatenation,
         // these quotes would terminate the id and forge extra fields.
