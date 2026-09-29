@@ -53,29 +53,25 @@ impl StorageState {
     /// Captures cookies for the context plus localStorage for every
     /// open page's origin. Pages that do not answer contribute
     /// nothing; capture never fails a session.
+    ///
+    /// Every call here is a cross-process CDP round trip and none of
+    /// them reads another's answer — the cookie read goes to the browser
+    /// context, each dump to a page target. Awaited one after another
+    /// they cost one round trip each on the critical path of every
+    /// action; in flight together they cost about one in total.
+    /// Overlapping them changes no answer: a capture samples each target
+    /// at its own moment whether it is asked one after another or all at
+    /// once, and the set of origins and the order they come back in are
+    /// the same either way.
     pub async fn capture(
         context: &dyn ContextHandle,
         pages: &[(String, Arc<dyn PageHandle>)],
     ) -> Self {
-        let cookies = context.cookies().await.unwrap_or_default();
-        let mut origins = Vec::new();
-        for (current_origin, page) in pages {
-            if origins
-                .iter()
-                .any(|existing: &OriginStorage| existing.origin == *current_origin)
-            {
-                continue;
-            }
-            if let Some(entries) = page
-                .evaluate(&storage_dump_script())
-                .await
-                .ok()
-                .and_then(|value| parse_dump(&value, current_origin))
-            {
-                origins.push(entries);
-            }
+        let (cookies, origins) = tokio::join!(context.cookies(), dump_origins(pages));
+        Self {
+            cookies: cookies.unwrap_or_default(),
+            origins,
         }
-        Self { cookies, origins }
     }
 
     /// Restores cookies context-wide and localStorage on pages whose
@@ -224,6 +220,61 @@ fn is_transient_publish_error(error: &std::io::Error) -> bool {
         .is_some_and(|code| code == 5 || code == 32)
 }
 
+/// Dumps one localStorage per distinct origin, every dump in flight at
+/// once, and answers them in the order the origins first appear in the
+/// registry.
+///
+/// The pages of one origin are tried in registry order until one
+/// answers, which is what the sequential walk did: a page that does not
+/// answer contributed nothing, and the next page on the same origin got
+/// its turn.
+async fn dump_origins(pages: &[(String, Arc<dyn PageHandle>)]) -> Vec<OriginStorage> {
+    if pages.is_empty() {
+        return Vec::new();
+    }
+    // One script for the whole capture: it is the same string for every
+    // page, and the engine takes it by reference.
+    let script = storage_dump_script();
+    let script = script.as_str();
+    futures::future::join_all(origins_in_order(pages).into_iter().map(
+        |(origin, handles)| async move {
+            for page in handles {
+                if let Some(entries) = page
+                    .evaluate(script)
+                    .await
+                    .ok()
+                    .and_then(|value| parse_dump(&value, origin))
+                {
+                    return Some(entries);
+                }
+            }
+            None
+        },
+    ))
+    .await
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+/// The registry's pages grouped per origin, in the order each origin
+/// first appears, each group keeping its pages in registry order.
+fn origins_in_order(
+    pages: &[(String, Arc<dyn PageHandle>)],
+) -> Vec<(&str, Vec<&Arc<dyn PageHandle>>)> {
+    let mut groups: Vec<(&str, Vec<&Arc<dyn PageHandle>>)> = Vec::new();
+    for (origin, page) in pages {
+        match groups
+            .iter_mut()
+            .find(|(known, _)| *known == origin.as_str())
+        {
+            Some((_, handles)) => handles.push(page),
+            None => groups.push((origin.as_str(), vec![page])),
+        }
+    }
+    groups
+}
+
 /// Parses the dump script's answer into an origin storage entry.
 fn parse_dump(value: &serde_json::Value, origin: &str) -> Option<OriginStorage> {
     let object = value.as_object()?;
@@ -244,6 +295,227 @@ fn parse_dump(value: &serde_json::Value, origin: &str) -> Option<OriginStorage> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rutter_core::ids::{ContextId, PageId};
+    use rutter_engine::error::EngineError;
+    use rutter_engine::input::InputEvent;
+    use rutter_engine::page::{ImageFormat, ScreencastStream, Screenshot};
+    use serde_json::Value;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    /// Counts how many engine round trips a capture has in flight at
+    /// once, holding each one open long enough for its siblings to
+    /// reach it.
+    ///
+    /// This is the whole point of the capture: the calls go to different
+    /// targets and none reads another's answer, so awaiting them one
+    /// after another spends one round trip of waiting each. Awaited
+    /// together they overlap, and the peak here is the witness.
+    #[derive(Default)]
+    struct RoundTrips {
+        in_flight: AtomicUsize,
+        peak: AtomicUsize,
+    }
+
+    impl RoundTrips {
+        async fn enter(&self) {
+            let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.peak.fetch_max(now, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(15)).await;
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+        }
+
+        fn peak(&self) -> usize {
+            self.peak.load(Ordering::SeqCst)
+        }
+    }
+
+    /// A page answering the dump script with one entry, or refusing it
+    /// when it is the [`SilentPage`].
+    struct DumpPage {
+        trips: Arc<RoundTrips>,
+        answer: Option<Value>,
+    }
+
+    #[async_trait::async_trait]
+    impl PageHandle for DumpPage {
+        async fn navigate(&self, _url: &str) -> Result<String, EngineError> {
+            Ok(String::new())
+        }
+
+        async fn reload(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+
+        async fn go_back(&self) -> Result<String, EngineError> {
+            Ok(String::new())
+        }
+
+        async fn go_forward(&self) -> Result<String, EngineError> {
+            Ok(String::new())
+        }
+
+        async fn evaluate(&self, expression: &str) -> Result<Value, EngineError> {
+            if expression.contains("localStorage") {
+                self.trips.enter().await;
+                return self.answer.clone().ok_or_else(|| EngineError::Internal {
+                    detail: "no such frame".to_owned(),
+                });
+            }
+            Ok(Value::Null)
+        }
+
+        async fn dispatch_input(&self, _event: InputEvent) -> Result<(), EngineError> {
+            Ok(())
+        }
+
+        async fn capture_screenshot(&self) -> Result<Screenshot, EngineError> {
+            Ok(Screenshot {
+                format: ImageFormat::Png,
+                data: Vec::new(),
+            })
+        }
+
+        async fn start_screencast(&self) -> Result<ScreencastStream, EngineError> {
+            let (_sender, receiver) = tokio::sync::mpsc::channel(1);
+            Ok(ScreencastStream::new(receiver))
+        }
+    }
+
+    /// A context whose cookie read is one round trip like the dumps.
+    struct JarContext {
+        trips: Arc<RoundTrips>,
+        cookies: Vec<Cookie>,
+    }
+
+    #[async_trait::async_trait]
+    impl ContextHandle for JarContext {
+        fn id(&self) -> ContextId {
+            ContextId::new("ctx-trips")
+        }
+
+        fn pages(&self) -> Vec<PageId> {
+            Vec::new()
+        }
+
+        async fn open_page(&self) -> Result<(PageId, Arc<dyn PageHandle>), EngineError> {
+            Err(EngineError::Unsupported {
+                operation: "open_page".to_owned(),
+                reason: "the capture test opens no page".to_owned(),
+            })
+        }
+
+        fn page(&self, _id: PageId) -> Option<Arc<dyn PageHandle>> {
+            None
+        }
+
+        async fn close_page(&self, _id: PageId) -> Result<(), EngineError> {
+            Ok(())
+        }
+
+        async fn set_cookies(&self, _cookies: &[Cookie]) -> Result<(), EngineError> {
+            Ok(())
+        }
+
+        async fn cookies(&self) -> Result<Vec<Cookie>, EngineError> {
+            self.trips.enter().await;
+            Ok(self.cookies.clone())
+        }
+
+        async fn close(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+    }
+
+    fn dump(value: &str) -> Value {
+        serde_json::json!({ "data": { "token": value } })
+    }
+
+    fn page(trips: &Arc<RoundTrips>, answer: Option<Value>) -> Arc<dyn PageHandle> {
+        Arc::new(DumpPage {
+            trips: Arc::clone(trips),
+            answer,
+        })
+    }
+
+    #[tokio::test]
+    async fn capture_overlaps_its_round_trips_and_dumps_each_origin_once() {
+        // The capture runs on the critical path of every action, and each
+        // of its calls is a cross-process round trip. Answered one after
+        // another — cookies, then one dump per origin — the wait is the
+        // sum of all of them; the peak below is 1 there and never less.
+        let trips = Arc::new(RoundTrips::default());
+        let context = JarContext {
+            trips: Arc::clone(&trips),
+            cookies: Vec::new(),
+        };
+        // Three origins, one of them carrying two tabs: the second tab
+        // must not be asked a second time.
+        let pages: Vec<(String, Arc<dyn PageHandle>)> = vec![
+            (
+                "https://a.example".to_owned(),
+                page(&trips, Some(dump("a"))),
+            ),
+            (
+                "https://b.example".to_owned(),
+                page(&trips, Some(dump("b"))),
+            ),
+            (
+                "https://a.example".to_owned(),
+                page(&trips, Some(dump("a2"))),
+            ),
+        ];
+
+        let state = StorageState::capture(&context, &pages).await;
+
+        assert!(
+            trips.peak() >= 2,
+            "the round trips must overlap, not queue: peak was {}",
+            trips.peak()
+        );
+        let origins: Vec<&str> = state
+            .origins
+            .iter()
+            .map(|entry| entry.origin.as_str())
+            .collect();
+        assert_eq!(
+            origins,
+            vec!["https://a.example", "https://b.example"],
+            "one entry per origin, in registry order"
+        );
+        assert_eq!(
+            state.origins[0].entries,
+            vec![("token".to_owned(), "a".to_owned())]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_silent_page_lets_its_origin_answer_from_the_next_one() {
+        // A page that does not answer contributed nothing, and the next
+        // page on the same origin got its turn — the order those pages
+        // are asked in, not the set of them, is what the overlap changes.
+        let trips = Arc::new(RoundTrips::default());
+        let context = JarContext {
+            trips: Arc::clone(&trips),
+            cookies: Vec::new(),
+        };
+        let pages: Vec<(String, Arc<dyn PageHandle>)> = vec![
+            ("https://a.example".to_owned(), page(&trips, None)),
+            (
+                "https://a.example".to_owned(),
+                page(&trips, Some(dump("second"))),
+            ),
+        ];
+
+        let state = StorageState::capture(&context, &pages).await;
+
+        assert_eq!(state.origins.len(), 1);
+        assert_eq!(
+            state.origins[0].entries,
+            vec![("token".to_owned(), "second".to_owned())],
+            "the answering page's entries, not the silent one's"
+        );
+    }
 
     #[test]
     fn state_round_trips_through_json() {

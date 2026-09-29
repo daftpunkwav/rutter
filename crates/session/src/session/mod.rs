@@ -746,6 +746,13 @@ impl Session {
     /// leaving the file stale with nothing to rewrite it. Only the
     /// capture's own engine round trips are serialized; the action
     /// itself runs before this is reached.
+    ///
+    /// That guard still spans the whole of [`StorageState::capture`]
+    /// after its round trips began overlapping each other: one capture
+    /// is one capture however its own calls are issued, so a second
+    /// action still cannot start capturing until this one has compared
+    /// and written, and the newer state still cannot be published over
+    /// by the older.
     async fn persist_storage(&self) {
         let mut persist = self.persist.lock().await;
         let context = self.context.read().await.clone();

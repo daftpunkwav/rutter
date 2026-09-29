@@ -1842,6 +1842,7 @@ name = "rutter-session"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "futures",
  "rutter-core",
  "rutter-engine",
  "rutter-events",
