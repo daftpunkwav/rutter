@@ -108,10 +108,16 @@ fn origin_allowed(headers: &HeaderMap, bound_port: u16) -> bool {
 }
 
 fn token_ok(state: &Dashboard, headers: &HeaderMap, provided: Option<&String>) -> bool {
-    let provided = provided
-        .map(String::to_owned)
-        .or_else(|| cookie_token(headers));
-    provided.is_some_and(|token| constant_time_eq(&token, &state.token))
+    if let Some(provided) = provided {
+        return constant_time_eq(provided, &state.token);
+    }
+    // Every candidate is answered, not just the first: cookies carry no
+    // port scope, so any local server on this host can plant a
+    // `rutter_token` cookie, and one planted earlier sorts ahead of the
+    // dashboard's own. A first-match check would let that planted copy
+    // shadow the real one and lock the operator out; a planted value can
+    // never match, so answering all of them only removes the shadowing.
+    cookie_tokens(headers).any(|token| constant_time_eq(&token, &state.token))
 }
 
 /// Name of the HttpOnly cookie carrying the dashboard token after the
@@ -119,14 +125,14 @@ fn token_ok(state: &Dashboard, headers: &HeaderMap, provided: Option<&String>) -
 /// connect).
 const TOKEN_COOKIE: &str = "rutter_token";
 
-/// Extracts the token cookie from `Cookie` headers, if present.
-fn cookie_token(headers: &HeaderMap) -> Option<String> {
+/// Every `rutter_token` cookie value in the request, in header order.
+fn cookie_tokens(headers: &HeaderMap) -> impl Iterator<Item = String> {
     headers
         .get_all(axum::http::header::COOKIE)
         .iter()
         .filter_map(|value| value.to_str().ok())
         .flat_map(|header| header.split(';'))
-        .find_map(|part| {
+        .filter_map(|part| {
             let part = part.trim();
             part.strip_prefix(&format!("{TOKEN_COOKIE}="))
                 .map(str::to_owned)
@@ -248,10 +254,45 @@ mod tests {
     }
 
     #[test]
-    fn cookie_token_is_extracted_from_mixed_headers() {
+    fn cookie_tokens_are_extracted_from_mixed_headers() {
         let headers = cookie_headers(&["a=1; rutter_token=abc123", "b=2"]);
-        assert_eq!(cookie_token(&headers).as_deref(), Some("abc123"));
-        assert_eq!(cookie_token(&HeaderMap::new()), None);
+        assert_eq!(
+            cookie_tokens(&headers).collect::<Vec<_>>(),
+            vec!["abc123".to_owned()]
+        );
+        assert_eq!(cookie_tokens(&HeaderMap::new()).count(), 0);
+    }
+
+    #[test]
+    fn a_planted_cookie_cannot_shadow_the_dashboard_s_own() {
+        // Cookies have no port scope: a local server on any port of this
+        // host can plant a `rutter_token` cookie, and one planted earlier
+        // sorts ahead of the dashboard's own in the Cookie header. The
+        // gate must answer every copy — the planted value never matches,
+        // and the real one behind it must still be reached.
+        let headers = cookie_headers(&["rutter_token=planted", "rutter_token=0123abcd"]);
+        let state = |token: &str| Dashboard {
+            manager: std::sync::Arc::new(rutter_session::manager::SessionManager::new(
+                std::sync::Arc::new(UnsupportedLauncher),
+                rutter_engine::config::LaunchMode::Headless,
+                rutter_session::config::SessionConfig::default(),
+                std::sync::Arc::new(rutter_policy::RuleSet::default_set()),
+                std::sync::Arc::new(rutter_policy::ApprovalBroker::new()),
+                None,
+            )),
+            broker: std::sync::Arc::new(rutter_policy::ApprovalBroker::new()),
+            token: token.to_owned(),
+            port: 7700,
+            keepalive: std::time::Duration::from_secs(20),
+        };
+        assert!(token_ok(&state("0123abcd"), &headers, None));
+        // A value that matches neither cookie never authenticates.
+        assert!(!token_ok(&state("not-the-token"), &headers, None));
+        // No cookie and no query parameter never authenticates.
+        assert!(!token_ok(&state("0123abcd"), &HeaderMap::new(), None));
+        // A query parameter wins over whatever the cookies carry.
+        let provided = "0123abcd".to_owned();
+        assert!(token_ok(&state("0123abcd"), &headers, Some(&provided)));
     }
 
     #[test]
@@ -451,5 +492,30 @@ mod tests {
             .map(|value| value.to_str().expect("ascii header").to_owned())
             .collect();
         assert_eq!(values, vec!["DENY".to_owned()], "exactly one policy");
+    }
+
+    /// Launcher stub satisfying the manager constructor; the auth tests
+    /// never launch an engine through it. Duplicated from the lib tests
+    /// because test fixtures stay module-local.
+    struct UnsupportedLauncher;
+
+    #[async_trait::async_trait]
+    impl rutter_engine::supervisor::EngineLauncher for UnsupportedLauncher {
+        fn describe(&self) -> String {
+            "unsupported".to_owned()
+        }
+
+        async fn launch(
+            &self,
+            _mode: rutter_engine::config::LaunchMode,
+        ) -> Result<
+            std::sync::Arc<dyn rutter_engine::engine::Engine>,
+            rutter_engine::error::EngineError,
+        > {
+            Err(rutter_engine::error::EngineError::Unsupported {
+                operation: "launch".to_owned(),
+                reason: "auth tests never launch engines".to_owned(),
+            })
+        }
     }
 }

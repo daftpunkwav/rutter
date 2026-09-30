@@ -203,6 +203,12 @@ impl DashboardServer {
     }
 }
 
+/// Hex digits of a generated token; `RUTTER_DASHBOARD_TOKEN` overrides
+/// shorter than this are accepted (existing automation may pin one) but
+/// warned about, because the generated form is the strength the endpoint
+/// gate is built around.
+const TOKEN_DIGITS: usize = 16;
+
 /// The per-launch token: launch time and process id hashed with a
 /// randomly keyed hasher seeded from OS entropy, so the value is not
 /// predictable from launch circumstances alone. `RUTTER_DASHBOARD_TOKEN`
@@ -213,6 +219,16 @@ fn generate_token() -> String {
     if let Ok(token) = std::env::var("RUTTER_DASHBOARD_TOKEN")
         && !token.is_empty()
     {
+        // A short override stays in force — refusing it would break the
+        // automations that pinned it — but it is exactly the token a
+        // same-machine guesser gets to test against the gate, so the
+        // weakness is named where its owner will see it.
+        if token.len() < TOKEN_DIGITS {
+            eprintln!(
+                "rutter: warning: RUTTER_DASHBOARD_TOKEN is shorter than {TOKEN_DIGITS} characters; \
+                 a short token is guessable by anything that can reach the dashboard"
+            );
+        }
         return token;
     }
     use std::collections::hash_map::RandomState;
@@ -220,7 +236,7 @@ fn generate_token() -> String {
     let mut hasher = RandomState::new().build_hasher();
     std::time::SystemTime::now().hash(&mut hasher);
     std::process::id().hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    format!("{:0width$x}", hasher.finish(), width = TOKEN_DIGITS)
 }
 
 /// Writes the access URL so that only its owner can read it on Unix,
