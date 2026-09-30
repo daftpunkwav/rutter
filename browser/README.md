@@ -28,3 +28,23 @@ npm run package          # dist/RutterBrowser/RutterBrowser.exe (double-click)
 Electron reserves the `--app` switch, so rutter's chromeless-window
 flag is deliberately not applied to this engine (see
 `crates/engine-cdp/src/launch.rs`).
+
+## Engine and shell versions
+
+The two Chromium surfaces are pinned separately, on purpose:
+
+- This shell pins Electron in `package.json`. An Electron release line
+  embeds a fixed Chromium major (Electron 38 ships Chromium 140), so
+  the pin holds the shell's CDP surface still.
+- The engine rutter spawns follows Chrome for Testing's
+  last-known-good stable channel (see
+  `crates/engine/src/download/manifest.rs`), so its Chromium major
+  moves over time.
+
+The engine leads the protocol: rutter speaks the CDP surface the
+engine exposes, and the shell only has to accept the attach flow.
+When bumping the Electron pin, choose the newest release whose
+Chromium major stays within one step of the engine's Chrome for
+Testing line, then run the integration and e2e suites against the
+real pair — that is the compatibility contract, not the version
+numbers themselves.

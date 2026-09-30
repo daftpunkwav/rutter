@@ -24,3 +24,19 @@ npm run package          # dist/RutterBrowser/RutterBrowser.exe（可双击）
 
 Electron 保留了 `--app` 开关，因此 rutter 的无 chrome 窗口参数刻意
 不作用于本引擎（见 `crates/engine-cdp/src/launch.rs`）。
+
+## 引擎与壳的版本
+
+两套 Chromium 面是刻意分开 pin 的：
+
+- 本壳在 `package.json` 中 pin Electron。一个 Electron 发布线内嵌
+  固定的 Chromium 主版本（Electron 38 内嵌 Chromium 140），因此该
+  pin 让壳的 CDP 面保持不动。
+- rutter 拉起的引擎跟随 Chrome for Testing 的 last-known-good
+  stable 通道（见 `crates/engine/src/download/manifest.rs`），其
+  Chromium 主版本会随时间移动。
+
+协议由引擎主导：rutter 说的是引擎暴露的 CDP 面，壳只需接受附着
+流程。升级 Electron pin 时，选择 Chromium 主版本与引擎的 Chrome
+for Testing 线相差不超过一步的最新 release，然后让 integration 与
+e2e 套件跑真实组合来确认——兼容契约是套件，不是版本号本身。
