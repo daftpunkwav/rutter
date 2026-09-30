@@ -49,6 +49,13 @@ pub use storage::StorageState;
 // `Session::console_messages`). Consumers depend on `rutter-session`
 // alone; the engine layer stays an implementation detail behind the
 // orchestration surface.
+//
+// Exemptions, by design: the `rutter` binary is the composition root
+// and wires the engine directly; crates' own `tests/` targets and
+// `#[cfg(test)]` doubles implement engine traits and import
+// `rutter-engine` through their dev-dependency. Everything else goes
+// through these re-exports, so a rename here has two import paths to
+// update, not one per call site.
 pub use rutter_engine::{
     ConsoleEntry, ConsoleLevel, EngineError, EngineLauncher, ImageFormat, LaunchMode, RequestEntry,
     ScreencastStream, Screenshot,

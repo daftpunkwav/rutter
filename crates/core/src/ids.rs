@@ -57,6 +57,24 @@ opaque_id!(
     PageId
 );
 
+/// Id length beyond which the session's suffixed storage file name
+/// cannot fit a directory entry (the common 255-byte limit, rounded
+/// down).
+const MAX_ID_BYTES: usize = 200;
+
+impl SessionId {
+    /// Whether the identifier can safely name the session's on-disk
+    /// storage file: non-empty, at most 200 bytes long, and free of
+    /// path separators and NUL. The session layer refuses ids that
+    /// fail this check before the engine ever starts — the id becomes
+    /// part of a file name under the state directory, and a separator
+    /// inside it would steer that file out of the directory.
+    pub fn is_storage_safe(&self) -> bool {
+        let name = self.as_str();
+        !(name.is_empty() || name.len() > MAX_ID_BYTES || name.contains(['/', '\\', '\0']))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,5 +96,20 @@ mod tests {
         assert_eq!(page.as_str(), "1");
         assert_eq!(context.as_str(), "2");
         assert_eq!(session.as_str(), "3");
+    }
+
+    #[test]
+    fn storage_safety_refuses_separators_emptiness_and_overlong_ids() {
+        // The constraint the session layer enforces before the engine
+        // ever starts; see `rutter-session`'s manager for the refusal.
+        for id in ["", "../evil", "a/b", "a\\b", "a\0b"] {
+            assert!(
+                !SessionId::new(id.to_owned()).is_storage_safe(),
+                "session id {id:?} must not name a storage file"
+            );
+        }
+        assert!(!SessionId::new("x".repeat(MAX_ID_BYTES + 1)).is_storage_safe());
+        assert!(SessionId::new("x".repeat(MAX_ID_BYTES)).is_storage_safe());
+        assert!(SessionId::new("stdio-4711").is_storage_safe());
     }
 }

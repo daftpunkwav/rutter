@@ -543,6 +543,29 @@ fn engine_failures_map_through_the_event_taxonomy() {
     }
 }
 
+#[test]
+fn every_engine_error_variant_is_named_in_the_mapping_review() {
+    // `as_action_error` ends in a fallback arm, so a new `EngineError`
+    // variant compiles silently and lands as `ActionError::Internal`
+    // even where a typed mapping exists. This match has no fallback:
+    // adding a variant breaks the build here, forcing the mapping —
+    // and the docs that pin its wire text — to be revisited together.
+    fn variant_name(error: &EngineError) -> &'static str {
+        match error {
+            EngineError::NavigationFailed { .. } => "navigation_failed",
+            EngineError::LaunchFailed { .. } => "launch_failed",
+            EngineError::Terminated => "terminated",
+            EngineError::Timeout { .. } => "timeout",
+            EngineError::Unsupported { .. } => "unsupported",
+            EngineError::Internal { .. } => "internal",
+            EngineError::Capacity { .. } => "capacity",
+            EngineError::DownloadFailed { .. } => "download_failed",
+            EngineError::ReferenceExpired { .. } => "reference_expired",
+        }
+    }
+    assert_eq!(variant_name(&EngineError::Terminated), "terminated");
+}
+
 #[tokio::test]
 async fn a_denied_effect_names_its_own_reference() {
     // The reference in the refusal names the element that was refused;

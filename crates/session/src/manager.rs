@@ -260,20 +260,13 @@ impl SessionManager {
     }
 }
 
-/// The session's persistence file name, refusing ids that would steer
-/// that file out of the state directory: a path separator or NUL inside
-/// the id escapes the join, and an id too long for a directory entry
-/// would fail obscurely at write time. The shipped transports mint ids
-/// (`stdio-<pid>`, `http-<pid>-<serial>`) that always pass; the check is
-/// the fence a future client-controlled id hits, not a rename of
-/// today's.
+/// The session's persistence file name. The safety rule lives on the
+/// identifier itself ([`SessionId::is_storage_safe`]) so the constraint
+/// and the identifier it guards stay in one place; the manager only
+/// owns the refusal and the file suffix.
 fn storage_file_name(id: &SessionId) -> Result<String, SessionError> {
-    /// Id length beyond which the suffixed file name cannot fit a
-    /// directory entry (the common 255-byte limit, rounded down).
-    const MAX_ID_BYTES: usize = 200;
-
     let name = id.as_str();
-    if name.is_empty() || name.len() > MAX_ID_BYTES || name.contains(['/', '\\', '\0']) {
+    if !id.is_storage_safe() {
         return Err(SessionError::InvalidId {
             detail: format!(
                 "session id {:?} cannot name a storage file; use letters, digits, dashes, and underscores",

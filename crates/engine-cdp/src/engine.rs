@@ -23,8 +23,9 @@ use rutter_engine::health::HealthReport;
 use crate::context::CdpContext;
 
 /// Shared browser connection; `Browser` is not `Clone`, so all handles
-/// funnel through this mutex.
-pub type SharedBrowser = Arc<Mutex<chromiumoxide::Browser>>;
+/// funnel through this mutex. Crate-internal: the module is private and
+/// the boundary is `EngineLauncher` alone.
+pub(crate) type SharedBrowser = Arc<Mutex<chromiumoxide::Browser>>;
 
 /// The browser process this engine spawned and owns. Killing on drop is
 /// the backstop for abnormal teardown (a wedged browser under restart, a
