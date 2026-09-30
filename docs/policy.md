@@ -29,8 +29,9 @@ ordered rule list; **the first match wins**, then the default verdict.
 A rule sets any of: `action_class` (one class, or every class when
 omitted), `url_pattern` (`*` wildcards), and its `verdict`.
 
-The built-in default set is conservative for the sensitive class:
-**cookies require approval**, everything else is allowed, with a
+The built-in default set is conservative for the classes that bridge
+the page and this machine: **cookies, file uploads, and `file://`
+navigations require approval**, everything else is allowed, with a
 120 s approval window. Loading a policy file replaces the whole set —
 an empty file is the explicit permissive configuration (default
 `allow`, no rules), not the built-in one.

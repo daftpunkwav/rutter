@@ -146,6 +146,14 @@ and the project adheres to
 
 ### Changed
 
+- The built-in default policy parks the classes that bridge the page
+  and this machine: file uploads (`upload_file`) and `file://`
+  navigations now require approval, like cookie writes already did.
+  A page that manipulates a supervised agent could otherwise have it
+  hand a local file to a hostile form, or pull a local file's contents
+  into the agent's context, with no human in the loop. A policy file
+  re-allows either class explicitly; an empty file stays the explicit
+  permissive configuration.
 - Policy rules built programmatically carry the typed `ActionClass`
   instead of its string name: a misspelled class in a hand-built rule
   used to compile into a rule that matched nothing, where the TOML

@@ -97,11 +97,12 @@ affected operations, never as a crash of rutter.
 ### Policy and approvals
 
 Actions are classified (navigation, pointer, keyboard, selection,
-scroll, cookies) and judged against a rule set of `class × URL pattern
-→ verdict` loaded from a TOML file. Verdicts are `allow`, `deny`, and
-`require_approval`; navigations are judged on their canonicalized
-target URL, and an unreadable page fails closed to a human decision.
-Cookies require approval by default.
+file_upload, scroll, cookies) and judged against a rule set of
+`class × URL pattern → verdict` loaded from a TOML file. Verdicts are
+`allow`, `deny`, and `require_approval`; navigations are judged on
+their canonicalized target URL, and an unreadable page fails closed to
+a human decision. Cookies, file uploads, and `file://` navigations
+require approval by default.
 
 ## Installation
 

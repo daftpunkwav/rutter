@@ -73,8 +73,10 @@ pub struct PolicyRule {
 /// and the window a human has to answer approvals (configurable,
 /// default 120 s).
 ///
-/// The default set is conservative for the sensitive class: cookie
-/// manipulation always requires approval, everything else is allowed
+/// The default set is conservative for the classes that reach past the
+/// page: cookie manipulation, file uploads onto page inputs, and
+/// navigations into `file://` URLs (which would hand a local file's
+/// contents to the agent) require approval, everything else is allowed
 /// unless a loaded configuration says otherwise.
 #[derive(Debug, Clone)]
 pub struct RuleSet {
@@ -84,15 +86,36 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
-    /// The built-in default: allow, except cookies require approval,
-    /// with the 120 s approval window.
+    /// The built-in default: allow, except the classes that bridge the
+    /// page and this machine — cookies, file uploads, and `file://`
+    /// navigations — require approval, with the 120 s approval window.
+    ///
+    /// Each gated class names one way a manipulated agent can move
+    /// local data across the trust boundary: an upload puts a local
+    /// file into a hostile page's form, a `file://` navigation puts a
+    /// local file's contents into the agent's own context, and a
+    /// cookie write redirects another origin's session state. All
+    /// three park for a human by default; a policy file can re-allow
+    /// any of them explicitly.
     pub fn default_set() -> Self {
         Self::new(
-            vec![PolicyRule {
-                action_class: Some(ActionClass::Cookies),
-                url_pattern: None,
-                verdict: Verdict::RequireApproval,
-            }],
+            vec![
+                PolicyRule {
+                    action_class: Some(ActionClass::Navigation),
+                    url_pattern: Some(Pattern::new("file:///*")),
+                    verdict: Verdict::RequireApproval,
+                },
+                PolicyRule {
+                    action_class: Some(ActionClass::FileUpload),
+                    url_pattern: None,
+                    verdict: Verdict::RequireApproval,
+                },
+                PolicyRule {
+                    action_class: Some(ActionClass::Cookies),
+                    url_pattern: None,
+                    verdict: Verdict::RequireApproval,
+                },
+            ],
             Verdict::Allow,
         )
     }
@@ -201,11 +224,24 @@ mod tests {
     use rutter_core::reference::Reference;
 
     #[test]
-    fn default_set_requires_approval_for_cookies_only() {
+    fn default_set_requires_approval_for_the_bridging_classes() {
         let rules = RuleSet::default_set();
         assert_eq!(
             rules.evaluate(ActionClass::Cookies, "https://any.example/"),
             Verdict::RequireApproval
+        );
+        assert_eq!(
+            rules.evaluate(ActionClass::FileUpload, "https://any.example/"),
+            Verdict::RequireApproval
+        );
+        assert_eq!(
+            rules.evaluate(ActionClass::Navigation, "file:///home/u/.ssh/id_rsa"),
+            Verdict::RequireApproval,
+            "a local-file navigation parks for a human"
+        );
+        assert_eq!(
+            rules.evaluate(ActionClass::Navigation, "https://any.example/"),
+            Verdict::Allow
         );
         assert_eq!(
             rules.evaluate(ActionClass::Pointer, "https://any.example/"),

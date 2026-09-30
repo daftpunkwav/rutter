@@ -89,11 +89,11 @@ rutter 自身的崩溃。
 
 ### 策略与审批
 
-动作按类（navigation、pointer、keyboard、selection、scroll、cookies）
-对照 `类 × URL 模式 → 判决` 的规则集进行判决，规则集从 TOML 文件加
-载。判决为 `allow`、`deny`、`require_approval`；导航按其规范化后的
-目标 URL 判决，不可读页面 fail-closed 交由人工决策。cookies 默认需
-要审批。
+动作按类（navigation、pointer、keyboard、selection、file_upload、
+scroll、cookies）对照 `类 × URL 模式 → 判决` 的规则集进行判决，规则
+集从 TOML 文件加载。判决为 `allow`、`deny`、`require_approval`；导
+航按其规范化后的目标 URL 判决，不可读页面 fail-closed 交由人工决策。
+cookies、文件上传与 `file://` 导航默认需要审批。
 
 ## 安装
 

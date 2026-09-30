@@ -202,6 +202,83 @@ async fn set_cookies_requires_approval_by_the_default_policy() {
 }
 
 #[tokio::test]
+async fn an_upload_requires_approval_by_the_default_policy() {
+    // The default set parks file uploads: a manipulated agent must not
+    // hand a local file to a hostile page's form without a human seeing
+    // the ask. With nobody answering inside the short test window, the
+    // call times out and no file reaches the page.
+    let context = MockContext::new();
+    let session = session_with_short_approval(Arc::new(context.clone()));
+    session.active_page_for_test().await;
+
+    let outcome = session
+        .execute(
+            Action::SetInputFiles {
+                reference: rutter_core::reference::Reference::new("e1"),
+                paths: vec!["report.pdf".to_owned()],
+            },
+            Origin::Agent,
+        )
+        .await;
+    assert!(
+        matches!(
+            outcome,
+            Err(SessionError::Action(ActionError::ApprovalTimedOut { .. }))
+        ),
+        "unanswered approvals park, they do not upload: {outcome:?}"
+    );
+    let (page_id, _) = session.active_page_for_test().await;
+    let page = context.page_mock(page_id).expect("the active page");
+    assert!(
+        page.input_files_calls().is_empty(),
+        "no file reached the page without a grant"
+    );
+}
+
+#[tokio::test]
+async fn a_local_file_navigation_requires_approval_by_the_default_policy() {
+    // The default set parks `file://` navigations: a local file's
+    // contents must not enter the agent's context without a human
+    // seeing the ask. With nobody answering, the navigation times out
+    // and the page never leaves its URL.
+    let context = MockContext::new();
+    let session = session_with_short_approval(Arc::new(context.clone()));
+    let (page_id, _) = session.active_page_for_test().await;
+    let page = context.page_mock(page_id).expect("the active page");
+    page.set_url("https://a.example/start");
+
+    let outcome = session
+        .execute(
+            Action::Navigate {
+                url: "file:///home/u/.ssh/id_rsa".to_owned(),
+            },
+            Origin::Agent,
+        )
+        .await;
+    assert!(
+        matches!(
+            outcome,
+            Err(SessionError::Action(ActionError::ApprovalTimedOut { .. }))
+        ),
+        "unanswered approvals park, they do not navigate: {outcome:?}"
+    );
+    assert_eq!(
+        page_url_of(&page).await,
+        "https://a.example/start",
+        "the page never loaded the local file"
+    );
+}
+
+/// The URL the mock page currently reports through `location.href`.
+async fn page_url_of(page: &MockPage) -> String {
+    let answer = page
+        .evaluate("location.href")
+        .await
+        .expect("the mock answers location.href");
+    answer.as_str().unwrap_or_default().to_owned()
+}
+
+#[tokio::test]
 async fn a_navigation_is_judged_by_its_target_url() {
     // A deny rule on the CURRENT page must not wave through to a
     // navigation, and vice versa: the judgment URL for `Navigate` is
@@ -475,7 +552,7 @@ async fn a_supervised_decision_leaves_an_audit_line() {
     assert_eq!(record["class"], "cookies");
     assert_eq!(record["outcome"], "timed_out");
     assert_eq!(record["effect"], "1 cookie write(s)");
-    assert_eq!(record["basis"], "rule 1");
+    assert_eq!(record["basis"], "rule 3");
     assert!(
         record["request_id"]
             .as_str()
