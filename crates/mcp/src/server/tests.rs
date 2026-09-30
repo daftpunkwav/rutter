@@ -1016,6 +1016,7 @@ async fn set_cookies_maps_inputs_and_reports_failures() {
             secure: None,
             http_only: None,
             same_site: Some(SameSiteInput::Lax),
+            expires: None,
         }],
     };
     let result = mcp.set_cookies(Parameters(params)).await.expect("result");
@@ -1032,6 +1033,7 @@ async fn set_cookies_maps_inputs_and_reports_failures() {
             secure: None,
             http_only: None,
             same_site: None,
+            expires: None,
         }],
     };
     let result = mcp

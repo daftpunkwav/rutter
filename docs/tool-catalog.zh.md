@@ -162,7 +162,8 @@ auto-wait；提取规则与守卫见[读取格式](read-format.zh.md)。站点�
 
 ### press_key
 `{ key: string }` → snapshot。键名遵循引擎记法（`a`、`Enter`、
-`Tab`、`ArrowLeft`、`F5` 等）。已知键携带物理码与虚拟键码，可打印
+`Tab`、`ArrowLeft`、`F5` 等）。空的 `key` 是 `invalid_params`。
+已知键携带物理码与虚拟键码，可打印
 字符会插入焦点元素；未知键退化为只带键名的事件。
 
 ### select_option
@@ -175,7 +176,9 @@ auto-wait；提取规则与守卫见[读取格式](read-format.zh.md)。站点�
 为 `reference` 指向的文件输入元素设置文件。空的 `paths` 数组是
 `invalid_params`。`paths` 由引擎所在的机器
 解析；不存在的路径 → `NotInteractable`。其他拒绝情形：元素不是文件
-输入，或向单文件输入给了多个路径。
+输入，或向单文件输入给了多个路径。与所有动作一样，上传经过
+[策略门](policy.zh.md#2-规则评估)，归入 `file_upload` 类别——默认
+需要人工审批。
 
 ### scroll
 `{ direction: up|down|left|right, amount: number, reference?: string }`
@@ -229,9 +232,11 @@ URL，策略判定与 `navigate` 动作完全一致。被拒绝或失败的导�
 
 ### set_cookies
 `{ cookies: [{ name, value, domain, path?, secure?, http_only?,
-same_site? }] }` → 文本确认。cookie 应用到 session 的 context
+same_site?, expires? }] }` → 文本确认。cookie 应用到 session 的 context
 （context 隔离，见[术语表](glossary.zh.md)）。`same_site` 是
-`strict|lax|none`；跨重启的持久化经由 storage state 完成
+`strict|lax|none`；`expires` 是自 Unix 纪元起的秒数，省略时设置的是
+会话 cookie。写入经过策略的 `cookies` 类别——默认需要人工审批
+（[policy](policy.zh.md)）；跨重启的持久化经由 storage state 完成
 （[sessions](sessions.zh.md#3-storage-state)）。
 
 ### network_requests

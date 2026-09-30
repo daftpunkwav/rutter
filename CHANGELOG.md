@@ -187,6 +187,17 @@ and the project adheres to
 
 ### Added
 
+- `set_cookies` accepts an optional `expires` field per cookie
+  (seconds since the Unix epoch); omitting it keeps the session-cookie
+  behavior. The write side now speaks the same expiry vocabulary the
+  read side already reported (`get_cookies`, storage state), and the
+  tool's JSON schema carries the new optional field.
+- The JSON schemas of `press_key` (`key`), `upload_file` (`paths`),
+  and `set_cookies` (`cookies`) now state the non-empty rule the
+  server already enforced (`minLength` / `minItems`), so the published
+  schema and the `invalid_params` rejections say the same thing. Server
+  behavior is unchanged.
+
 - A `RUTTER_DASHBOARD_TOKEN` override shorter than the 16 characters
   of the generated token is accepted — existing automation may have
   pinned one — but warned about on stderr, because a short token is

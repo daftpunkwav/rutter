@@ -77,6 +77,9 @@ pub struct CookieInput {
     pub http_only: Option<bool>,
     /// Cross-site policy: `strict`, `lax`, or `none`.
     pub same_site: Option<SameSiteInput>,
+    /// Expiry as seconds since the Unix epoch; omitted sets a session
+    /// cookie.
+    pub expires: Option<f64>,
 }
 
 impl TryFrom<&CookieInput> for Cookie {
@@ -91,7 +94,7 @@ impl TryFrom<&CookieInput> for Cookie {
             secure: input.secure.unwrap_or(false),
             http_only: input.http_only.unwrap_or(false),
             same_site: input.same_site.map(SameSite::from),
-            expires: None,
+            expires: input.expires,
         })
     }
 }
@@ -124,6 +127,7 @@ pub struct TypeParams {
 /// Parameters of the press_key tool.
 pub struct PressKeyParams {
     /// Key in engine notation, for example `a`, `Enter`, `Tab`.
+    #[schemars(length(min = 1))]
     pub key: String,
 }
 
@@ -184,6 +188,10 @@ pub struct UploadFileParams {
     /// Reference to the file input element.
     pub reference: String,
     /// Paths of the files to set, on the machine the engine runs on.
+    ///
+    /// `minItems` mirrors the server rule: an empty array is
+    /// `invalid_params`, so the published schema says the same.
+    #[schemars(length(min = 1))]
     pub paths: Vec<String>,
 }
 
@@ -203,5 +211,10 @@ pub struct ViewportParams {
 /// Parameters of the set_cookies tool.
 pub struct CookiesParams {
     /// Cookies to set on this session's context.
+    ///
+    /// `minItems` mirrors the server rule: an empty batch is refused
+    /// before the policy gate so nobody is asked to approve a write
+    /// that sets nothing.
+    #[schemars(length(min = 1))]
     pub cookies: Vec<CookieInput>,
 }

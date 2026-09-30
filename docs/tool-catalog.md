@@ -189,7 +189,8 @@ snapshot.
 
 ### press_key
 `{ key: string }` → snapshot. Key names follow engine notation
-(`a`, `Enter`, `Tab`, `ArrowLeft`, `F5`, …). Known keys carry their
+(`a`, `Enter`, `Tab`, `ArrowLeft`, `F5`, …). An empty `key` is
+`invalid_params`. Known keys carry their
 physical code and virtual key code, and printable keys insert their
 character into the focused element; unknown keys degrade to a
 name-only event.
@@ -205,7 +206,9 @@ sets the files of the file input `reference` points to. An empty
 `paths` array is `invalid_params`. `paths` are
 resolved by the machine the engine runs on; a path that does not exist
 → `NotInteractable`. Other refusals: the element is not a file input,
-or a single-file input was given more than one path.
+or a single-file input was given more than one path. Like every
+action, the upload passes the [policy gate](policy.md#2-rule-evaluation)
+under the `file_upload` class, which requires approval by default.
 
 ### scroll
 `{ direction: up|down|left|right, amount: number, reference?: string }`
@@ -268,10 +271,13 @@ below; reading needs no approval, writing goes through the policy's
 
 ### set_cookies
 `{ cookies: [{ name, value, domain, path?, secure?, http_only?,
-same_site? }] }` → text confirmation. Cookies apply to the session's
-context (context isolation, [glossary](glossary.md)). `same_site` is
-`strict|lax|none`; persistence across restarts works through storage
-state ([sessions](sessions.md#3-storage-state)).
+same_site?, expires? }] }` → text confirmation. Cookies apply to the
+session's context (context isolation, [glossary](glossary.md)).
+`same_site` is `strict|lax|none`; `expires` is seconds since the Unix
+epoch, and omitting it sets a session cookie. Writing goes through the
+policy's `cookies` class, which requires approval by default
+([policy](policy.md)); persistence across restarts works through
+storage state ([sessions](sessions.md#3-storage-state)).
 
 ### network_requests
 `{}` → text block, the network requests the active page made, oldest

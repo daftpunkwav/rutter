@@ -9,7 +9,10 @@
 
 use rutter_core::action::ScrollDirection;
 use rutter_core::cookie::{Cookie, SameSite};
-use rutter_mcp::server::{CookieInput, SameSiteInput, ScrollDirectionInput};
+use rutter_mcp::server::{
+    CookieInput, CookiesParams, PressKeyParams, SameSiteInput, ScrollDirectionInput,
+    UploadFileParams,
+};
 
 #[test]
 fn cookie_inputs_map_with_defaults() {
@@ -21,12 +24,33 @@ fn cookie_inputs_map_with_defaults() {
         secure: None,
         http_only: None,
         same_site: Some(SameSiteInput::Lax),
+        expires: None,
     };
     let cookie = Cookie::try_from(&input).expect("cookie");
     assert_eq!(cookie.name, "session");
     assert_eq!(cookie.path, None);
     assert!(!cookie.secure);
     assert_eq!(cookie.same_site, Some(SameSite::Lax));
+    assert_eq!(cookie.expires, None, "omitted expiry is a session cookie");
+}
+
+#[test]
+fn cookie_input_carries_the_expiry_through() {
+    // The write side speaks the same expiry vocabulary the read side
+    // reports (`get_cookies`, storage state): seconds since the Unix
+    // epoch, `None` a session cookie.
+    let input = CookieInput {
+        name: "session".to_owned(),
+        value: "42".to_owned(),
+        domain: "example.com".to_owned(),
+        path: None,
+        secure: None,
+        http_only: None,
+        same_site: None,
+        expires: Some(1_800_000_000.0),
+    };
+    let cookie = Cookie::try_from(&input).expect("cookie");
+    assert_eq!(cookie.expires, Some(1_800_000_000.0));
 }
 
 #[test]
@@ -56,5 +80,24 @@ fn scroll_directions_map_onto_the_core_vocabulary() {
         (ScrollDirectionInput::Right, ScrollDirection::Right),
     ] {
         assert_eq!(ScrollDirection::from(input), expected);
+    }
+}
+
+#[test]
+fn the_schema_says_what_the_server_refuses() {
+    // The server answers an empty `key`, an empty `paths`, and an empty
+    // `cookies` batch with `invalid_params`; the published schema must
+    // carry the same rule, or a validating client and the server
+    // disagree about which inputs are legal.
+    for schema in [
+        serde_json::to_value(schemars::schema_for!(PressKeyParams)).expect("schema json"),
+        serde_json::to_value(schemars::schema_for!(UploadFileParams)).expect("schema json"),
+        serde_json::to_value(schemars::schema_for!(CookiesParams)).expect("schema json"),
+    ] {
+        let text = serde_json::to_string(&schema).expect("schema text");
+        assert!(
+            text.contains("minLength") || text.contains("minItems"),
+            "the non-empty rule is in the schema: {text}"
+        );
     }
 }
