@@ -126,7 +126,12 @@ impl SessionManager {
 
     /// Returns the session for `id`, starting the engine and creating
     /// the session's context on first request.
+    ///
+    /// The id is validated before anything starts: it names the session's
+    /// persistence file, so an id that cannot safely compose into one is
+    /// refused before any engine launch, event, or context exists.
     pub async fn session(&self, id: SessionId) -> Result<Arc<Session>, SessionError> {
+        let file_name = storage_file_name(&id)?;
         let running = self.ensure_running(&id).await?;
         let mut sessions = self.inner.sessions.lock().await;
         if let Some(session) = sessions.get(&id) {
@@ -152,7 +157,7 @@ impl SessionManager {
             .inner
             .state_dir
             .as_ref()
-            .map(|dir| dir.join(format!("{id}.storage.json")));
+            .map(|dir| dir.join(&file_name));
         let session = Arc::new(Session::new(
             id.clone(),
             context,
@@ -253,6 +258,30 @@ impl SessionManager {
         *self.inner.engine.write().await = Some(Arc::clone(&running));
         Ok(running)
     }
+}
+
+/// The session's persistence file name, refusing ids that would steer
+/// that file out of the state directory: a path separator or NUL inside
+/// the id escapes the join, and an id too long for a directory entry
+/// would fail obscurely at write time. The shipped transports mint ids
+/// (`stdio-<pid>`, `http-<pid>-<serial>`) that always pass; the check is
+/// the fence a future client-controlled id hits, not a rename of
+/// today's.
+fn storage_file_name(id: &SessionId) -> Result<String, SessionError> {
+    /// Id length beyond which the suffixed file name cannot fit a
+    /// directory entry (the common 255-byte limit, rounded down).
+    const MAX_ID_BYTES: usize = 200;
+
+    let name = id.as_str();
+    if name.is_empty() || name.len() > MAX_ID_BYTES || name.contains(['/', '\\', '\0']) {
+        return Err(SessionError::InvalidId {
+            detail: format!(
+                "session id {:?} cannot name a storage file; use letters, digits, dashes, and underscores",
+                name
+            ),
+        });
+    }
+    Ok(format!("{name}.storage.json"))
 }
 
 /// Starts the engine and spawns the recovery task for its supervisor.
@@ -816,5 +845,68 @@ mod tests {
             "the rebuild's events do not re-create the forgotten ring"
         );
         running.supervisor.shutdown().await;
+    }
+
+    #[test]
+    fn a_session_id_that_cannot_name_storage_is_refused() {
+        // The id composes into the session's persistence file name: an id
+        // carrying a path separator would steer that file out of the
+        // state directory, and one too long would fail obscurely at
+        // write time. The ids the shipped transports mint always pass.
+        for id in [
+            "",
+            "../evil",
+            "a/b",
+            "a\\b",
+            "a\0b",
+            "x".repeat(201).as_str(),
+        ] {
+            assert!(
+                matches!(
+                    storage_file_name(&SessionId::new(id.to_owned())),
+                    Err(SessionError::InvalidId { .. })
+                ),
+                "session id {id:?} must be refused"
+            );
+        }
+        for id in [
+            format!("stdio-{}", std::process::id()),
+            format!("http-{}-1", std::process::id()),
+            "s1".to_owned(),
+        ] {
+            assert!(
+                storage_file_name(&SessionId::new(id.clone())).is_ok(),
+                "session id {id} must pass"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unsafe_session_id_never_reaches_the_launcher() {
+        // The guard is the session request's first step: a refused id
+        // must not start an engine, publish events, or create a context.
+        let launcher = Arc::new(RecoveryLauncher {
+            engines: Mutex::new(Vec::new()),
+            context_gate: Mutex::new(None),
+        });
+        let inner = test_inner(Arc::clone(&launcher));
+        let manager = SessionManager::from_inner(Arc::clone(&inner));
+
+        let error = match manager.session(SessionId::new("../evil".to_owned())).await {
+            Err(error) => error,
+            Ok(_) => panic!("a path-unsafe id must be refused"),
+        };
+        assert!(
+            matches!(error, SessionError::InvalidId { .. }),
+            "the refusal names the id: {error}"
+        );
+        assert!(
+            launcher
+                .engines
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .is_empty(),
+            "no engine may be launched for a refused id"
+        );
     }
 }

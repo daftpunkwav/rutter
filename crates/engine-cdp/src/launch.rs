@@ -304,12 +304,41 @@ fn pick_debug_port() -> Result<u16, EngineError> {
 
 /// Per-launch profile directory under the OS temp dir: a fresh browser
 /// carries no bookmarks, history, or login state, and two engines never
-/// share a profile. The browser creates the directory; the OS temp
-/// cleaner reclaims it after use.
-fn profile_dir() -> PathBuf {
+/// share a profile. The name carries a random component, because pid and
+/// serial alone are guessable by another local user, who could otherwise
+/// pre-create the path (a launch-killing squat) or plant a symlink at
+/// it; the directory is created here, exclusively, so nothing the
+/// browser later touches was ever a stranger-planted name.
+fn profile_dir() -> Result<PathBuf, EngineError> {
     static LAUNCH: AtomicU64 = AtomicU64::new(0);
     let serial = LAUNCH.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("rutter-engine-{}-{}", std::process::id(), serial))
+    let dir = std::env::temp_dir().join(format!(
+        "rutter-engine-{}-{}-{:016x}",
+        std::process::id(),
+        serial,
+        launch_secret()
+    ));
+    match std::fs::create_dir(&dir) {
+        Ok(()) => Ok(dir),
+        // A collision on a freshly random name is not retried: it means
+        // something on this machine is deliberately racing this launch,
+        // and that is a refusal, not bad luck to route around.
+        Err(error) => Err(EngineError::LaunchFailed {
+            detail: format!("create engine profile directory {}: {error}", dir.display()),
+        }),
+    }
+}
+
+/// 64 bits keyed by OS entropy, the same construction the dashboard
+/// token uses: unpredictable to another process, unlike the pid and the
+/// per-process serial the directory name also carries.
+fn launch_secret() -> u64 {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hash, Hasher};
+    let mut hasher = RandomState::new().build_hasher();
+    std::time::SystemTime::now().hash(&mut hasher);
+    std::process::id().hash(&mut hasher);
+    hasher.finish()
 }
 
 #[async_trait]
@@ -319,18 +348,27 @@ impl EngineLauncher for CdpLauncher {
     }
 
     async fn launch(&self, mode: LaunchMode) -> Result<Arc<dyn Engine>, EngineError> {
-        let profile = profile_dir();
-        // The engine's stderr lands next to the profile, under the OS
-        // temp cleaner's care like the profile itself, so a failed
-        // launch can quote it in the error it raises.
-        let stderr_log = profile.with_extension("stderr.log");
+        let profile = profile_dir()?;
+        // The engine's stderr lands inside the profile directory this
+        // launch just created exclusively — a sibling path in the shared
+        // temp dir would be one another local user could have planted a
+        // symlink at, and a create that follows a symlink writes through
+        // it. An unread pipe would deadlock a chatty browser, while a
+        // file the OS writes cannot block the child, and a launch that
+        // never opens its endpoint gets its dying words surfaced in the
+        // error. The OS temp cleaner reclaims the directory like the
+        // profile itself.
+        let stderr_log = profile.join("launch-stderr.log");
         let port = match self.configured_port() {
             Some(port) => port,
             None => pick_debug_port()?,
         };
         let args = self.browser_args(mode, port, &profile);
-        let stderr =
-            std::fs::File::create(&stderr_log).map_err(|error| EngineError::LaunchFailed {
+        let stderr = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&stderr_log)
+            .map_err(|error| EngineError::LaunchFailed {
                 detail: format!("create launch stderr log {}: {error}", stderr_log.display()),
             })?;
         let child = self.spawn_browser(&args, port, &profile, stderr.into())?;
@@ -476,6 +514,28 @@ mod tests {
     #[test]
     fn stderr_tail_is_empty_for_a_missing_log() {
         assert_eq!(stderr_tail(Path::new("no-such-launch-log.tmp")), "");
+    }
+
+    #[test]
+    fn a_profile_directory_is_created_and_never_reused() {
+        let first = profile_dir().expect("profile dir");
+        assert!(first.is_dir(), "the launch owns its profile from here on");
+        let second = profile_dir().expect("second profile dir");
+        assert_ne!(
+            first, second,
+            "two launches never share a profile directory"
+        );
+        let name = first
+            .file_name()
+            .expect("file name")
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            name.starts_with(&format!("rutter-engine-{}-", std::process::id())),
+            "the name stays recognizable for cleanup tooling: {name}"
+        );
+        let _ = std::fs::remove_dir_all(first);
+        let _ = std::fs::remove_dir_all(second);
     }
 
     #[test]

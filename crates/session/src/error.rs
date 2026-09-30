@@ -34,6 +34,16 @@ pub enum SessionError {
     #[error("no open page to observe")]
     NoOpenPage,
 
+    /// The requested session id cannot be used by this server: it would
+    /// not compose into an on-disk name for the session's state. Distinct
+    /// from engine failures: nothing is wrong with the browser, the id
+    /// itself is the problem.
+    #[error("invalid session id: {detail}")]
+    InvalidId {
+        /// What is wrong with the id.
+        detail: String,
+    },
+
     /// A bug was contained at the session boundary; never a silent pass.
     #[error("internal session error: {detail}")]
     Internal {
@@ -55,6 +65,9 @@ impl SessionError {
                 "navigate to a URL or select a page first; observation shows what already exists"
                     .to_owned()
             }
+            Self::InvalidId { .. } => "pick a session id of letters, digits, dashes, and \
+                 underscores; the id names the session's on-disk state"
+                .to_owned(),
             Self::Internal { detail } => {
                 format!("an internal bug was contained; report it, citing: {detail}")
             }
@@ -77,6 +90,9 @@ mod tests {
                 detail: "probe".to_owned(),
             },
             SessionError::NoOpenPage,
+            SessionError::InvalidId {
+                detail: "probe".to_owned(),
+            },
             SessionError::Internal {
                 detail: "probe".to_owned(),
             },

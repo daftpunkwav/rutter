@@ -989,11 +989,11 @@ pub(crate) fn as_action_error(session: &SessionId, error: &SessionError) -> Acti
         },
         // Manager-level failures never flow through action execution,
         // but the event payload needs a total mapping.
-        SessionError::Capacity { detail } | SessionError::Internal { detail } => {
-            ActionError::Internal {
-                detail: detail.clone(),
-            }
-        }
+        SessionError::Capacity { detail }
+        | SessionError::InvalidId { detail }
+        | SessionError::Internal { detail } => ActionError::Internal {
+            detail: detail.clone(),
+        },
         // The observation-only refusal: no action path reaches it, since
         // actions open a page when they need one.
         SessionError::NoOpenPage => ActionError::NotInteractable {

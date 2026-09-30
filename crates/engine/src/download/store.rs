@@ -57,6 +57,7 @@ impl EngineStore {
     /// Highest installed version of a product, if any. Version
     /// directories that do not parse as numeric are ignored.
     pub fn installed(&self, product: &str) -> Result<Option<InstalledEngine>, EngineError> {
+        safe_component(product)?;
         let product_dir = self.root.join("engines").join(product);
         let entries = match fs::read_dir(&product_dir) {
             Ok(entries) => entries,
@@ -115,6 +116,12 @@ impl EngineStore {
         version: &str,
         zip_bytes: &[u8],
     ) -> Result<InstalledEngine, EngineError> {
+        // The product names the first directory below and the shipped
+        // callers pass the fixed `Product::name()` strings, but the API
+        // takes any `&str`: a separator-bearing name would steer the
+        // install (and every later lookup) outside the cache root, so it
+        // is refused with the version below.
+        safe_component(product)?;
         // The version names two directories below and comes verbatim
         // from the downloaded manifest, so it must be a plain
         // dotted-numeric version: `..` parts or separators would steer
@@ -319,6 +326,21 @@ impl EngineStore {
             executable,
         })
     }
+}
+
+/// Refuses a cache path component that is not a plain directory name:
+/// separators, drive/ADS colons, NUL, the dot names, and emptiness all
+/// steer or break the path they land in. Product names compose the
+/// first directory below the cache root; the shipped callers pass the
+/// fixed `Product::name()` strings, so this is the fence for the pub
+/// API, not a rename of today's inputs.
+fn safe_component(name: &str) -> Result<(), EngineError> {
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\', ':', '\0']) {
+        return Err(EngineError::DownloadFailed {
+            detail: format!("cache component '{name}' is not a plain directory name"),
+        });
+    }
+    Ok(())
 }
 
 /// Joins `relative` onto `base`, refusing hostile archive paths:
@@ -588,6 +610,31 @@ mod tests {
     fn version_parse_orders_numerically() {
         assert!(parse_version("141.0.10") > parse_version("141.0.2"));
         assert!(parse_version("abc").is_none());
+    }
+
+    #[test]
+    fn cache_components_must_be_plain_directory_names() {
+        // Product names compose the first directory below the cache
+        // root: separators, the dot names, colons, and NUL must refuse
+        // before any path is built, and the real product names pass.
+        for name in [
+            "",
+            ".",
+            "..",
+            "a/b",
+            "a\\b",
+            "C:evil",
+            "a\0b",
+            "chrome/../evil",
+        ] {
+            assert!(
+                safe_component(name).is_err(),
+                "component {name:?} must be refused"
+            );
+        }
+        for name in ["chrome", "chrome-headless-shell"] {
+            assert!(safe_component(name).is_ok(), "component {name} must pass");
+        }
     }
 
     #[test]
