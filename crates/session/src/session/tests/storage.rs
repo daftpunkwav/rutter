@@ -302,12 +302,19 @@ async fn a_failed_write_is_retried_on_the_next_capture() {
 
     // A directory where the file belongs: the write cannot rename onto
     // it, which is the shape of a write that failed for any other
-    // reason too (a full disk, a read-only state directory).
+    // reason too (a full disk, a read-only state directory). The
+    // explicit save is the caller's lens on that failure: it comes
+    // back as `StorageWrite`, and `persisted` stays false so the
+    // retry below has something to publish.
     std::fs::create_dir(&path).expect("block the state file");
-    session
+    let error = session
         .save_storage()
         .await
-        .expect("a failed write is not an error");
+        .expect_err("a failed write is the caller's to see");
+    assert!(
+        matches!(error, SessionError::StorageWrite { .. }),
+        "the failure names the write: {error:?}"
+    );
     assert!(
         !path.join("x").is_file(),
         "the blocked path is a directory, not a state file"

@@ -52,10 +52,17 @@ pub enum Review {
 /// One rule: an optional action class and an optional URL pattern, both
 /// optional so a rule can target every action of one class or every URL
 /// of one pattern.
+///
+/// The class is the typed [`ActionClass`], not its string name: a
+/// misspelled name in a programmatically built rule used to compile into
+/// a rule that matched nothing (the TOML path rejects the same spelling
+/// at load; this path had no feedback at all). Serialized as the same
+/// snake_case names the configuration uses, so existing files keep
+/// parsing unchanged.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolicyRule {
     /// Class the rule applies to; `None` means every class.
-    pub action_class: Option<String>,
+    pub action_class: Option<ActionClass>,
     /// URL pattern the rule applies to; `None` means every URL.
     pub url_pattern: Option<Pattern>,
     /// Verdict when the rule matches.
@@ -82,7 +89,7 @@ impl RuleSet {
     pub fn default_set() -> Self {
         Self::new(
             vec![PolicyRule {
-                action_class: Some(ActionClass::Cookies.name().to_owned()),
+                action_class: Some(ActionClass::Cookies),
                 url_pattern: None,
                 verdict: Verdict::RequireApproval,
             }],
@@ -157,8 +164,7 @@ impl RuleSet {
         for (position, rule) in self.rules.iter().enumerate() {
             let class_matches = rule
                 .action_class
-                .as_deref()
-                .map(|name| ActionClass::parse(name) == Some(class))
+                .map(|rule_class| rule_class == class)
                 .unwrap_or(true);
             let url_matches = rule
                 .url_pattern
@@ -212,7 +218,7 @@ mod tests {
         let rules = RuleSet::new(
             vec![
                 PolicyRule {
-                    action_class: Some("navigation".to_owned()),
+                    action_class: Some(ActionClass::Navigation),
                     url_pattern: Some(Pattern::new("https://bank.example/*")),
                     verdict: Verdict::Deny,
                 },
@@ -321,7 +327,7 @@ mod tests {
     fn class_rules_still_bind_without_a_url() {
         let rules = RuleSet::new(
             vec![PolicyRule {
-                action_class: Some("cookies".to_owned()),
+                action_class: Some(ActionClass::Cookies),
                 url_pattern: None,
                 verdict: Verdict::Deny,
             }],
@@ -395,12 +401,12 @@ mod tests {
         let rules = RuleSet::new(
             vec![
                 PolicyRule {
-                    action_class: Some("scroll".to_owned()),
+                    action_class: Some(ActionClass::Scroll),
                     url_pattern: None,
                     verdict: Verdict::Deny,
                 },
                 PolicyRule {
-                    action_class: Some("navigation".to_owned()),
+                    action_class: Some(ActionClass::Navigation),
                     url_pattern: Some(Pattern::new("https://*.bank.example/*")),
                     verdict: Verdict::RequireApproval,
                 },

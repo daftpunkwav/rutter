@@ -4,6 +4,15 @@
 //! minting new identifiers is the responsibility of the layer that owns
 //! the object's lifecycle (for example `rutter-session`). Callers must
 //! not parse or construct meaning from the string content.
+//!
+//! Opacity is about *reading* an identifier, not about minting freedom:
+//! the layer that owns the lifecycle may impose constraints a conforming
+//! identifier must satisfy. A `SessionId` names the session's on-disk
+//! storage file, so the session layer refuses ids that cannot compose
+//! into one — empty, longer than 200 bytes, or carrying a path
+//! separator or NUL (see `rutter-session`'s manager). The shipped
+//! transports mint `stdio-<pid>` and `http-<pid>-<serial>`, which
+//! always pass.
 
 use std::fmt;
 

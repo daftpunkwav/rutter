@@ -104,13 +104,8 @@ impl Executor<'_> {
             }
             Action::SelectOption { reference, values } => {
                 self.auto_wait(reference).await?;
-                let values_json = serde_json::to_string(values).map_err(|error| {
-                    SessionError::Action(ActionError::Internal {
-                        detail: format!("values are not representable as JSON: {error}"),
-                    })
-                })?;
                 let answer = self
-                    .evaluate(&select_script(reference.as_str(), &values_json))
+                    .evaluate(&select_script(reference.as_str(), values))
                     .await?;
                 if answer.get("missing") == Some(&serde_json::Value::Bool(true)) {
                     return Err(expired(reference.as_str()));

@@ -31,12 +31,12 @@ async fn a_grant_does_not_follow_a_page_that_moved_mid_park() {
         RuleSet::new(
             vec![
                 rutter_policy::rules::PolicyRule {
-                    action_class: Some("pointer".to_owned()),
+                    action_class: Some(ActionClass::Pointer),
                     url_pattern: rutter_policy::Pattern::parse("https://denied.example/*").ok(),
                     verdict: Verdict::Deny,
                 },
                 rutter_policy::rules::PolicyRule {
-                    action_class: Some("pointer".to_owned()),
+                    action_class: Some(ActionClass::Pointer),
                     url_pattern: None,
                     verdict: Verdict::RequireApproval,
                 },
@@ -97,7 +97,7 @@ async fn a_grant_survives_a_move_to_a_url_the_rules_allow() {
         Arc::new(context.clone()),
         RuleSet::new(
             vec![rutter_policy::rules::PolicyRule {
-                action_class: Some("pointer".to_owned()),
+                action_class: Some(ActionClass::Pointer),
                 url_pattern: rutter_policy::Pattern::parse("https://a.example/*").ok(),
                 verdict: Verdict::RequireApproval,
             }],
@@ -543,7 +543,7 @@ async fn a_denied_upload_names_the_targeted_input() {
         Arc::new(context),
         RuleSet::new(
             vec![rutter_policy::rules::PolicyRule {
-                action_class: Some("file_upload".to_owned()),
+                action_class: Some(ActionClass::FileUpload),
                 url_pattern: None,
                 verdict: rutter_policy::Verdict::Deny,
             }],

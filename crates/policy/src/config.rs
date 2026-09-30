@@ -55,15 +55,22 @@ pub fn parse_policy(toml_text: &str) -> Result<RuleSet, ConfigError> {
     for rule in &config.rules {
         let verdict = Verdict::parse(&rule.verdict)
             .ok_or_else(|| unknown_verdict("a rule", &rule.verdict))?;
-        if let Some(name) = &rule.action_class
-            && ActionClass::parse(name).is_none()
-        {
-            return Err(ConfigError {
-                detail: format!(
-                    "unknown action_class '{name}'; use navigation, pointer, keyboard, selection, file_upload, scroll, or cookies"
-                ),
-            });
-        }
+        // Parse and validate in one step: the rule carries the typed
+        // class, so an unknown name has nowhere to go but this error,
+        // which names the vocabulary the operator can actually write.
+        let action_class = match &rule.action_class {
+            Some(name) => match ActionClass::parse(name) {
+                Some(class) => Some(class),
+                None => {
+                    return Err(ConfigError {
+                        detail: format!(
+                            "unknown action_class '{name}'; use navigation, pointer, keyboard, selection, file_upload, scroll, or cookies"
+                        ),
+                    });
+                }
+            },
+            None => None,
+        };
         if rule.action_class.is_none() && rule.url_pattern.is_none() {
             return Err(ConfigError {
                 detail: "a rule must set action_class, url_pattern, or both".to_owned(),
@@ -85,7 +92,7 @@ pub fn parse_policy(toml_text: &str) -> Result<RuleSet, ConfigError> {
             None => None,
         };
         rules.push(PolicyRule {
-            action_class: rule.action_class.clone(),
+            action_class,
             url_pattern,
             verdict,
         });

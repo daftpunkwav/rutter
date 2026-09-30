@@ -26,12 +26,19 @@ pub fn focus_script(reference: &str) -> String {
 }
 
 /// Builds a select script: selects options whose `value` is in
-/// `values_json` (a JSON array literal) and dispatches `input` and
-/// `change`. Returns `{ missing }`, `{ not_select }`, or `{ matched }`.
-pub fn select_script(reference: &str, values_json: &str) -> String {
+/// `values` and dispatches `input` and `change`. Returns
+/// `{ missing }`, `{ not_select }`, or `{ matched }`.
+///
+/// The values are serialized here, so the caller cannot hand raw text
+/// through that would embed into the page as something other than a
+/// JSON array of strings.
+pub fn select_script(reference: &str, values: &[String]) -> String {
+    // A `Vec<String>` serializes to a JSON array or not at all; the
+    // fallback keeps the template syntactically valid either way.
+    let values_json = serde_json::to_string(values).unwrap_or_else(|_| "[]".to_owned());
     SELECT_TEMPLATE
         .replace("__REF__", &sanitized(reference))
-        .replace("__VALUES__", values_json)
+        .replace("__VALUES__", &values_json)
 }
 
 /// Builds a text-wait script; `text_json` is the needle as a JSON
@@ -248,7 +255,7 @@ mod tests {
 
     #[test]
     fn select_script_embeds_values_as_json() {
-        let script = select_script("e2", &serde_json::to_string(&["a", "b"]).expect("json"));
+        let script = select_script("e2", &["a".to_owned(), "b".to_owned()]);
         assert!(script.contains("var VALUES = [\"a\",\"b\"]"));
     }
 
@@ -269,7 +276,7 @@ mod tests {
     fn scripts_are_ascii_only() {
         assert!(resolver_script("e17").is_ascii());
         assert!(focus_script("e17").is_ascii());
-        assert!(select_script("e2", "[\"a\"]").is_ascii());
+        assert!(select_script("e2", &["a".to_owned()]).is_ascii());
         assert!(wait_for_script("\"x\"").is_ascii());
     }
 }

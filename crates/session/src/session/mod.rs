@@ -640,7 +640,12 @@ impl Session {
     }
 
     /// Saves the current storage state to the session's persistence
-    /// file (explicit save).
+    /// file (explicit save). The outcome is the caller's to see: a
+    /// write failure comes back as [`SessionError::StorageWrite`], and
+    /// a session without a state directory refuses the save instead of
+    /// answering a success that wrote nothing. The persist-on-change
+    /// path after actions stays best-effort on purpose — an action must
+    /// not fail because its bookkeeping write did.
     pub async fn save_storage(&self) -> Result<(), SessionError> {
         let (page_id, page) = self.ensure_page().await?;
         if let Some(url) = (PageOps {
@@ -652,8 +657,14 @@ impl Session {
         {
             self.pages.set_url(&page_id, &url);
         }
-        self.persist_storage().await;
-        Ok(())
+        if self.state_path.is_none() {
+            return Err(SessionError::StorageWrite {
+                detail: "this session has no storage state directory".to_owned(),
+            });
+        }
+        self.write_storage_if_changed()
+            .await
+            .map_err(|detail| SessionError::StorageWrite { detail })
     }
 
     /// Loads a previously saved storage state and applies it to the
@@ -746,7 +757,11 @@ impl Session {
     /// every tracked page's localStorage, not just the one an action
     /// ran on, so a multi-tab session keeps each tab's origin. The
     /// in-memory copy updates even when the file write fails, so
-    /// recovery still replays the newest state.
+    /// recovery still replays the newest state. Best-effort by
+    /// contract: the failure is logged, and the next capture forces a
+    /// rewrite (see [`PersistState::persisted`]). The explicit-save
+    /// caller gets the failure instead, through
+    /// [`Session::write_storage_if_changed`].
     ///
     /// Capture, comparison, and write share one guard: this takes
     /// `&self`, so two overlapping actions reach it at once, and
@@ -763,6 +778,18 @@ impl Session {
     /// and written, and the newer state still cannot be published over
     /// by the older.
     async fn persist_storage(&self) {
+        if let Err(detail) = self.write_storage_if_changed().await {
+            eprintln!("rutter: cannot write storage state: {detail}");
+        }
+    }
+
+    /// One persist-on-change decision — capture, compare, write —
+    /// shared by the best-effort path and the explicit save. `Ok`
+    /// covers "written" and "nothing to write"; `Err` carries the write
+    /// failure (a session without a state directory has nothing to
+    /// write into and never reaches the decision at all, so callers
+    /// that must distinguish the two check `state_path` first).
+    async fn write_storage_if_changed(&self) -> Result<(), String> {
         let mut persist = self.persist.lock().await;
         let context = self.context.read().await.clone();
         // A context whose cookie read fails cannot be sampled: the empty
@@ -773,14 +800,14 @@ impl Session {
         // known URL instead of a placeholder.
         let Some(state) = StorageState::try_capture(context.as_ref(), &self.pages.pairs()).await
         else {
-            return;
+            return Ok(());
         };
         let unchanged = persist.state == state;
         // "Persist on change" needs no rewrite when nothing changed,
         // and rewriting identical JSON on every action only burns
         // file I/O.
         if unchanged && persist.persisted {
-            return;
+            return Ok(());
         }
         let written = self
             .state_path
@@ -788,12 +815,15 @@ impl Session {
             .map(|path| state.write(path).map_err(|error| error.to_string()));
         persist.state = state;
         match written {
-            Some(Ok(())) => persist.persisted = true,
+            Some(Ok(())) => {
+                persist.persisted = true;
+                Ok(())
+            }
             Some(Err(detail)) => {
                 persist.persisted = false;
-                eprintln!("rutter: cannot write storage state: {detail}");
+                Err(detail)
             }
-            None => {}
+            None => Ok(()),
         }
     }
 
@@ -991,6 +1021,7 @@ pub(crate) fn as_action_error(session: &SessionId, error: &SessionError) -> Acti
         // but the event payload needs a total mapping.
         SessionError::Capacity { detail }
         | SessionError::InvalidId { detail }
+        | SessionError::StorageWrite { detail }
         | SessionError::Internal { detail } => ActionError::Internal {
             detail: detail.clone(),
         },

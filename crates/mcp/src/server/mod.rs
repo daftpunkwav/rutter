@@ -73,16 +73,7 @@ impl RutterMcp {
     /// resurrecting a closed session.
     async fn session(&self) -> Result<Arc<Session>, McpError> {
         if let Some(session) = self.session.get() {
-            return match self.manager.get_session(&self.session_id).await {
-                Some(_) => Ok(Arc::clone(session)),
-                None => Err(McpError::invalid_params(
-                    format!(
-                        "session '{}' is closed; reconnect to open a new one",
-                        self.session_id
-                    ),
-                    None,
-                )),
-            };
+            return self.live_session(session).await;
         }
         let session = self
             .session
@@ -93,7 +84,26 @@ impl RutterMcp {
             })
             .await
             .map_err(protocol_error)?;
-        Ok(Arc::clone(session))
+        // A close can land while the initialization is in flight: the
+        // manager inserted the session, the close removed it again, and
+        // this call was handed the `Arc` of a session that is already
+        // gone. The answer is verified the same way a cached one is, so
+        // this call reports the closed session instead of running against
+        // a dead handle and surfacing an engine-shaped failure.
+        self.live_session(session).await
+    }
+
+    /// The session this connection holds, verified against the manager's
+    /// map — the one membership truth about whether the session is still
+    /// open.
+    async fn live_session(&self, session: &Arc<Session>) -> Result<Arc<Session>, McpError> {
+        match self.manager.get_session(&self.session_id).await {
+            Some(_) => Ok(Arc::clone(session)),
+            None => Err(invalid_params(format!(
+                "session '{}' is closed; reconnect to open a new one",
+                self.session_id
+            ))),
+        }
     }
 
     #[tool(description = "Navigate the active page to a URL and return a fresh snapshot")]
@@ -290,7 +300,9 @@ impl RutterMcp {
         }
     }
 
-    #[tool(description = "Wait until text appears on the page, then return a snapshot")]
+    #[tool(
+        description = "Wait until text appears on the page, then return a snapshot. Budgets above 600000 ms are clamped to that server-side maximum"
+    )]
     async fn wait_for(
         &self,
         Parameters(WaitForParams { text, timeout_ms }): Parameters<WaitForParams>,

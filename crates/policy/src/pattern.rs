@@ -51,6 +51,14 @@ impl Pattern {
 
     /// Whether `url` matches this pattern. Matching is case-sensitive
     /// except for the scheme and host, which URLs lowercase anyway.
+    ///
+    /// Precondition: `url` is the canonical form to judge — the output
+    /// of [`crate::canonical::canonical_url`] (lowercased host, default
+    /// port gone, trailing root dot normalized). A raw agent-supplied
+    /// string passed here verbatim can carry spellings a pattern was
+    /// never written for (`EVIL.example:443`, a `user@host` decoy);
+    /// the review path canonicalizes every judgment URL itself, and a
+    /// direct `evaluate` caller must hand over the same shape.
     pub fn matches(&self, url: &str) -> bool {
         wildcard_match(self.0.as_bytes(), url.as_bytes())
     }

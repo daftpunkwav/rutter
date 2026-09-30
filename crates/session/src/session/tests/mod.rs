@@ -14,7 +14,7 @@ mod storage;
 use super::*;
 use crate::mock::{MockContext, MockPage};
 use rutter_core::ids::ContextId;
-use rutter_policy::Verdict;
+use rutter_policy::{ActionClass, Verdict};
 use serde_json::{Value, json};
 use std::sync::Mutex;
 
@@ -57,7 +57,7 @@ fn session_persisting_to(context: Arc<dyn ContextHandle>, path: PathBuf) -> Sess
 /// A navigation-class deny rule for `pattern`.
 fn navigation_deny(pattern: &str) -> rutter_policy::rules::PolicyRule {
     rutter_policy::rules::PolicyRule {
-        action_class: Some("navigation".to_owned()),
+        action_class: Some(ActionClass::Navigation),
         url_pattern: rutter_policy::Pattern::parse(pattern).ok(),
         verdict: rutter_policy::Verdict::Deny,
     }

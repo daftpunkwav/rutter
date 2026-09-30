@@ -44,6 +44,17 @@ pub enum SessionError {
         detail: String,
     },
 
+    /// The session's storage state could not be written to disk.
+    /// Distinct from engine failures: the browser is fine, the state
+    /// directory is the problem. The in-memory state is kept either way,
+    /// so recovery still replays the newest capture; only the file is
+    /// behind.
+    #[error("storage state write failed: {detail}")]
+    StorageWrite {
+        /// What went wrong with the write.
+        detail: String,
+    },
+
     /// A bug was contained at the session boundary; never a silent pass.
     #[error("internal session error: {detail}")]
     Internal {
@@ -68,6 +79,10 @@ impl SessionError {
             Self::InvalidId { .. } => "pick a session id of letters, digits, dashes, and \
                  underscores; the id names the session's on-disk state"
                 .to_owned(),
+            Self::StorageWrite { .. } => "check that the directory holding the session's \
+                 storage file is writable, then save again; the in-memory \
+                 state is kept, so nothing was lost"
+                .to_owned(),
             Self::Internal { detail } => {
                 format!("an internal bug was contained; report it, citing: {detail}")
             }
@@ -91,6 +106,9 @@ mod tests {
             },
             SessionError::NoOpenPage,
             SessionError::InvalidId {
+                detail: "probe".to_owned(),
+            },
+            SessionError::StorageWrite {
                 detail: "probe".to_owned(),
             },
             SessionError::Internal {

@@ -289,6 +289,29 @@ async fn load_storage_without_a_state_directory_fails_loudly() {
 }
 
 #[tokio::test]
+async fn save_storage_without_a_state_directory_fails_loudly() {
+    // The explicit save is a request whose outcome the caller reads: a
+    // session with nowhere to persist must answer an error, not an
+    // `Ok(())` that wrote nothing.
+    let page = StorageLens::new(json!({ "data": { "token": "abc" } }));
+    let session = session_with_state(StorageContext::new(page) as Arc<dyn ContextHandle>, None);
+    session
+        .execute(
+            rutter_core::action::Action::Navigate {
+                url: "https://shop.example/".to_owned(),
+            },
+            rutter_core::action::Origin::Human,
+        )
+        .await
+        .expect("navigate seeds the tracked page");
+    let error = session.save_storage().await;
+    assert!(
+        matches!(error, Err(SessionError::StorageWrite { .. })),
+        "the caller must learn there is nowhere to save: {error:?}"
+    );
+}
+
+#[tokio::test]
 async fn recover_rebuilds_the_session_on_a_fresh_context() {
     let session = session_with_state(Arc::new(MockContext::new()), None);
     session

@@ -133,6 +133,34 @@ async fn session_fails_fast_after_close_session() {
 }
 
 #[tokio::test]
+async fn a_close_landing_during_init_reports_the_closed_session() {
+    // The close can land between the manager inserting the session and
+    // the connection latching it: initialization returns the `Arc` of a
+    // session that is already gone. Handing that exact state to
+    // `session()` — the cell holds what initialization produced, the
+    // manager map no longer knows the id — must answer the
+    // closed-session error, not hand out the dead handle.
+    let manager = manager();
+    let mcp = RutterMcp::new(Arc::clone(&manager), SessionId::new("s1"));
+    let id = SessionId::new("s1");
+    let created = manager.session(id.clone()).await.expect("session");
+    // `set` only fails when the cell is already full, which cannot
+    // happen on a fresh connection; the error half carries no `Debug`.
+    assert!(mcp.session.set(created).is_ok());
+    manager.close_session(&id).await;
+
+    let error = match mcp.session().await {
+        Ok(_) => panic!("a session closed during init must fail fast"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
+    assert!(
+        error.message.contains("closed"),
+        "the message names the closed session: {error}"
+    );
+}
+
+#[tokio::test]
 async fn session_is_created_once_per_connection() {
     let manager = manager();
     let mcp = RutterMcp::new(Arc::clone(&manager), SessionId::new("s1"));

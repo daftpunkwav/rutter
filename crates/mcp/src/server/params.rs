@@ -157,7 +157,8 @@ pub struct ScrollParams {
 pub struct WaitForParams {
     /// Text to wait for.
     pub text: String,
-    /// Budget in milliseconds; default 10 000.
+    /// Budget in milliseconds; default 10 000. Values above 600 000
+    /// are clamped to that server-side maximum.
     pub timeout_ms: Option<u64>,
 }
 
