@@ -926,6 +926,49 @@ async fn upload_file_with_no_paths_is_invalid_params() {
 }
 
 #[tokio::test]
+async fn press_key_with_an_empty_key_is_invalid_params() {
+    // An empty key names no key: the engine would dispatch a name-only
+    // event that lands nowhere while the tool answered a snapshot. The
+    // refusal rides this crate's invalid_params path, before the session
+    // gate, like every other malformed input.
+    let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
+    let error = match mcp
+        .press_key(Parameters(PressKeyParams { key: String::new() }))
+        .await
+    {
+        Ok(_) => panic!("an empty key must be refused"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
+    assert!(
+        error.message.contains("key must not be empty"),
+        "names the rule: {error}"
+    );
+}
+
+#[tokio::test]
+async fn set_cookies_with_no_cookies_is_invalid_params() {
+    // An empty batch would park a human approval for a write that sets
+    // nothing. It is refused before the session gate, so nobody is asked
+    // and no engine launches just to refuse.
+    let mcp = RutterMcp::new(manager(), SessionId::new("s1"));
+    let error = match mcp
+        .set_cookies(Parameters(CookiesParams {
+            cookies: Vec::new(),
+        }))
+        .await
+    {
+        Ok(_) => panic!("an empty cookie batch must be refused"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
+    assert!(
+        error.message.contains("must not be empty"),
+        "names the rule: {error}"
+    );
+}
+
+#[tokio::test]
 async fn set_cookies_maps_inputs_and_reports_failures() {
     let mcp = RutterMcp::new(scripted_manager(), SessionId::new("s1"));
     // A real URL keeps the review from failing closed on a missing page

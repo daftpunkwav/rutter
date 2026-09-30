@@ -197,6 +197,12 @@ impl RutterMcp {
         &self,
         Parameters(PressKeyParams { key }): Parameters<PressKeyParams>,
     ) -> Result<CallToolResult, McpError> {
+        // An empty key names no key: the engine would dispatch a
+        // name-only event that lands nowhere, and the tool would still
+        // answer a snapshot — masking the no-op as success.
+        if key.is_empty() {
+            return Err(invalid_params("key must not be empty".to_owned()));
+        }
         self.run_action(Action::PressKey { key }).await
     }
 
@@ -406,6 +412,12 @@ impl RutterMcp {
         &self,
         Parameters(CookiesParams { cookies }): Parameters<CookiesParams>,
     ) -> Result<CallToolResult, McpError> {
+        // An empty batch would park a human approval for a write that
+        // sets nothing: refused here, before the session gate and before
+        // anyone is asked.
+        if cookies.is_empty() {
+            return Err(invalid_params("cookies must not be empty".to_owned()));
+        }
         let mut mapped = Vec::with_capacity(cookies.len());
         for input in &cookies {
             mapped.push(Cookie::try_from(input)?);
