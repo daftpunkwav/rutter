@@ -164,9 +164,14 @@ impl StorageState {
             // with the umask default (group/world readable).
             options.mode(0o600);
         }
-        let write_result = options
-            .open(&staging)
-            .and_then(|mut file| std::io::Write::write_all(&mut file, json.as_bytes()));
+        let write_result = options.open(&staging).and_then(|mut file| {
+            std::io::Write::write_all(&mut file, json.as_bytes())?;
+            // Flush to the disk before the rename publishes the file: a
+            // rename survives a power cut on its own, while its contents
+            // may not have landed — reading back as the empty state the
+            // atomic write exists to prevent.
+            file.sync_all()
+        });
         if let Err(error) = write_result {
             let _ = std::fs::remove_file(&staging);
             return Err(error);
@@ -180,13 +185,32 @@ impl StorageState {
         }
     }
 
-    /// Reads a previously written state; a missing or corrupt file is
-    /// an empty state.
+    /// Reads a previously written state. A missing file is a first run:
+    /// the empty state, silently. Any other failure — a corrupt file, an
+    /// unreadable path — answers the empty state too but is reported,
+    /// because a session that comes back logged out must be explicable
+    /// to the operator running it.
     pub fn read(path: &Path) -> Self {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+        match std::fs::read_to_string(path) {
+            Ok(text) => match serde_json::from_str(&text) {
+                Ok(state) => state,
+                Err(error) => {
+                    eprintln!(
+                        "rutter: the storage state {} is unreadable, continuing with an empty state: {error}",
+                        path.display()
+                    );
+                    Self::default()
+                }
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self::default(),
+            Err(error) => {
+                eprintln!(
+                    "rutter: cannot read the storage state {}, continuing with an empty state: {error}",
+                    path.display()
+                );
+                Self::default()
+            }
+        }
     }
 }
 

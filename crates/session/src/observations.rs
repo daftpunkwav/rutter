@@ -11,6 +11,7 @@
 //! events, and nothing here may assume otherwise.
 
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rutter_core::ids::{PageId, SessionId};
@@ -31,12 +32,17 @@ struct Feed {
     entries: VecDeque<ConsoleEntry>,
     requests: VecDeque<RequestEntry>,
     stop: tokio::task::AbortHandle,
+    /// Which spawn this entry belongs to. Only the task holding the
+    /// matching token may reap the entry, so a task winding down after
+    /// its page left can never take a slot a newer spawn owns.
+    token: u64,
 }
 
 /// The session's observation feeds, keyed by page id.
 #[derive(Default)]
 pub(crate) struct ObservationFeeds {
     feeds: Mutex<HashMap<PageId, Feed>>,
+    next_token: AtomicU64,
 }
 
 impl ObservationFeeds {
@@ -58,12 +64,14 @@ impl ObservationFeeds {
         if feeds.contains_key(&page) {
             return;
         }
+        let token = self.next_token.fetch_add(1, Ordering::Relaxed);
         let stop = tokio::spawn(run_feed(
             session,
             page.clone(),
             handle,
             backbone,
             Arc::clone(self),
+            token,
         ))
         .abort_handle();
         // The map entry exists before the task's first poll (spawn
@@ -75,6 +83,7 @@ impl ObservationFeeds {
                 entries: VecDeque::new(),
                 requests: VecDeque::new(),
                 stop,
+                token,
             },
         );
     }
@@ -124,6 +133,20 @@ impl ObservationFeeds {
         }
     }
 
+    /// Releases the map slot a feed whose stream ended on its own took:
+    /// a page the engine closed (or one whose observations are gone)
+    /// must not keep a dead entry — buffers plus abort handle — until
+    /// the session ends. Gated on the spawn token so a winding-down task
+    /// can never take an entry a newer spawn owns, which is what makes
+    /// this safe next to [`ObservationFeeds::remove`] and
+    /// [`ObservationFeeds::clear`].
+    pub(crate) fn reap(&self, page: &PageId, token: u64) {
+        let mut feeds = self.lock();
+        if feeds.get(page).is_some_and(|feed| feed.token == token) {
+            feeds.remove(page);
+        }
+    }
+
     /// Forgets every feed and stops its tasks; used when a page (or the
     /// whole session) is gone.
     pub fn clear(&self) {
@@ -160,11 +183,13 @@ async fn run_feed(
     handle: Arc<dyn PageHandle>,
     backbone: Arc<Backbone>,
     feeds: Arc<ObservationFeeds>,
+    token: u64,
 ) {
     let mut stream: ObservationStream = match handle.observe().await {
         Ok(stream) => stream,
         // A backend without observations, or a duplicate feed attempt:
-        // nothing to consume, nothing to clean up.
+        // nothing to consume, nothing to clean up. The map slot stays
+        // for `remove` or `clear` to take, as before.
         Err(_) => return,
     };
     while let Some(observation) = stream.next_observation().await {
@@ -200,6 +225,11 @@ async fn run_feed(
             }
         }
     }
+    // The stream ended on its own — the engine closed the page out from
+    // under the feed. Release the slot instead of keeping the dead entry
+    // until the session ends; the token keeps this from ever taking a
+    // re-spawned entry.
+    feeds.reap(&page, token);
 }
 
 #[cfg(test)]

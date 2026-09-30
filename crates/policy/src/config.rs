@@ -91,14 +91,24 @@ pub fn parse_policy(toml_text: &str) -> Result<RuleSet, ConfigError> {
         });
     }
 
-    if let Some(ms) = config.approval_timeout_ms
-        && ms > MAX_APPROVAL_TIMEOUT_MS
-    {
-        return Err(ConfigError {
-            detail: format!(
-                "approval_timeout_ms {ms} exceeds the maximum of {MAX_APPROVAL_TIMEOUT_MS}"
-            ),
-        });
+    if let Some(ms) = config.approval_timeout_ms {
+        // A zero window closes before anyone can answer: every supervised
+        // operation would fail as timed out, which reads as a broken
+        // approval flow. A policy that wants no approvals says `deny`.
+        if ms == 0 {
+            return Err(ConfigError {
+                detail: "approval_timeout_ms 0 leaves no window to answer an approval; \
+                         set a positive window or use the deny verdict"
+                    .to_owned(),
+            });
+        }
+        if ms > MAX_APPROVAL_TIMEOUT_MS {
+            return Err(ConfigError {
+                detail: format!(
+                    "approval_timeout_ms {ms} exceeds the maximum of {MAX_APPROVAL_TIMEOUT_MS}"
+                ),
+            });
+        }
     }
 
     let ruleset = RuleSet::new(rules, default_verdict);
@@ -230,6 +240,22 @@ verdict = "deny"
         assert!(
             parse_policy("approval_timeout_ms = 86400000").is_ok(),
             "exactly 24 h stays accepted"
+        );
+    }
+
+    #[test]
+    fn a_zero_approval_window_is_rejected() {
+        // A zero window closes before anyone can answer: every supervised
+        // operation would time out instantly, which reads as a broken
+        // approval flow rather than a policy.
+        let error = parse_policy("approval_timeout_ms = 0").expect_err("zero window");
+        assert!(
+            error.to_string().contains("approval_timeout_ms"),
+            "the error names the offending key: {error}"
+        );
+        assert!(
+            parse_policy("approval_timeout_ms = 1").is_ok(),
+            "the smallest positive window stays accepted"
         );
     }
 }

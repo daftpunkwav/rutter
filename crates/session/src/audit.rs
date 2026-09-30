@@ -160,8 +160,10 @@ fn append_line(path: &Path, line: &str) -> std::io::Result<()> {
         options.mode(0o600);
     }
     let mut file = options.open(path)?;
-    file.write_all(line.as_bytes())?;
-    file.write_all(b"\n")
+    // One write per record. Appending the line and its newline as two
+    // writes let two sessions resolving at the same moment interleave
+    // the halves, corrupting both JSONL lines.
+    file.write_all(format!("{line}\n").as_bytes())
 }
 
 /// Current UTC time in RFC 3339.

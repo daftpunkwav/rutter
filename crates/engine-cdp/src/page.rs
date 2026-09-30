@@ -157,6 +157,32 @@ fn capture_due(last: Option<Instant>, min_interval: Duration, now: Instant) -> I
     now + wait
 }
 
+/// Takes the page's observation claim, refusing a second consumer. The
+/// claim is taken before the listeners are registered so a racing second
+/// caller cannot slip between; the mutex guard never spans an await.
+fn claim_observation(claimed: &Mutex<bool>) -> Result<(), EngineError> {
+    let mut claimed = claimed
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if *claimed {
+        return Err(EngineError::Unsupported {
+            operation: "observe".to_owned(),
+            reason: "this page's observation feed already has a consumer".to_owned(),
+        });
+    }
+    *claimed = true;
+    Ok(())
+}
+
+/// Releases an observation claim taken but never handed out: a listener
+/// registration that failed must not leave the flag set, or the page's
+/// feed stays permanently unusable with no consumer at all.
+fn release_observation_claim(claimed: &Mutex<bool>) {
+    *claimed
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = false;
+}
+
 /// One CDP target wrapped as a page handle.
 pub struct CdpPage {
     page: Page,
@@ -494,52 +520,53 @@ impl rutter_engine::page::PageHandle for CdpPage {
     async fn observe(&self) -> Result<ObservationStream, EngineError> {
         use futures::StreamExt;
 
-        {
-            let mut claimed = self
-                .observation_claimed
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            if *claimed {
-                return Err(EngineError::Unsupported {
-                    operation: "observe".to_owned(),
-                    reason: "this page's observation feed already has a consumer".to_owned(),
-                });
-            }
-            *claimed = true;
-        }
+        claim_observation(&self.observation_claimed)?;
 
         // Register the listeners before returning so observations from
-        // the first ticks are not lost.
-        let mut dialogs = self
-            .page
-            .event_listener::<EventJavascriptDialogOpening>()
-            .await
-            .map_err(fold)?;
-        let mut console = self
-            .page
-            .event_listener::<EventConsoleApiCalled>()
-            .await
-            .map_err(fold)?;
-        let mut exceptions = self
-            .page
-            .event_listener::<EventExceptionThrown>()
-            .await
-            .map_err(fold)?;
-        let mut requests = self
-            .page
-            .event_listener::<EventRequestWillBeSent>()
-            .await
-            .map_err(fold)?;
-        let mut responses = self
-            .page
-            .event_listener::<EventResponseReceived>()
-            .await
-            .map_err(fold)?;
-        let mut failures = self
-            .page
-            .event_listener::<EventLoadingFailed>()
-            .await
-            .map_err(fold)?;
+        // the first ticks are not lost. Any failure here releases the
+        // claim: nothing was handed out, so a set flag would only disable
+        // the page's feed for the rest of its life.
+        let registered = async {
+            let dialogs = self
+                .page
+                .event_listener::<EventJavascriptDialogOpening>()
+                .await
+                .map_err(fold)?;
+            let console = self
+                .page
+                .event_listener::<EventConsoleApiCalled>()
+                .await
+                .map_err(fold)?;
+            let exceptions = self
+                .page
+                .event_listener::<EventExceptionThrown>()
+                .await
+                .map_err(fold)?;
+            let requests = self
+                .page
+                .event_listener::<EventRequestWillBeSent>()
+                .await
+                .map_err(fold)?;
+            let responses = self
+                .page
+                .event_listener::<EventResponseReceived>()
+                .await
+                .map_err(fold)?;
+            let failures = self
+                .page
+                .event_listener::<EventLoadingFailed>()
+                .await
+                .map_err(fold)?;
+            Ok((dialogs, console, exceptions, requests, responses, failures))
+        };
+        let (mut dialogs, mut console, mut exceptions, mut requests, mut responses, mut failures) =
+            match registered.await {
+                Ok(listeners) => listeners,
+                Err(error) => {
+                    release_observation_claim(&self.observation_claimed);
+                    return Err(error);
+                }
+            };
 
         let mut pending = PendingRequests::default();
 
@@ -871,6 +898,21 @@ mod tests {
             !try_forward(&sender, observation),
             "a closed feed ends the task"
         );
+    }
+
+    #[test]
+    fn a_refused_registration_releases_the_claim_for_the_next_attempt() {
+        // The claim is taken before the listeners register; a failure in
+        // between must hand it back, or the page's feed is dead with no
+        // consumer at all.
+        let claimed = Mutex::new(false);
+        claim_observation(&claimed).expect("a fresh page claims");
+        assert!(
+            claim_observation(&claimed).is_err(),
+            "a second claim is refused"
+        );
+        release_observation_claim(&claimed);
+        claim_observation(&claimed).expect("the released page claims again");
     }
 }
 

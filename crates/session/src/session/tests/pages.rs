@@ -113,6 +113,32 @@ async fn closing_an_untracked_page_fails_without_a_fake_event() {
 }
 
 #[tokio::test]
+async fn close_page_refuses_while_recovery_owns_the_list() {
+    // A close landing inside the rebuild window would remove a slot the
+    // write-back then reinstalls — the rebuild replays the read-out,
+    // which still carried the page. The window refuses closes instead,
+    // and lifts with the gate like every other operation.
+    let context = MockContext::new();
+    let session = session_over(Arc::new(context.clone()));
+
+    let (tracked_id, _) = session.active_page_for_test().await;
+    let (_saved, gate) = session.registry().begin_recovery();
+    let error = session
+        .close_page(tracked_id.clone())
+        .await
+        .expect_err("the rebuild window refuses closes");
+    assert!(
+        matches!(error, SessionError::Engine(EngineError::Terminated)),
+        "unexpected error: {error:?}"
+    );
+    assert!(
+        session.registry().contains(&tracked_id),
+        "the refused close must not remove the slot"
+    );
+    session.registry().finish_recovery(vec![], gate);
+}
+
+#[tokio::test]
 async fn select_page_switches_activity_and_unknown_pages_fail() {
     let context = MockContext::new();
     let session = session_over(Arc::new(context.clone()));

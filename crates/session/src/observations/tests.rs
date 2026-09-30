@@ -210,6 +210,41 @@ async fn feeds_are_isolated_per_page_and_removable() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_feed_that_ends_on_its_own_releases_its_slot() {
+    // A page the engine closed out from under its feed ends the stream;
+    // the feed must then release its own map entry instead of keeping a
+    // dead slot — buffers plus abort handle — until the session ends.
+    let context = MockContext::new();
+    let (page_id, _handle) = context.open_page().await.expect("mock open");
+    let mock = context.page_mock(page_id.clone()).expect("mock page");
+
+    let feeds = Arc::new(ObservationFeeds::default());
+    feeds.spawn(
+        session_id(),
+        page_id.clone(),
+        context.page_mock(page_id.clone()).expect("mock page"),
+        Arc::new(Backbone::new()),
+    );
+    wait_for(|| mock.feed_claimed()).await;
+
+    mock.emit(PageObservation::ConsoleEmitted {
+        level: ConsoleLevel::Log,
+        text: "before the engine closed the page".to_owned(),
+    });
+    wait_for(|| !feeds.entries(&page_id).is_empty()).await;
+
+    mock.end_feed();
+    wait_for(|| feeds.entries(&page_id).is_empty() && feeds.requests(&page_id).is_empty()).await;
+    // The reaped feed records nothing further: no live task owns the page.
+    mock.emit(PageObservation::ConsoleEmitted {
+        level: ConsoleLevel::Log,
+        text: "after the stream ended".to_owned(),
+    });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(feeds.entries(&page_id).is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn network_requests_land_in_the_page_buffer() {
     let context = MockContext::new();
     let (page_id, _handle) = context.open_page().await.expect("mock open");

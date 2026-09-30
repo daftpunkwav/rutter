@@ -174,10 +174,16 @@ impl EngineStore {
             let _ = fs::remove_dir_all(&staging);
             // Another process may have installed the same version while
             // we extracted; a winning race is as good as our own install.
-            if let Ok(Some(installed)) = self.installed(product)
-                && installed.version == version
-            {
-                return Ok(installed);
+            // Checking the version's own binary — not the product scan —
+            // answers "this exact version is in place" even when a higher
+            // one exists alongside it.
+            let executable = final_dir.join(binary_name(product));
+            if executable.is_file() {
+                return Ok(InstalledEngine {
+                    product: product.to_owned(),
+                    version: version.to_owned(),
+                    executable,
+                });
             }
             return Err(EngineError::DownloadFailed {
                 detail: format!(

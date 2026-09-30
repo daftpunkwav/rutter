@@ -558,8 +558,17 @@ impl Session {
     /// Closes a page; closing the active page promotes the first
     /// remaining page. An id the session does not track is a client
     /// error: closing it would otherwise report success and publish a
-    /// `PageClosed` event for a page that never existed.
+    /// `PageClosed` event for a page that never existed. A close arriving
+    /// while recovery rebuilds the list fails until the window closes.
     pub async fn close_page(&self, page_id: PageId) -> Result<String, SessionError> {
+        if !self.pages.accepts_new_page() {
+            // Recovery owns the list: the rebuild writes back the slots it
+            // read out, so a close landing inside the window would remove
+            // a slot the write-back then resurrects — a live tab reported
+            // closed. Fail fast for the window's duration, like a page
+            // opened mid-recovery does.
+            return Err(SessionError::Engine(EngineError::Terminated));
+        }
         if !self.pages.contains(&page_id) {
             return Err(unknown_page(&page_id));
         }

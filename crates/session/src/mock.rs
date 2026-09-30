@@ -146,6 +146,15 @@ impl MockPage {
         })
     }
 
+    /// Ends the live observation stream the way an engine-side page
+    /// close does: the sender is dropped, so the feed's consumer sees
+    /// the stream finish.
+    pub fn end_feed(&self) {
+        lock(&self.inner.observations, |observations| {
+            *observations = None;
+        });
+    }
+
     /// The `(reference, files)` calls `set_input_files` received, in order.
     pub fn input_files_calls(&self) -> Vec<(String, Vec<String>)> {
         lock(&self.inner.input_files, |calls| calls.clone())

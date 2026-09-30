@@ -36,15 +36,27 @@ impl Product {
 }
 
 /// Default cache root: `<OS cache dir>/rutter`, overridable via the
-/// `RUTTER_CACHE_DIR` environment variable.
+/// `RUTTER_CACHE_DIR` environment variable. A blank override is unset,
+/// not a cache at the empty path — the same rule the manifest URL
+/// override follows.
 pub fn cache_root_default() -> Result<PathBuf, EngineError> {
-    if let Ok(root) = std::env::var("RUTTER_CACHE_DIR") {
-        return Ok(PathBuf::from(root));
+    if let Some(root) = resolve_cache_root(std::env::var("RUTTER_CACHE_DIR").ok().as_deref()) {
+        return Ok(root);
     }
     let base = dirs::cache_dir().ok_or_else(|| EngineError::DownloadFailed {
         detail: "cannot determine the OS cache directory; set RUTTER_CACHE_DIR".to_owned(),
     })?;
     Ok(base.join("rutter"))
+}
+
+/// The cache root from an already-read override value. Split from the
+/// environment read so the rule is testable without mutating process
+/// state; an absent or blank override answers `None`.
+fn resolve_cache_root(override_root: Option<&str>) -> Option<PathBuf> {
+    override_root
+        .map(str::trim)
+        .filter(|root| !root.is_empty())
+        .map(PathBuf::from)
 }
 
 /// Locates a system-installed Chromium-family browser for headed runs.
@@ -155,6 +167,17 @@ mod tests {
     fn product_names_match_manifest() {
         assert_eq!(Product::ChromeHeadlessShell.name(), "chrome-headless-shell");
         assert_eq!(Product::Chrome.name(), "chrome");
+    }
+
+    #[test]
+    fn a_blank_cache_override_is_unset_not_an_empty_path() {
+        assert_eq!(resolve_cache_root(None), None);
+        assert_eq!(resolve_cache_root(Some("")), None);
+        assert_eq!(resolve_cache_root(Some("   \t")), None);
+        assert_eq!(
+            resolve_cache_root(Some(" /tmp/rutter-cache ")),
+            Some(PathBuf::from("/tmp/rutter-cache"))
+        );
     }
 
     #[tokio::test]

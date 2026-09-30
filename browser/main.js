@@ -114,7 +114,7 @@ function createWindow() {
   // javascript: URLs through the main process.
   view.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url) || url === "about:blank") {
-      view.webContents.loadURL(url);
+      loadSharedView(url);
     }
     return { action: "deny" };
   });
@@ -158,10 +158,24 @@ function createWindow() {
 }
 
 ipcMain.on("navigate", (_event, url) => {
-  if (!url) return;
-  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : `https://${url}`;
-  view.webContents.loadURL(withScheme);
+  if (typeof url !== "string" || !url) return;
+  // The same web-scheme whitelist setWindowOpenHandler enforces: a
+  // bare word is read as a host and completed with https, and no
+  // file:, devtools:, or other privileged scheme may drive the shared
+  // view through this channel.
+  const target =
+    /^https?:\/\//i.test(url) || url === "about:blank"
+      ? url
+      : `https://${url}`;
+  loadSharedView(target);
 });
+
+// Navigates the shared view, settling loadURL's rejection instead of
+// leaving it unhandled (a failed load already shows Chromium's error
+// page, so there is nothing left to report).
+function loadSharedView(url) {
+  view.webContents.loadURL(url).catch(() => {});
+}
 ipcMain.on("back", () => view.webContents.goBack());
 ipcMain.on("forward", () => view.webContents.goForward());
 ipcMain.on("reload", () => view.webContents.reload());
