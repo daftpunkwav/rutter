@@ -206,6 +206,53 @@ async fn falling_back_to_an_earlier_phase_does_not_restart_the_clock() {
     );
 }
 
+#[tokio::test]
+async fn a_flickering_enabled_state_cannot_restart_the_budget_forever() {
+    // The element keeps cycling visible+stable+disabled, hidden,
+    // visible+stable+disabled: every re-appearance advances the wait
+    // Visible → Enabled, and each advance used to push the deadline
+    // out again, so the wait could stretch one budget per flicker.
+    // The restart cap bounds the total: the wait ends within a few
+    // budgets, reporting the phase it last advanced to. The outer
+    // timeout tells this implementation from an uncapped one, whose
+    // deadline recedes forever and never gives up.
+    let harness = Harness::new(Duration::from_millis(300), Duration::from_millis(20));
+    harness.page.set_url("https://example.com");
+    let enabled = mock_box(false, true, 10.0, 20.0, 100.0, 30.0);
+    let hidden = mock_box(true, false, 0.0, 0.0, 0.0, 0.0);
+    harness.page.push_resolve_answer(enabled.clone());
+    harness.page.push_resolve_answer(enabled);
+    harness.page.push_resolve_answer(hidden);
+    harness.page.set_cycle(true);
+    let started = Instant::now();
+    let outcome =
+        tokio::time::timeout(Duration::from_secs(8), harness.executor().run(&click("e1")))
+            .await
+            .expect("the wait must end in a timeout, never hang");
+    match outcome.expect_err("the element never becomes clickable") {
+        SessionError::Action(ActionError::TimedOut { phase, elapsed }) => {
+            // The phase at expiry lands wherever the flicker cycle is when
+            // the capped budget runs out — visible, stable, or enabled all
+            // name an honest answer. The regression this test pins is the
+            // wait *ending* (the uncapped clock recedes forever), so only
+            // the budget and the wall clock are asserted.
+            assert!(matches!(
+                phase,
+                WaitPhase::Visible | WaitPhase::Stable | WaitPhase::Enabled
+            ));
+            assert_eq!(elapsed, Duration::from_millis(300));
+        }
+        other => panic!("expected a timeout, got {other:?}"),
+    }
+    // Three budgets (initial plus two capped restarts) bound the wait;
+    // generous slack absorbs Windows timer granularity under load.
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "the flicker must not stretch the wait past the capped budget: {:?}",
+        started.elapsed()
+    );
+}
+
 #[test]
 fn wheel_deltas_follow_directions() {
     assert_eq!(wheel_deltas(ScrollDirection::Down, 300), (0.0, 300.0));

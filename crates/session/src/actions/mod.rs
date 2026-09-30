@@ -214,13 +214,17 @@ impl Executor<'_> {
     /// enabled. A gone reference fails fast; each phase gets its own
     /// budget and exhaustion maps to `TimedOut` naming the phase that
     /// was pending. The budget restarts only when the
-    /// wait advances to a later phase, so a flickering page cannot
-    /// stretch the wait indefinitely.
+    /// wait advances to a later phase, and at most
+    /// [`MAX_PHASE_RESTARTS`] times — the advances a monotonic
+    /// progression can make — so a flickering page cannot stretch the
+    /// wait without end: the total stays bounded by
+    /// `MAX_PHASE_RESTARTS + 1` budgets.
     async fn auto_wait(&self, reference: &Reference) -> Result<ElementBox, SessionError> {
         let reference = reference.as_str();
         let mut deadline = Instant::now() + self.config.phase_timeout;
         let mut pending = WaitPhase::Visible;
         let mut previous: Option<ElementBox> = None;
+        let mut restarts = 0u32;
         loop {
             match resolve::element_box(self.page, reference).await {
                 Ok(None) => return Err(expired(reference)),
@@ -243,8 +247,11 @@ impl Executor<'_> {
                         WaitPhase::Enabled
                     };
                     if now_pending != pending {
-                        if phase_rank(now_pending) > phase_rank(pending) {
+                        if phase_rank(now_pending) > phase_rank(pending)
+                            && restarts < MAX_PHASE_RESTARTS
+                        {
                             deadline = Instant::now() + self.config.phase_timeout;
+                            restarts += 1;
                         }
                         pending = now_pending;
                     }
@@ -426,6 +433,13 @@ fn phase_rank(phase: WaitPhase) -> u8 {
         WaitPhase::Act | WaitPhase::Settle => 3,
     }
 }
+
+/// How many times one auto-wait may restart its phase budget. A
+/// monotonic progression (visible → stable → enabled) advances at most
+/// twice, so a genuinely progressing element never notices the cap —
+/// while a flickering one (an `aria-disabled` flag toggling, say)
+/// cannot push the deadline out again on every cycle.
+const MAX_PHASE_RESTARTS: u32 = 2;
 
 /// Wheel deltas for a direction; the engine dispatches one wheel event.
 fn wheel_deltas(direction: ScrollDirection, amount: u32) -> (f64, f64) {
