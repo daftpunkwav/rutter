@@ -185,6 +185,105 @@ async fn every_open_tab_reaches_the_persisted_state() {
     );
 }
 
+/// A context whose cookie read can be made to fail: the shape of an
+/// engine that died (or wedged) between two persistence runs. Its one
+/// page is a mock, so `save_storage`'s `ensure_page` still opens one.
+struct SwitchableJar {
+    page: MockPage,
+    cookies: Mutex<Vec<Cookie>>,
+    fail: std::sync::atomic::AtomicBool,
+}
+
+impl SwitchableJar {
+    fn set_fail(&self, fail: bool) {
+        self.fail.store(fail, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[async_trait::async_trait]
+impl ContextHandle for SwitchableJar {
+    fn id(&self) -> ContextId {
+        ContextId::new("ctx-jar")
+    }
+
+    fn pages(&self) -> Vec<PageId> {
+        Vec::new()
+    }
+
+    async fn open_page(&self) -> Result<(PageId, Arc<dyn PageHandle>), EngineError> {
+        Ok((
+            PageId::new("ctx-jar:page-0"),
+            Arc::new(self.page.clone()) as Arc<dyn PageHandle>,
+        ))
+    }
+
+    fn page(&self, _id: PageId) -> Option<Arc<dyn PageHandle>> {
+        None
+    }
+
+    async fn close_page(&self, _id: PageId) -> Result<(), EngineError> {
+        Ok(())
+    }
+
+    async fn set_cookies(&self, _cookies: &[Cookie]) -> Result<(), EngineError> {
+        Ok(())
+    }
+
+    async fn cookies(&self) -> Result<Vec<Cookie>, EngineError> {
+        if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(EngineError::Terminated);
+        }
+        Ok(self
+            .cookies
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone())
+    }
+
+    async fn close(&self) -> Result<(), EngineError> {
+        Ok(())
+    }
+}
+
+/// A capture whose cookie read fails must not be published at all: the
+/// empty state it would degrade to overwrites the last known one — the
+/// state recovery replays after an engine restart — and the session's
+/// login is gone. The known state stands until a readable capture
+/// replaces it.
+#[tokio::test]
+async fn a_failed_cookie_read_keeps_the_last_known_state() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("s.storage.json");
+    let jar = Arc::new(SwitchableJar {
+        page: MockPage::new(),
+        cookies: Mutex::new(vec![cookie("v1")]),
+        fail: std::sync::atomic::AtomicBool::new(false),
+    });
+    let session = session_persisting_to(Arc::clone(&jar) as Arc<dyn ContextHandle>, path.clone());
+
+    session.save_storage().await.expect("first save");
+    assert_eq!(
+        StorageState::read(&path).cookies[0].value,
+        "v1",
+        "the readable capture reaches the file"
+    );
+
+    jar.set_fail(true);
+    session
+        .save_storage()
+        .await
+        .expect("a failed read is not an error");
+    assert_eq!(
+        StorageState::read(&path).cookies[0].value,
+        "v1",
+        "the failed read must not overwrite the file with an empty state"
+    );
+    assert!(
+        session.last_storage_is_persisted().await,
+        "the file is still known to hold the last good state"
+    );
+}
+
 /// A capture identical to the one already on disk is not rewritten —
 /// unless the last write failed. "Persist on change" then has to
 /// publish again, or a state the file never received is remembered as

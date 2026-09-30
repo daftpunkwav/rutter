@@ -67,11 +67,26 @@ impl StorageState {
         context: &dyn ContextHandle,
         pages: &[(String, Arc<dyn PageHandle>)],
     ) -> Self {
+        Self::try_capture(context, pages).await.unwrap_or_default()
+    }
+
+    /// Captures like [`StorageState::capture`], but answers `None` when
+    /// the context's cookie read failed. A context that cannot report its
+    /// cookies cannot be sampled: the empty state a failed read degrades
+    /// to would be published over the last known one — the exact state
+    /// recovery replays after an engine restart — and drop the session's
+    /// login. A caller that persists must skip the whole update instead,
+    /// the way bookkeeping keeps a page's last known URL when the page
+    /// stops answering.
+    pub async fn try_capture(
+        context: &dyn ContextHandle,
+        pages: &[(String, Arc<dyn PageHandle>)],
+    ) -> Option<Self> {
         let (cookies, origins) = tokio::join!(context.cookies(), dump_origins(pages));
-        Self {
-            cookies: cookies.unwrap_or_default(),
+        Some(Self {
+            cookies: cookies.ok()?,
             origins,
-        }
+        })
     }
 
     /// Restores cookies context-wide and localStorage on pages whose
@@ -514,6 +529,65 @@ mod tests {
             state.origins[0].entries,
             vec![("token".to_owned(), "second".to_owned())],
             "the answering page's entries, not the silent one's"
+        );
+    }
+
+    /// A context whose cookie read always fails: the shape of a dead or
+    /// wedged engine the capture must refuse to sample.
+    struct DeadContext;
+
+    #[async_trait::async_trait]
+    impl ContextHandle for DeadContext {
+        fn id(&self) -> ContextId {
+            ContextId::new("ctx-dead")
+        }
+
+        fn pages(&self) -> Vec<PageId> {
+            Vec::new()
+        }
+
+        async fn open_page(&self) -> Result<(PageId, Arc<dyn PageHandle>), EngineError> {
+            Err(EngineError::Terminated)
+        }
+
+        fn page(&self, _id: PageId) -> Option<Arc<dyn PageHandle>> {
+            None
+        }
+
+        async fn close_page(&self, _id: PageId) -> Result<(), EngineError> {
+            Ok(())
+        }
+
+        async fn set_cookies(&self, _cookies: &[Cookie]) -> Result<(), EngineError> {
+            Ok(())
+        }
+
+        async fn cookies(&self) -> Result<Vec<Cookie>, EngineError> {
+            Err(EngineError::Terminated)
+        }
+
+        async fn close(&self) -> Result<(), EngineError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_cookie_read_is_no_capture_at_all() {
+        // The empty state `capture` degrades to on a failed cookie read
+        // is indistinguishable from a logged-out session. `try_capture`
+        // is the form a persister consumes: the failure comes back as
+        // `None` instead of a sample that would be published over the
+        // last known state, while `capture` keeps its degrade-to-empty
+        // contract.
+        let pages: Vec<(String, Arc<dyn PageHandle>)> = Vec::new();
+        assert!(
+            StorageState::try_capture(&DeadContext, &pages)
+                .await
+                .is_none()
+        );
+        assert_eq!(
+            StorageState::capture(&DeadContext, &pages).await,
+            StorageState::default()
         );
     }
 

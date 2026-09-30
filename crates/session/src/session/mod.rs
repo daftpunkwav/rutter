@@ -756,7 +756,16 @@ impl Session {
     async fn persist_storage(&self) {
         let mut persist = self.persist.lock().await;
         let context = self.context.read().await.clone();
-        let state = StorageState::capture(context.as_ref(), &self.pages.pairs()).await;
+        // A context whose cookie read fails cannot be sampled: the empty
+        // state that read degrades to must not be published over the last
+        // known one — the exact state recovery replays after an engine
+        // restart. The known state stands until a readable capture
+        // replaces it, like a page that would not answer keeps its last
+        // known URL instead of a placeholder.
+        let Some(state) = StorageState::try_capture(context.as_ref(), &self.pages.pairs()).await
+        else {
+            return;
+        };
         let unchanged = persist.state == state;
         // "Persist on change" needs no rewrite when nothing changed,
         // and rewriting identical JSON on every action only burns
