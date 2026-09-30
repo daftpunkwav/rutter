@@ -56,7 +56,11 @@ variant is produced by the session or manager layer as labeled.
 Actions and errors embed as [serialized
 vocabulary](glossary.md#serialization-conventions) (`"type"` tag,
 snake_case), so consumers name an action or failure the same way they
-name events.
+name events. The `Action*` trio fires only for the typed action
+vocabulary executed through `Session::execute` — session operations
+outside it (a cookie write, a viewport change, page management, the
+navigation inside `tabs_open`) publish their own lifecycle events
+instead, plus the approval events their policy gate produces.
 
 Screencast frames are **not** events. They flow as binary WebSocket
 frames with their own latest-wins backpressure rule

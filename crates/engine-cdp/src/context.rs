@@ -449,6 +449,17 @@ impl ContextHandle for CdpContext {
 /// implement (target creation, browser contexts) with the CDP server
 /// error "Not supported", which [`crate::error::fold`] keeps verbatim
 /// in the detail text.
+///
+/// Upgrade checkpoint: this is a contract on upstream *wording*, and
+/// the pinned test (`a_cdp_refusal_is_recognized_as_not_supported`)
+/// builds its refusal by hand, so a chromiumoxide or Electron bump
+/// that changed the message would silence the attach fallback below
+/// without any test failing. If a bump lands, drive `open_page`
+/// against the real engine once (`cargo test -- --include-ignored`).
+/// The structured fix is already available: `chromiumoxide::types::Error`
+/// carries the refusal as a typed `code` (currently `-32000`) plus
+/// `message`, and matching on that code in [`crate::error::fold`] would
+/// remove the text dependency entirely.
 pub(crate) fn is_not_supported(error: &EngineError) -> bool {
     matches!(error, EngineError::Internal { detail }
         if detail.to_lowercase().contains("not supported"))

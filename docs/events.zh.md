@@ -51,7 +51,10 @@
 
 动作与错误以[序列化词汇](glossary.zh.md#序列化约定)（`"type"`
 标签、snake_case）内嵌，消费者命名一个动作或失败与命名事件的方式
-一致。
+一致。`Action*` 三兄弟只对经 `Session::execute` 执行的类型化动作
+词汇触发——词汇之外的操作（cookie 写入、视口变更、页面管理、
+`tabs_open` 内部的导航）改为发布各自的生命周期事件，外加其策略门
+产生的审批事件。
 
 Screencast 帧**不是**事件。它们以二进制 WebSocket 帧旅行，有自己
 的 latest-wins 背压规则（[仪表盘](dashboard.zh.md#5-screencast)）。

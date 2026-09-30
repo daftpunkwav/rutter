@@ -1012,6 +1012,13 @@ pub(crate) fn as_action_error(session: &SessionId, error: &SessionError) -> Acti
             EngineError::ReferenceExpired { reference } => ActionError::ReferenceExpired {
                 reference: rutter_core::reference::Reference::new(reference),
             },
+            // Engine-level timeouts are deliberately reported as `act`:
+            // the taxonomy is phase-shaped and has no field for the
+            // engine's operation name, and naming a finer phase would be
+            // a guess (a command deadline can also fire while an
+            // auto-wait phase polls). The tool result for the same
+            // failure still speaks the engine's own message, which names
+            // the operation.
             EngineError::Timeout { elapsed, .. } => ActionError::TimedOut {
                 phase: rutter_core::error::WaitPhase::Act,
                 elapsed: *elapsed,

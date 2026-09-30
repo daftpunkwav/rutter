@@ -145,6 +145,10 @@ pub struct RequestEntry {
 impl fmt::Display for RequestEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {} ", self.method, self.url)?;
+        // The two producers (a finished response, a failed request) each
+        // set exactly one arm, so `-> ?` never reaches the tool surface;
+        // the arm exists only because the struct is public and Display
+        // must be total for any value a caller constructs.
         match (self.status, &self.error) {
             (Some(status), _) => write!(f, "-> {status}")?,
             (None, Some(error)) => write!(f, "-> failed ({error})")?,

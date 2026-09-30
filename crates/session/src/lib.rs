@@ -18,7 +18,11 @@
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
-pub mod actions;
+// `actions` stays private: every item in it is `pub(crate)` — the
+// executor is an implementation of `Session::execute`, not a public
+// surface — so the module never declared anything a consumer could
+// name.
+mod actions;
 pub mod config;
 pub mod error;
 pub mod manager;
