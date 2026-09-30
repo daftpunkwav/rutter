@@ -26,7 +26,14 @@ entries.
 
 Identifiers are opaque strings ([`ids.rs`](../crates/core/src/ids.rs)):
 callers must not parse or construct meaning from their content. The
-layer that owns an object's lifecycle mints its identifier.
+layer that owns an object's lifecycle mints its identifier — and may
+impose constraints a conforming identifier must satisfy, because
+opacity governs reading, not minting. A `SessionId` names the
+session's on-disk storage file, so an id that cannot compose into a
+file name — empty, longer than 200 bytes, or carrying a path
+separator or NUL — is refused
+([`rutter-session`](../crates/session/src/manager.rs)). The ids the
+shipped transports mint always pass.
 
 | Type | Names | Minted by |
 |---|---|---|

@@ -20,6 +20,19 @@ case — gets a file that is owner-only on Unix, and only its path is
 printed
 (access control, docs/dashboard.md).
 
+## Wire contract
+
+The WebSocket message vocabulary — the envelopes a client receives
+(replay, then live), the client messages it may send (`decision`,
+`screencast`, `subscribe`), the acks and the binary screencast frames
+that come back — is documented in
+[docs/dashboard.md §3](../../../docs/dashboard.md#3-websocket-protocol).
+It is the contract a third-party client implements against; the
+embedded `frontend/src/app.js` is one consumer of it, not the spec.
+The decision body itself is shared with the HTTP post and parsed by
+one function (`parse_decision` in `src/lib.rs`), so the two transports
+cannot disagree about what a decision is.
+
 ## Consumers
 
 - `cli` attaches it to `serve` with `--dashboard PORT`.

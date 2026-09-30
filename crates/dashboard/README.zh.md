@@ -18,6 +18,17 @@ MCP client 的情形）拿到一个 Unix 上仅属主可读的文件，打印行
 路径
 （访问控制，docs/dashboard.zh.md）。
 
+## wire 契约
+
+WebSocket 的消息词汇表——客户端会收到的 envelope（先重放，后实
+时）、客户端可以发送的消息（`decision`、`screencast`、
+`subscribe`）、以及作为回应的 ack 与二进制 screencast 帧——记录在
+[docs/dashboard.zh.md 第 3 节](../../../docs/dashboard.zh.md#3-websocket-协议)。
+这是第三方客户端对齐实现的契约；内嵌的 `frontend/src/app.js` 只是
+它的一个消费者，不是规范本身。decision 的消息体与 HTTP post 共用
+同一个解析函数（`src/lib.rs` 的 `parse_decision`），两条传输不可
+能对"什么是一条决定"产生分歧。
+
 ## 消费者
 
 - `cli` 用 `--dashboard PORT` 把它挂到 `serve` 上。

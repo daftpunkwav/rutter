@@ -43,8 +43,8 @@
   明规则；这些值在 schema 中声明为有符号类型，正是为了不让 rmcp
   的反序列化器用它自己无提示的错误文本作答。只有根本无法反序列化
   的请求体（字段类型错误或缺失）才会暴露反序列化器文本，且不带提示。
-- 协议级失败（未知 session、引擎死亡且熔断打开）是 JSON-RPC
-  错误，code `-32000`，同样的消息加提示文本。
+- 协议级失败（被拒绝的 session id、session 容量、引擎死亡且熔断
+  打开）是 JSON-RPC 错误，code `-32000`，同样的消息加提示文本。
 - 快照以[快照格式](snapshot-format.zh.md#5-文本渲染yaml-风格)
   的 YAML 文本形式渲染，遵循 20 000 字符预算；`Snapshot::truncated`
   置位时文本以 `… truncated` 标记行结尾。
@@ -65,8 +65,10 @@
   agent 因此会看到 `engine terminated`、`capacity exceeded: …` 这类
   引擎文本——即在任何动作词汇生效之前引擎就报告了的失败。
 - **session 层自己的失败**——`Capacity`（并发 client 过多）、
-  `NoOpenPage`（没有可观察的页面）、`Internal`——说它们自己的三条
-  消息。
+  `NoOpenPage`（没有可观察的页面）、`InvalidId`（无法构成 session
+  存储文件名的 id；随附 transport 铸造的 id 总是合法，因此该失败只
+  会被库调用方遇到，不会出现在这套工具面上）、`StorageWrite`
+  （session 的状态文件写不进去）、`Internal`——各自说自己的消息。
 
 对**所有**这些失败都成立、也是 agent 可以依赖的，是外层信封而不是
 具体措辞：一个 text block，消息在前，提示独占一行 `hint: `，且

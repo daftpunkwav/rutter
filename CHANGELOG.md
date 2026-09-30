@@ -9,6 +9,26 @@ and the project adheres to
 
 ### Fixed
 
+- A session id that cannot safely name the session's on-disk storage
+  file is now refused before anything starts. The id composes into
+  `<cache-root>/sessions/<id>.storage.json`, so an id carrying a path
+  separator or NUL would steer that file out of the state directory,
+  and one longer than 200 bytes would fail obscurely at write time.
+  Such an id now fails the session request with a new `invalid session
+  id` error and its hint, before any engine launch, event, or context
+  exists. The ids the shipped transports mint (`stdio-<pid>`,
+  `http-<pid>-<serial>`) always pass.
+- An explicit storage-state save (`Session::save_storage`) reports a
+  failed write as `StorageWrite` instead of answering an `Ok(())` that
+  wrote nothing, and a session with no state directory refuses the
+  save the way `load_storage` already refuses the load. The
+  persist-on-change path after actions stays best-effort on purpose —
+  an action must not fail because its bookkeeping write did.
+- A tool call whose session initialization is overtaken by a
+  `close_session` answers `invalid_params` naming the closed session,
+  where it used to run against the dead handle and surface an
+  engine-shaped failure instead.
+
 - A dashboard WebSocket connection no longer outlives the peer that
   opened it. A client that vanished without a close — a dropped
   network, a killed browser — left the loop parked in `recv` forever,
@@ -126,6 +146,22 @@ and the project adheres to
 
 ### Changed
 
+- Policy rules built programmatically carry the typed `ActionClass`
+  instead of its string name: a misspelled class in a hand-built rule
+  used to compile into a rule that matched nothing, where the TOML
+  path rejected the same spelling at load. Serialized names are
+  unchanged, so existing policy files keep parsing.
+- The engine profile directory is named
+  `rutter-engine-<pid>-<serial>-<16 random hex>` under the OS temp
+  dir: pid and serial alone are guessable by another local user, who
+  could pre-create or plant a symlink at the path. The
+  `rutter-engine-<pid>-` prefix is unchanged, so cleanup tooling that
+  matched it still does.
+- The select-script builder in `rutter-observe` takes the option
+  values as `&[String]` and serializes them itself; callers can no
+  longer hand raw text through that would embed into the page as
+  something other than a JSON array.
+
 - Dashboard endpoints additionally reject requests whose `Origin`
   header names a non-loopback host, matched exactly like the `Host`
   check; requests without an `Origin` header are unaffected.
@@ -142,6 +178,11 @@ and the project adheres to
   captured state, its comparison, and its write are unchanged.
 
 ### Added
+
+- A `RUTTER_DASHBOARD_TOKEN` override shorter than the 16 characters
+  of the generated token is accepted — existing automation may have
+  pinned one — but warned about on stderr, because a short token is
+  exactly what a same-machine guesser gets to test against the gate.
 
 - `RUTTER_ENGINE_MANIFEST_URL` points the engine download at a mirror of
   the Chrome for Testing last-known-good document, for hosts that cannot

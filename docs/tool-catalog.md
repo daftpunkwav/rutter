@@ -53,9 +53,9 @@ the payload vocabulary.
   hint-less error text. Only a body that does not deserialize at all
   (a wrong-typed or missing field) surfaces that deserializer text,
   without a hint.
-- Protocol-level failures (unknown session, engine dead beyond the
-  breaker) are JSON-RPC errors with code `-32000` and the same
-  message-plus-hint text.
+- Protocol-level failures (a refused session id, session capacity, an
+  engine dead beyond the breaker) are JSON-RPC errors with code
+  `-32000` and the same message-plus-hint text.
 - Snapshots are rendered in the YAML text form of
   [snapshot format](snapshot-format.md#5-text-rendering-yaml-style),
   under the 20 000-character budget; the text ends with a marker line
@@ -81,7 +81,11 @@ failure took:
   action taxonomy applies.
 - **Session-layer failures** the engine never sees — `Capacity`
   (too many concurrent clients), `NoOpenPage` (nothing open to
-  observe), `Internal` — speak their own three messages.
+  observe), `InvalidId` (an id that cannot name the session's storage
+  file; the shipped transports mint conforming ids, so this reaches
+  library callers, not this tool surface), `StorageWrite` (the
+  session's state file could not be written), `Internal` — each speaks
+  its own message.
 
 What holds for **all** of them, and what an agent may rely on, is the
 envelope rather than the wording: one text block, the message first,
