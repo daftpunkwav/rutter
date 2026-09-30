@@ -307,7 +307,11 @@ impl EngineStore {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o755));
+                // Only the launchable binary is executable; runtime data
+                // (ICU tables, .pak resources) is data and carries no
+                // execute bit.
+                let mode = if relative == wanted { 0o755 } else { 0o644 };
+                let _ = fs::set_permissions(&target, fs::Permissions::from_mode(mode));
             }
 
             if relative == wanted {
@@ -439,6 +443,27 @@ mod tests {
             version_dir.join("icudtl.dat").is_file(),
             "runtime data must sit next to the binary"
         );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = |name: &str| {
+                fs::metadata(version_dir.join(name))
+                    .expect("entry metadata")
+                    .permissions()
+                    .mode()
+            };
+            assert_eq!(
+                mode(product()) & 0o111,
+                0o111,
+                "the launchable binary stays executable"
+            );
+            assert_eq!(
+                mode("icudtl.dat") & 0o111,
+                0,
+                "runtime data is data, not an executable"
+            );
+        }
 
         let found = store
             .installed("chrome-headless-shell")
