@@ -108,6 +108,9 @@ const RESOLVER_TEMPLATE: &str = r#"(function () {
 "#;
 
 /// Select template: reports `missing`, `not_select`, or the match count.
+/// Nothing matched means the selection is left exactly as it was: the
+/// Rust side refuses the action, and a refused action must not clear
+/// the select as a side effect.
 const SELECT_TEMPLATE: &str = r#"(function () {
   'use strict';
   var REF = "__REF__";
@@ -119,9 +122,13 @@ const SELECT_TEMPLATE: &str = r#"(function () {
   if (!el || !el.isConnected) return { missing: true };
   if (el.tagName !== 'SELECT') return { not_select: true };
   var matched = 0;
+  var i;
+  for (i = 0; i < el.options.length; i += 1) {
+    if (VALUES.indexOf(el.options[i].value) !== -1) matched += 1;
+  }
+  if (matched === 0) return { missing: false, not_select: false, matched: 0 };
   Array.prototype.forEach.call(el.options, function (option) {
     option.selected = VALUES.indexOf(option.value) !== -1;
-    if (option.selected) matched += 1;
   });
   el.dispatchEvent(new Event('input', { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
