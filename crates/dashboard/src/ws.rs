@@ -16,7 +16,7 @@ use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket};
 use rutter_core::ids::SessionId;
 use rutter_events::{Backbone, Envelope};
-use rutter_session::{ScreencastStream, SessionError};
+use rutter_session::ScreencastStream;
 use serde_json::Value;
 use std::time::Duration;
 
@@ -264,11 +264,11 @@ async fn screencast_control(
             ack["started"] = serde_json::json!(true);
             (Some(stream), ack.to_string())
         }
-        Err(SessionError::NoOpenPage) => {
-            ack["reason"] = serde_json::json!("no open page to observe");
-            (None, ack.to_string())
-        }
         Err(other) => {
+            // The refusal names itself: `SessionError::NoOpenPage`'s
+            // Display is the exact text docs/dashboard.md pins, so the
+            // reason travels the error's own wording with no copy of it
+            // here.
             ack["reason"] = serde_json::json!(other.to_string());
             (None, ack.to_string())
         }
@@ -318,7 +318,6 @@ fn encode(envelope: &Envelope) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rutter_session::manager::SessionManager;
     use std::sync::Arc;
 
     #[test]
@@ -326,14 +325,7 @@ mod tests {
         // The ack is serialized JSON, so a request_id carrying quotes or
         // escapes cannot forge extra fields in the reply.
         let state = Dashboard {
-            manager: Arc::new(SessionManager::new(
-                Arc::new(UnsupportedLauncher),
-                rutter_engine::config::LaunchMode::Headless,
-                rutter_session::config::SessionConfig::default(),
-                Arc::new(rutter_policy::RuleSet::default_set()),
-                Arc::new(rutter_policy::ApprovalBroker::new()),
-                None,
-            )),
+            manager: crate::test_support::test_manager(),
             broker: Arc::new(rutter_policy::ApprovalBroker::new()),
             token: "t".to_owned(),
             port: 7700,
@@ -357,28 +349,5 @@ mod tests {
             "an unknown approval is rejected, not granted"
         );
         assert!(ack.get("injected").is_none(), "no forged field survives");
-    }
-
-    /// Launcher stub satisfying the manager constructor; the dashboard
-    /// tests never launch an engine through it. Duplicated from the
-    /// lib tests because test fixtures stay module-local.
-    struct UnsupportedLauncher;
-
-    #[async_trait::async_trait]
-    impl rutter_engine::supervisor::EngineLauncher for UnsupportedLauncher {
-        fn describe(&self) -> String {
-            "unsupported".to_owned()
-        }
-
-        async fn launch(
-            &self,
-            _mode: rutter_engine::config::LaunchMode,
-        ) -> Result<Arc<dyn rutter_engine::engine::Engine>, rutter_engine::error::EngineError>
-        {
-            Err(rutter_engine::error::EngineError::Unsupported {
-                operation: "launch".to_owned(),
-                reason: "dashboard tests never launch engines".to_owned(),
-            })
-        }
     }
 }

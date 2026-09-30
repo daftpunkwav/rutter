@@ -272,14 +272,7 @@ mod tests {
         // and the real one behind it must still be reached.
         let headers = cookie_headers(&["rutter_token=planted", "rutter_token=0123abcd"]);
         let state = |token: &str| Dashboard {
-            manager: std::sync::Arc::new(rutter_session::manager::SessionManager::new(
-                std::sync::Arc::new(UnsupportedLauncher),
-                rutter_engine::config::LaunchMode::Headless,
-                rutter_session::config::SessionConfig::default(),
-                std::sync::Arc::new(rutter_policy::RuleSet::default_set()),
-                std::sync::Arc::new(rutter_policy::ApprovalBroker::new()),
-                None,
-            )),
+            manager: crate::test_support::test_manager(),
             broker: std::sync::Arc::new(rutter_policy::ApprovalBroker::new()),
             token: token.to_owned(),
             port: 7700,
@@ -492,30 +485,5 @@ mod tests {
             .map(|value| value.to_str().expect("ascii header").to_owned())
             .collect();
         assert_eq!(values, vec!["DENY".to_owned()], "exactly one policy");
-    }
-
-    /// Launcher stub satisfying the manager constructor; the auth tests
-    /// never launch an engine through it. Duplicated from the lib tests
-    /// because test fixtures stay module-local.
-    struct UnsupportedLauncher;
-
-    #[async_trait::async_trait]
-    impl rutter_engine::supervisor::EngineLauncher for UnsupportedLauncher {
-        fn describe(&self) -> String {
-            "unsupported".to_owned()
-        }
-
-        async fn launch(
-            &self,
-            _mode: rutter_engine::config::LaunchMode,
-        ) -> Result<
-            std::sync::Arc<dyn rutter_engine::engine::Engine>,
-            rutter_engine::error::EngineError,
-        > {
-            Err(rutter_engine::error::EngineError::Unsupported {
-                operation: "launch".to_owned(),
-                reason: "auth tests never launch engines".to_owned(),
-            })
-        }
     }
 }

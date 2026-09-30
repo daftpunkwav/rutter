@@ -29,6 +29,8 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 mod auth;
+#[cfg(test)]
+mod test_support;
 mod ws;
 
 use std::collections::HashMap;
@@ -447,18 +449,7 @@ mod tests {
 
     #[test]
     fn generated_tokens_are_cookie_safe_and_hex() {
-        let server = DashboardServer::new(
-            Arc::new(SessionManager::new(
-                Arc::new(UnsupportedLauncher),
-                rutter_engine::config::LaunchMode::Headless,
-                rutter_session::config::SessionConfig::default(),
-                Arc::new(rutter_policy::RuleSet::default_set()),
-                Arc::new(rutter_policy::ApprovalBroker::new()),
-                None,
-            )),
-            0,
-            None,
-        );
+        let server = DashboardServer::new(crate::test_support::test_manager(), 0, None);
         let token = server.token();
         assert_eq!(token.len(), 16, "64-bit hex token: {token}");
         assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
@@ -486,14 +477,7 @@ mod tests {
     fn the_hand_off_file_names_the_port_the_server_actually_owns() {
         let dir = tempfile::tempdir().expect("temp dir");
         let server = DashboardServer::new(
-            Arc::new(SessionManager::new(
-                Arc::new(UnsupportedLauncher),
-                rutter_engine::config::LaunchMode::Headless,
-                rutter_session::config::SessionConfig::default(),
-                Arc::new(rutter_policy::RuleSet::default_set()),
-                Arc::new(rutter_policy::ApprovalBroker::new()),
-                None,
-            )),
+            crate::test_support::test_manager(),
             7700,
             Some(dir.path().to_path_buf()),
         );
@@ -535,27 +519,5 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o600, "the access token stays owner-only");
-    }
-
-    /// Launcher stub satisfying the manager constructor; the dashboard
-    /// tests never launch an engine through it.
-    struct UnsupportedLauncher;
-
-    #[async_trait::async_trait]
-    impl rutter_engine::supervisor::EngineLauncher for UnsupportedLauncher {
-        fn describe(&self) -> String {
-            "unsupported".to_owned()
-        }
-
-        async fn launch(
-            &self,
-            _mode: rutter_engine::config::LaunchMode,
-        ) -> Result<Arc<dyn rutter_engine::engine::Engine>, rutter_engine::error::EngineError>
-        {
-            Err(rutter_engine::error::EngineError::Unsupported {
-                operation: "launch".to_owned(),
-                reason: "dashboard tests never launch engines".to_owned(),
-            })
-        }
     }
 }
