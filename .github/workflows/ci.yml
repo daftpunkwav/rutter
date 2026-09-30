@@ -149,3 +149,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
+
+  npm-audit:
+    name: npm audit (browser shell)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # The Electron shell is the workspace's only npm surface and the
+      # production dependency set is empty, so the --omit=dev audit is
+      # a cheap hard gate. The full audit stays informational: its
+      # current findings sit inside Electron itself (via extract-zip)
+      # and are only resolvable by an Electron major bump, which is a
+      # deliberate pairing decision with the engine's Chrome for
+      # Testing line (see browser/README.md).
+      - name: Production dependencies (blocking)
+        run: npm --prefix browser audit --omit=dev
+      - name: Full report including dev dependencies
+        continue-on-error: true
+        run: npm --prefix browser audit
