@@ -385,6 +385,7 @@ fn fit_clears_children_when_the_own_line_exceeds_the_budget() {
         ..node
     };
     let own = line_len(&node, 0);
+    measure(&mut node, 0);
 
     let used = fit(&mut node, 0, own - 1, &meta(), &mut state);
 
@@ -409,6 +410,7 @@ fn fit_folds_a_large_out_of_viewport_subtree_at_entry() {
         !meta().in_viewport(5000.0, 60.0),
         "fixture must sit outside the viewport"
     );
+    measure(&mut node, 0);
 
     fit(&mut node, 0, DEFAULT_BUDGET_CHARS, &meta(), &mut state);
 
@@ -434,6 +436,7 @@ fn fit_keeps_a_folded_child_that_still_fits() {
         children: vec![child],
         ..named("root", "parent", 0.0, 40.0)
     };
+    measure(&mut parent, 0);
 
     fit(&mut parent, 0, DEFAULT_BUDGET_CHARS, &meta(), &mut state);
 

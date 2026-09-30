@@ -84,6 +84,14 @@ struct RawNode {
     folded_count: Option<u32>,
     page_y: f64,
     height: f64,
+    /// Rendered size of this node's whole subtree in characters,
+    /// matching the `Display` implementation of `Snapshot` (char
+    /// counts, not bytes). Written bottom-up by [`measure`] before the
+    /// budget runs and kept current by [`fit`] and [`fold_subtree`] as
+    /// they cut and fold, so no budget decision ever re-walks a
+    /// subtree: a plain `subtree_size` re-measurement at every level
+    /// made the whole pass O(nodes × depth).
+    size: usize,
     children: Vec<RawNode>,
 }
 
@@ -108,6 +116,7 @@ pub fn build(url: impl Into<String>, meta: &PageMeta, tree: &Value) -> Snapshot 
     }
     raw = cut_depth(raw, BUDGET_DEPTH, &mut state);
     raw = fold_sibling_runs(raw, &mut state);
+    measure(&mut raw, 0);
     fit(&mut raw, 0, DEFAULT_BUDGET_CHARS, meta, &mut state);
 
     Snapshot {
@@ -161,6 +170,7 @@ fn convert(value: &Value, depth: usize, state: &mut BuildState) -> RawNode {
         folded_count: None,
         page_y,
         height,
+        size: 0,
         children: Vec::new(),
     };
 
@@ -257,6 +267,12 @@ fn flush_run(run: &mut Vec<RawNode>, out: &mut Vec<RawNode>, state: &mut BuildSt
 /// subtree that no longer fits folds when it is entirely outside the
 /// viewport (beyond the minimum fold size) or shrinks recursively; a
 /// leaf or summary line that does not fit at all is dropped.
+///
+/// Entries must carry their [`RawNode::size`] from [`measure`]; the
+/// sizes of everything `fit` cuts or folds are updated in place, and
+/// the returned size is the node's true rendered subtree size — the
+/// same number a fresh `subtree_size` walk would produce, computed
+/// from the parts instead of re-walking them.
 fn fit(
     node: &mut RawNode,
     depth: usize,
@@ -270,35 +286,38 @@ fn fit(
             node.children.clear();
             state.truncated = true;
         }
+        node.size = own;
         return own;
     }
 
     // Rule 3: entirely out of the viewport and large enough to matter.
     if !node.children.is_empty()
         && !meta.in_viewport(node.page_y, node.height)
-        && subtree_size(node, depth) > FOLD_SIZE_MIN_CHARS
+        && node.size > FOLD_SIZE_MIN_CHARS
     {
-        fold_subtree(node, state);
+        fold_subtree(node, depth, state);
         return own;
     }
 
     let children = std::mem::take(&mut node.children);
     let mut kept: Vec<RawNode> = Vec::with_capacity(children.len());
     let mut remaining = budget - own;
+    let mut kept_size = 0usize;
 
     for mut child in children {
-        let child_size = subtree_size(&child, depth + 1);
+        let child_size = child.size;
         let child_line = line_len(&child, depth + 1);
         let out_of_view = !meta.in_viewport(child.page_y, child.height);
 
         // Rule 3: entirely out of the viewport and large enough to
         // matter — folds regardless of the remaining budget.
         if out_of_view && child_size > FOLD_SIZE_MIN_CHARS && !child.children.is_empty() {
-            fold_subtree(&mut child, state);
+            fold_subtree(&mut child, depth + 1, state);
             // Folding adds the `× N` suffix; measure after the fold.
             let summary_line = line_len(&child, depth + 1);
             if summary_line <= remaining {
                 remaining -= summary_line;
+                kept_size += summary_line;
                 kept.push(child);
                 continue;
             }
@@ -308,6 +327,7 @@ fn fit(
 
         if child_size <= remaining {
             remaining -= child_size;
+            kept_size += child_size;
             kept.push(child);
             continue;
         }
@@ -322,19 +342,23 @@ fn fit(
             continue;
         }
         remaining -= used;
+        kept_size += used;
         kept.push(child);
     }
 
     node.children = kept;
-    subtree_size(node, depth)
+    node.size = own + kept_size;
+    node.size
 }
 
 /// Replaces a subtree with its fold summary (`× N` counts the folded
-/// nodes, excluding the summary line itself).
-fn fold_subtree(node: &mut RawNode, state: &mut BuildState) {
+/// nodes, excluding the summary line itself). The node's size falls to
+/// its own line, suffix included, like the rendered text it now is.
+fn fold_subtree(node: &mut RawNode, depth: usize, state: &mut BuildState) {
     let count = count_nodes(node) - 1;
     node.children.clear();
     node.folded_count = Some(count as u32);
+    node.size = line_len(node, depth);
     state.truncated = true;
 }
 
@@ -342,15 +366,15 @@ fn count_nodes(node: &RawNode) -> usize {
     1 + node.children.iter().map(count_nodes).sum::<usize>()
 }
 
-/// Estimated rendered size of one subtree in characters, matching the
-/// `Display` implementation of `Snapshot` (char counts, not bytes).
-fn subtree_size(node: &RawNode, depth: usize) -> usize {
-    line_len(node, depth)
-        + node
-            .children
-            .iter()
-            .map(|child| subtree_size(child, depth + 1))
-            .sum::<usize>()
+/// Computes every node's rendered subtree size bottom-up, once, before
+/// the budget pipeline runs — the one walk the sizes are read from.
+fn measure(node: &mut RawNode, depth: usize) {
+    let mut size = line_len(node, depth);
+    for child in &mut node.children {
+        measure(child, depth + 1);
+        size += child.size;
+    }
+    node.size = size;
 }
 
 /// Rendered length of one node's line, matching `Display` in
@@ -419,6 +443,7 @@ fn leaf_raw(role: &str) -> RawNode {
         folded_count: None,
         page_y: 0.0,
         height: 0.0,
+        size: 0,
         children: Vec::new(),
     }
 }
