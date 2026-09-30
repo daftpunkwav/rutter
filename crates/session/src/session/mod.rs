@@ -674,10 +674,13 @@ impl Session {
     pub async fn load_storage(&self) -> Result<(), SessionError> {
         let state = match &self.state_path {
             Some(path) => StorageState::read(path),
+            // Same precondition, same family as [`Self::save_storage`]:
+            // a session without a state directory refuses with the
+            // storage taxonomy, not the contained-bug one.
             None => {
-                return Err(SessionError::Action(ActionError::Internal {
+                return Err(SessionError::StorageRead {
                     detail: "this session has no storage state directory".to_owned(),
-                }));
+                });
             }
         };
         let context = self.context.read().await.clone();
@@ -1022,6 +1025,7 @@ pub(crate) fn as_action_error(session: &SessionId, error: &SessionError) -> Acti
         SessionError::Capacity { detail }
         | SessionError::InvalidId { detail }
         | SessionError::StorageWrite { detail }
+        | SessionError::StorageRead { detail }
         | SessionError::Internal { detail } => ActionError::Internal {
             detail: detail.clone(),
         },

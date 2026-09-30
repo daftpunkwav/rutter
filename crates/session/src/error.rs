@@ -55,6 +55,16 @@ pub enum SessionError {
         detail: String,
     },
 
+    /// The session's storage state could not be read back. Today the
+    /// one trigger is a session opened without a state directory: there
+    /// is nothing to load, and that is configuration, not a bug — so it
+    /// must not wear the `Internal` "report this" label.
+    #[error("storage state read failed: {detail}")]
+    StorageRead {
+        /// What went wrong with the read.
+        detail: String,
+    },
+
     /// A bug was contained at the session boundary; never a silent pass.
     #[error("internal session error: {detail}")]
     Internal {
@@ -83,6 +93,10 @@ impl SessionError {
                  storage file is writable, then save again; the in-memory \
                  state is kept, so nothing was lost"
                 .to_owned(),
+            Self::StorageRead { .. } => "this session was opened without a storage state \
+                 directory, so there is nothing to load; ask for a session \
+                 with persistence or keep working from the live pages"
+                .to_owned(),
             Self::Internal { detail } => {
                 format!("an internal bug was contained; report it, citing: {detail}")
             }
@@ -109,6 +123,9 @@ mod tests {
                 detail: "probe".to_owned(),
             },
             SessionError::StorageWrite {
+                detail: "probe".to_owned(),
+            },
+            SessionError::StorageRead {
                 detail: "probe".to_owned(),
             },
             SessionError::Internal {

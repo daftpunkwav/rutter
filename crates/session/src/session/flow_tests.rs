@@ -280,10 +280,7 @@ async fn load_storage_without_a_state_directory_fails_loudly() {
     let session = session_with_state(StorageContext::new(page) as Arc<dyn ContextHandle>, None);
     let error = session.load_storage().await;
     assert!(
-        matches!(
-            error,
-            Err(SessionError::Action(ActionError::Internal { .. }))
-        ),
+        matches!(error, Err(SessionError::StorageRead { .. })),
         "the caller must learn there is nothing to load: {error:?}"
     );
 }

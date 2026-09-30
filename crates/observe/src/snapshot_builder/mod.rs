@@ -291,12 +291,16 @@ fn fit(
     }
 
     // Rule 3: entirely out of the viewport and large enough to matter.
+    // The fold adds the `× N` suffix, so the true size is what
+    // `fold_subtree` wrote into `node.size`, not the pre-fold line
+    // length — hand that back, or a future recursive entry would
+    // silently under-count the budget by the suffix.
     if !node.children.is_empty()
         && !meta.in_viewport(node.page_y, node.height)
         && node.size > FOLD_SIZE_MIN_CHARS
     {
         fold_subtree(node, depth, state);
-        return own;
+        return node.size;
     }
 
     let children = std::mem::take(&mut node.children);

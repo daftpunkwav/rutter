@@ -78,6 +78,18 @@ fn cap_text(text: String) -> String {
     capped
 }
 
+/// Names a request field the observation feed never learned. Events can
+/// arrive for requests that started before the feed attached, and the
+/// failure event carries no URL of its own; rendering the empty string
+/// would show `-> failed` with blank fields instead of saying why.
+fn or_unknown(field: String) -> String {
+    if field.is_empty() {
+        "<unknown>".to_owned()
+    } else {
+        field
+    }
+}
+
 /// Maps a protocol dialog kind onto the engine vocabulary.
 fn dialog_kind(kind: &str) -> DialogKind {
     match kind {
@@ -619,7 +631,7 @@ impl rutter_engine::page::PageHandle for CdpPage {
                             .unwrap_or_else(|| (String::new(), String::new()));
                         let observation = PageObservation::RequestObserved {
                             entry: RequestEntry {
-                                method,
+                                method: or_unknown(method),
                                 url: cap_text(event.response.url.clone()),
                                 status: Some(event.response.status.clamp(0, u32::MAX as i64) as u32),
                                 resource_type: Some(event.r#type.as_ref().to_lowercase()),
@@ -636,8 +648,8 @@ impl rutter_engine::page::PageHandle for CdpPage {
                             .unwrap_or_else(|| (String::new(), String::new()));
                         let observation = PageObservation::RequestObserved {
                             entry: RequestEntry {
-                                method,
-                                url: cap_text(url),
+                                method: or_unknown(method),
+                                url: cap_text(or_unknown(url)),
                                 status: None,
                                 resource_type: Some(event.r#type.as_ref().to_lowercase()),
                                 error: Some(cap_text(event.error_text.clone())),

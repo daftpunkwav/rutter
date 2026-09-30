@@ -432,7 +432,13 @@ impl ContextHandle for CdpContext {
                 secure: cookie.secure,
                 http_only: cookie.http_only,
                 same_site: cookie.same_site.map(cdp_same_site_back),
-                expires: Some(cookie.expires),
+                // CDP reports session cookies with `expires: -1`; the
+                // protocol-neutral contract says `None` is a session
+                // cookie (see `rutter_core::Cookie`). Mapping the
+                // sentinel through verbatim would round-trip a capture
+                // as a cookie that expires at epoch -1 and show
+                // `expires=-1` to agents.
+                expires: (cookie.expires >= 0.0).then_some(cookie.expires),
             })
             .collect())
     }

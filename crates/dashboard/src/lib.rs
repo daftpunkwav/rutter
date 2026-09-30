@@ -337,8 +337,8 @@ async fn ws_upgrade(
 /// The decision both transports accept: `{"request_id": "apr-7",
 /// "grant": true|false}`. The WebSocket carries it inside a
 /// `{"type": "decision", ...}` message, the HTTP post as the bare
-/// object; `frontend/src/app.js` writes it, over the socket first and
-/// over the post as its fallback.
+/// object; `frontend/src/app.js` submits the post, and the socket form
+/// serves other clients watching the feed.
 ///
 /// One parser for both, so the two transports cannot drift into
 /// disagreeing about what a decision is. Only the answer differs: the
