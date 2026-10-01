@@ -93,7 +93,7 @@ impl ObservationFeeds {
     pub(crate) fn record(&self, page: &PageId, entry: ConsoleEntry) {
         let mut feeds = self.lock();
         if let Some(feed) = feeds.get_mut(page) {
-            push_bounded(&mut feed.entries, entry);
+            push_bounded(&mut feed.entries, FEED_CAPACITY, entry);
         }
     }
 
@@ -110,10 +110,7 @@ impl ObservationFeeds {
     pub(crate) fn record_request(&self, page: &PageId, entry: RequestEntry) {
         let mut feeds = self.lock();
         if let Some(feed) = feeds.get_mut(page) {
-            if feed.requests.len() >= REQUEST_CAPACITY {
-                feed.requests.pop_front();
-            }
-            feed.requests.push_back(entry);
+            push_bounded(&mut feed.requests, REQUEST_CAPACITY, entry);
         }
     }
 
@@ -165,9 +162,9 @@ impl ObservationFeeds {
 
 /// Pushes an entry with the capacity bound; free-standing so the rule
 /// is unit-testable without a feed map. The oldest entry falls off
-/// first once the buffer holds [`FEED_CAPACITY`] of them.
-fn push_bounded(entries: &mut VecDeque<ConsoleEntry>, entry: ConsoleEntry) {
-    if entries.len() >= FEED_CAPACITY {
+/// first once the buffer holds `capacity` of them.
+fn push_bounded<T>(entries: &mut VecDeque<T>, capacity: usize, entry: T) {
+    if entries.len() >= capacity {
         entries.pop_front();
     }
     entries.push_back(entry);

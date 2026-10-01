@@ -20,6 +20,7 @@ fn the_buffer_keeps_the_newest_capacity_entries() {
     for index in 0..FEED_CAPACITY + 10 {
         push_bounded(
             &mut entries,
+            FEED_CAPACITY,
             ConsoleEntry {
                 level: ConsoleLevel::Log,
                 text: format!("line-{index}"),
