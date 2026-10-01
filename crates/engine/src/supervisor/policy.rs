@@ -68,9 +68,9 @@ impl RestartPolicy {
         }
     }
 
-    /// Overrides the backoff shape; used by tests and callers hosting
-    /// engines with unusual startup latency. `max_restarts` carries the
-    /// same floor as [`RestartPolicy::new`].
+    /// Alternate constructor with a custom backoff shape, for tests and
+    /// callers hosting engines with unusual startup latency.
+    /// `max_restarts` carries the same floor as [`RestartPolicy::new`].
     pub fn with_backoff(
         max_restarts: u32,
         window: Duration,

@@ -62,9 +62,10 @@ resolve active page
 `{ cookies, origins }`——context cookie 加每个 origin 的
 localStorage：
 
-- **捕获**：每次动作之后与 `set_cookies` 之后，从 context 与该
-  session 的**每一个已打开页面**捕获 localStorage。只捕获动作所在的
-  那个页面，会让第二个标签页的登录在下一次持久化时消失。
+- **捕获**：每次动作之后、`tabs_open` 的导航之后与 `set_cookies`
+  之后，从 context 与该 session 的**每一个已打开页面**捕获
+  localStorage。只捕获动作所在的那个页面，会让第二个标签页的登录
+  在下一次持久化时消失。
 - **变更即持久化**：写入
   `<cache-root>/sessions/<session-id>.storage.json`。写入是原子
   的：JSON 先落在同目录临时文件中，再以一次 rename 替换正式文件；

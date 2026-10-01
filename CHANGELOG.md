@@ -122,6 +122,23 @@ and the project adheres to
   (`https://bank.example*`, which also matches
   `bank.example.evil.com`) are rejected at load time; anchored
   spellings and bare catch-alls are unchanged.
+- A `serve` with `--dashboard` fails outright when the dashboard cannot
+  start — the port is taken, the access hand-off had nowhere to go —
+  where it used to print one stderr line and keep answering tool calls
+  with no approval UI, leaving every parked approval to time out
+  unseen.
+- A session whose rebuild fails on the fresh engine retries on the
+  recovery watcher's own schedule (three rounds, 0/500 ms/1 s apart)
+  instead of waiting for the next engine replacement, so one bad
+  restart no longer strands sessions until the engine dies again. A
+  failure that outlives the rounds still waits for the next bump.
+- A `tabs_open` navigation persists storage state on change, like an
+  executed `navigate` action: the cookies and localStorage the target
+  page already set reach the storage file, so a supervisor restart
+  after opening a tab replays them.
+- The dashboard timeline keeps only the newest 500 lines, so a session
+  left open for days no longer grows the document without bound; the
+  newest lines survive, the oldest fall off.
 
 - Headed mode launches on Windows: rutter spawns the browser itself and
   resolves the debugging endpoint by polling the port, so both
@@ -146,6 +163,10 @@ and the project adheres to
 
 ### Changed
 
+- A `wait_for` timeout reports `phase: "poll"` in its `TimedOut`
+  error, where it used to borrow `"settle"` — a phase the text poll
+  never touches. Agents matching on the phase string see the new
+  value; the auto-wait phases are unchanged.
 - The built-in default policy parks the classes that bridge the page
   and this machine: file uploads (`upload_file`) and `file://`
   navigations now require approval, like cookie writes already did.

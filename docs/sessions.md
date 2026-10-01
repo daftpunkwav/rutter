@@ -70,9 +70,10 @@ resolve active page
 origins }` — context cookies plus localStorage per origin:
 
 - **Captured** from the context plus the localStorage of **every open
-  page** in the session, after every action and after `set_cookies`.
-  Capturing only the page an action ran on would let a second tab's
-  login disappear on the next persist.
+  page** in the session, after every action, after a `tabs_open`
+  navigation, and after `set_cookies`. Capturing only the page an
+  action ran on would let a second tab's login disappear on the next
+  persist.
 - **Persisted on change** to
   `<cache-root>/sessions/<session-id>.storage.json`. The write is
   atomic: the JSON lands in a sibling temporary file that replaces the

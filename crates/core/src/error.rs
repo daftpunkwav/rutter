@@ -50,7 +50,7 @@ pub enum ActionError {
     /// A wait phase did not complete in time.
     #[error("timed out during the '{phase}' phase after {elapsed:?}")]
     TimedOut {
-        /// Phase of the auto-wait that did not complete.
+        /// Phase of the wait that did not complete.
         phase: WaitPhase,
         /// Time spent waiting before giving up.
         elapsed: Duration,
