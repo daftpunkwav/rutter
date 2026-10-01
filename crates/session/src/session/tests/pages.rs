@@ -37,14 +37,14 @@ async fn close_closes_the_context_even_when_the_context_errors() {
         }
     }
 
-    let session = session_over(Arc::new(FailingContext));
+    let session = default_session(Arc::new(FailingContext));
     session.close().await;
 }
 
 #[tokio::test]
 async fn close_page_removes_the_page_and_promotes_a_remaining_one() {
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
 
     let (page_id, _handle) = session.active_page_for_test().await;
     session
@@ -92,7 +92,7 @@ async fn closing_an_untracked_page_fails_without_a_fake_event() {
     // success would also publish a PageClosed event for a page that
     // never existed.
     let context = MockContext::new();
-    let session = session_over(Arc::new(context));
+    let session = default_session(Arc::new(context));
 
     let error = session.close_page(PageId::new("nope")).await;
     assert!(
@@ -119,7 +119,7 @@ async fn close_page_refuses_while_recovery_owns_the_list() {
     // which still carried the page. The window refuses closes instead,
     // and lifts with the gate like every other operation.
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
 
     let (tracked_id, _) = session.active_page_for_test().await;
     let (_saved, gate) = session.registry().begin_recovery();
@@ -141,7 +141,7 @@ async fn close_page_refuses_while_recovery_owns_the_list() {
 #[tokio::test]
 async fn select_page_switches_activity_and_unknown_pages_fail() {
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
 
     let (first, _) = session.active_page_for_test().await;
     let (second, second_handle) = context.open_page().await.expect("second page");
@@ -186,7 +186,7 @@ async fn url_refresh_targets_the_page_the_action_ran_on() {
         entered: entered_tx,
         release: tokio::sync::Mutex::new(Some(release_rx)),
     });
-    let session = Arc::new(session_over(Arc::new(SinglePageContext(gated))));
+    let session = Arc::new(default_session(Arc::new(SinglePageContext(gated))));
     let (a_id, _) = session.active_page_for_test().await;
 
     // A second page select_page can switch to while the action runs.
@@ -255,7 +255,7 @@ async fn an_action_during_recovery_leaves_no_untracked_page() {
     // page in between was registered, then overwritten — so its tab stayed
     // alive in the engine with nothing tracking it.
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
     let (page_id, _) = session.active_page_for_test().await;
     assert_eq!(context.pages().len(), 1, "the seeded page is open");
 
@@ -290,7 +290,7 @@ async fn tabs_list_adopts_a_window_rutter_did_not_open() {
     // nothing tracking it. Listing must discover it once, keep the
     // session's focus where it was, and say so on the timeline.
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
     let (tracked_id, _) = session.active_page_for_test().await;
 
     let foreign_id = context.add_foreign_page("https://popup.example");
@@ -328,7 +328,7 @@ async fn tabs_list_adopts_a_window_rutter_did_not_open() {
 #[tokio::test]
 async fn a_selected_foreign_page_drives_the_window_it_names() {
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
     let _ = session.active_page_for_test().await;
     let foreign_id = context.add_foreign_page("https://popup.example");
     session.pages().await;
@@ -354,7 +354,7 @@ async fn a_selected_foreign_page_drives_the_window_it_names() {
 #[tokio::test]
 async fn an_enumeration_failure_degrades_to_the_tracked_listing() {
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
     session.active_page_for_test().await;
     context.add_foreign_page("https://popup.example");
     context.fail_foreign_pages(true);
@@ -376,7 +376,7 @@ async fn an_enumeration_failure_degrades_to_the_tracked_listing() {
 #[tokio::test]
 async fn adoption_waits_for_recovery_to_release_the_list() {
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
     let (tracked_id, _) = session.active_page_for_test().await;
     context.add_foreign_page("https://popup.example");
 
@@ -409,7 +409,7 @@ async fn adoption_waits_for_recovery_to_release_the_list() {
 #[tokio::test]
 async fn closing_an_adopted_page_untracks_it_like_any_other() {
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
     session.active_page_for_test().await;
     let foreign_id = context.add_foreign_page("https://popup.example");
     session.pages().await;
@@ -433,7 +433,7 @@ async fn closing_an_adopted_page_untracks_it_like_any_other() {
 #[tokio::test]
 async fn opening_a_page_takes_the_active_flag_and_tracks_its_url() {
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
     let (first, _) = session.active_page_for_test().await;
 
     let snapshot = session.open_page(None).await.expect("a blank page opens");
@@ -510,7 +510,7 @@ async fn a_denied_tabs_open_navigation_leaves_the_new_blank_page() {
 #[tokio::test]
 async fn set_viewport_resizes_the_active_page_and_returns_a_snapshot() {
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
     let (page_id, _) = session.active_page_for_test().await;
 
     let snapshot = session

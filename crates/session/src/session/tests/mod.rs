@@ -18,7 +18,7 @@ use rutter_policy::{ActionClass, Verdict};
 use serde_json::{Value, json};
 use std::sync::Mutex;
 
-fn session_over(context: Arc<dyn ContextHandle>) -> Session {
+fn default_session(context: Arc<dyn ContextHandle>) -> Session {
     session_with_policy(context, RuleSet::default_set())
 }
 

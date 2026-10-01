@@ -9,7 +9,7 @@ async fn wait_for_survives_an_absurd_budget() {
     // the needle immediately, so the happy path exercises exactly
     // that deadline construction.
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
     let (page_id, _page) = session.active_page_for_test().await;
     let page = context
         .page_mock(page_id)
@@ -31,7 +31,7 @@ async fn wait_for_timeout_names_the_requested_budget() {
     // A timeout must report the budget the caller asked for, so the
     // agent can reason about what it just waited.
     let context = MockContext::new();
-    let session = session_over(Arc::new(context));
+    let session = default_session(Arc::new(context));
     session.active_page_for_test().await;
 
     let error = session
@@ -40,7 +40,7 @@ async fn wait_for_timeout_names_the_requested_budget() {
         .expect_err("the needle never appears");
     match &error {
         SessionError::Action(ActionError::TimedOut { phase, elapsed }) => {
-            assert_eq!(*phase, rutter_core::error::WaitPhase::Settle);
+            assert_eq!(*phase, rutter_core::error::WaitPhase::Poll);
             assert_eq!(*elapsed, Duration::from_millis(150));
         }
         other => panic!("expected a TimedOut error, got {other:?}"),
@@ -52,7 +52,7 @@ async fn screenshot_capture_errors_map_to_the_internal_taxonomy() {
     // capture errors surface as `ActionError::Internal` —
     // the taxonomy every action failure uses — not as a raw engine
     // error.
-    let session = session_over(Arc::new(SinglePageContext(Arc::new(BrokenLens))));
+    let session = default_session(Arc::new(SinglePageContext(Arc::new(BrokenLens))));
     let error = session
         .screenshot()
         .await
@@ -69,7 +69,7 @@ async fn watching_a_page_never_opens_one() {
     // through the same lookup an action uses, which opens a tab when the
     // session has none — so asking to watch created the thing watched.
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
 
     assert!(
         matches!(session.screencast().await, Err(SessionError::NoOpenPage)),
@@ -88,7 +88,7 @@ async fn watching_a_page_never_opens_one() {
 #[tokio::test]
 async fn a_page_dialog_is_dismissed_and_lands_on_the_timeline() {
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
     let (page_id, _) = session.active_page_for_test().await;
     let mock = context.page_mock(page_id.clone()).expect("mock page");
 
@@ -132,7 +132,7 @@ async fn a_page_dialog_is_dismissed_and_lands_on_the_timeline() {
 #[tokio::test]
 async fn console_messages_reports_the_active_pages_entries() {
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
     let (page_id, _) = session.active_page_for_test().await;
     let mock = context.page_mock(page_id.clone()).expect("mock page");
 
@@ -178,7 +178,7 @@ async fn console_messages_reports_the_active_pages_entries() {
 
 #[tokio::test]
 async fn get_cookies_reads_the_context_without_opening_a_page() {
-    let session = session_over(Arc::new(MockContext::new()));
+    let session = default_session(Arc::new(MockContext::new()));
     let cookies = session.cookies().await.expect("the context answers");
     assert!(cookies.is_empty(), "the fresh context has no cookies");
     assert!(
@@ -190,7 +190,7 @@ async fn get_cookies_reads_the_context_without_opening_a_page() {
 #[tokio::test]
 async fn network_requests_reports_the_active_pages_entries() {
     let context = MockContext::new();
-    let session = session_over(Arc::new(context.clone()));
+    let session = default_session(Arc::new(context.clone()));
     let (page_id, _) = session.active_page_for_test().await;
     let mock = context.page_mock(page_id.clone()).expect("mock page");
 
