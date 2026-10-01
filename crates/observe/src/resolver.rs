@@ -273,6 +273,17 @@ mod tests {
     }
 
     #[test]
+    fn file_check_script_reports_the_marker_keys() {
+        // The session layer reads these keys off the answer, and its
+        // test double dispatches the evaluate call on the `not_file`
+        // substring; a rename here must fail this pin instead of
+        // silently re-routing the fake.
+        let script = files_check_script("e1");
+        assert!(script.contains("not_file"));
+        assert!(script.contains("multiple"));
+    }
+
+    #[test]
     fn scripts_are_ascii_only() {
         assert!(resolver_script("e17").is_ascii());
         assert!(focus_script("e17").is_ascii());
