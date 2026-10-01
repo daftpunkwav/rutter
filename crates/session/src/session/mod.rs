@@ -2,7 +2,7 @@
 //!
 //! Boundary: the orchestration surface the MCP tools call. The session
 //! owns exactly one context, tracks its open pages and
-//! their URLs, executes actions through the [`crate::actions`]
+//! their URLs, executes actions through the crate's internal action
 //! executor, enforces the policy with approvals, and persists
 //! its storage state after every change so a supervisor restart can
 //! rebuild it. Recovery swaps in a fresh context and replays.
@@ -529,6 +529,13 @@ impl Session {
                     url: effective,
                 },
             );
+            // The navigation is an effect like any executed action's: the
+            // storage state it changed — the target's cookies and
+            // localStorage — persists here, so a supervisor restart after
+            // a tabs_open replays the same state one after a `navigate`
+            // does. The event stream stays tabs_open's own documented
+            // shape (no Action* trio).
+            self.persist_storage().await;
         }
         PageOps {
             page: handle.as_ref(),

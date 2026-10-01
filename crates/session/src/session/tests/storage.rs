@@ -185,6 +185,50 @@ async fn every_open_tab_reaches_the_persisted_state() {
     );
 }
 
+/// A tabs_open navigation persists on change like an executed action:
+/// the storage a page already carried reaches the file when the next
+/// tabs_open runs its persist-on-change pass, without an explicit
+/// save — matching what `Session::execute` does after a `navigate`.
+#[tokio::test]
+async fn a_tabs_open_navigation_persists_on_change() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("s.storage.json");
+    let context = Arc::new(MockContext::new());
+    let session =
+        session_persisting_to(Arc::clone(&context) as Arc<dyn ContextHandle>, path.clone());
+
+    session
+        .open_page(Some("https://opened.example".to_owned()))
+        .await
+        .expect("first tab");
+    for page in session.pages().await {
+        context
+            .page_mock(page.id.clone())
+            .expect("the mock page")
+            .set_storage(&page.url, &[("token", "kept")]);
+    }
+
+    // The second open's persist-on-change pass is what must publish the
+    // first page's storage; the first open captured before the mock
+    // carried anything.
+    session
+        .open_page(Some("https://other.example".to_owned()))
+        .await
+        .expect("second tab");
+
+    let state = StorageState::read(&path);
+    let origins: Vec<&str> = state
+        .origins
+        .iter()
+        .map(|origin| origin.origin.as_str())
+        .collect();
+    assert_eq!(
+        origins,
+        vec!["https://opened.example"],
+        "tabs_open's navigation persists the storage it changed"
+    );
+}
+
 /// A context whose cookie read can be made to fail: the shape of an
 /// engine that died (or wedged) between two persistence runs. Its one
 /// page is a mock, so `save_storage`'s `ensure_page` still opens one.
@@ -295,10 +339,10 @@ async fn a_failed_write_is_retried_on_the_next_capture() {
     let context = Arc::new(MockContext::new());
     let session =
         session_persisting_to(Arc::clone(&context) as Arc<dyn ContextHandle>, path.clone());
-    session
-        .open_page(Some("https://a.example".to_owned()))
-        .await
-        .expect("one tab");
+    // A blank tab: no navigation, so tabs_open's persist-on-change pass
+    // has nothing to publish and the state file does not exist yet —
+    // the test needs the first blocked write to be the explicit save.
+    session.open_page(None).await.expect("one tab");
 
     // A directory where the file belongs: the write cannot rename onto
     // it, which is the shape of a write that failed for any other
