@@ -433,13 +433,21 @@ impl RutterMcp {
     async fn console_messages(&self) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
         let entries = session.console_messages();
-        let text = if entries.is_empty() {
-            "no console output on the active page\n".to_owned()
-        } else {
-            entries
-                .iter()
-                .map(|entry| format!("[{}] {}\n", entry.level, entry.text))
-                .collect()
+        // The entries belong to the active page; naming it lets the
+        // caller tell which page produced them without consulting
+        // `tabs_list` (see `tabs_list` for the id style).
+        let text = match session.active_page_id() {
+            None => "no console output on the active page\n".to_owned(),
+            Some(page) if entries.is_empty() => {
+                format!("active page {page}\nno console output\n")
+            }
+            Some(page) => format!(
+                "active page {page}\n{}",
+                entries
+                    .iter()
+                    .map(|entry| format!("[{}] {}\n", entry.level, entry.text))
+                    .collect::<String>()
+            ),
         };
         Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }
@@ -450,10 +458,19 @@ impl RutterMcp {
     async fn network_requests(&self) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
         let entries = session.network_requests();
-        let text = if entries.is_empty() {
-            "no network requests on the active page\n".to_owned()
-        } else {
-            entries.iter().map(|entry| format!("{entry}\n")).collect()
+        // The same page attribution as `console_messages`.
+        let text = match session.active_page_id() {
+            None => "no network requests on the active page\n".to_owned(),
+            Some(page) if entries.is_empty() => {
+                format!("active page {page}\nno network requests\n")
+            }
+            Some(page) => format!(
+                "active page {page}\n{}",
+                entries
+                    .iter()
+                    .map(|entry| format!("{entry}\n"))
+                    .collect::<String>()
+            ),
         };
         Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }

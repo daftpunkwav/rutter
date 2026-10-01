@@ -908,6 +908,55 @@ async fn tabs_list_with_no_pages_says_so() {
 }
 
 #[tokio::test]
+async fn console_and_network_tools_name_the_active_page() {
+    // No page tracked: the probe still answers, with no id to name.
+    let pageless = RutterMcp::new(manager(), SessionId::new("s1"));
+    let console = pageless.console_messages().await.expect("console result");
+    assert_eq!(
+        first_text_block(&console),
+        "no console output on the active page\n"
+    );
+    let network = pageless.network_requests().await.expect("network result");
+    assert_eq!(
+        first_text_block(&network),
+        "no network requests on the active page\n"
+    );
+
+    // With a tracked page, the output leads with the page's id — the
+    // same id `tabs_list` reports.
+    let script_manager = scripted_manager();
+    let mcp = RutterMcp::new(Arc::clone(&script_manager), SessionId::new("s1"));
+    mcp.navigate(Parameters(NavigateParams {
+        url: "https://a.example".to_owned(),
+    }))
+    .await
+    .expect("a page");
+    let session = script_manager
+        .get_session(&SessionId::new("s1"))
+        .await
+        .expect("the session");
+    let page = session
+        .pages()
+        .await
+        .into_iter()
+        .find(|page| page.active)
+        .expect("the navigated page")
+        .id;
+    let console = mcp.console_messages().await.expect("console result");
+    let text = first_text_block(&console);
+    assert!(
+        text.starts_with(&format!("active page {page}\n")),
+        "console output names the active page: {text}"
+    );
+    let network = mcp.network_requests().await.expect("network result");
+    let text = first_text_block(&network);
+    assert!(
+        text.starts_with(&format!("active page {page}\n")),
+        "network output names the active page: {text}"
+    );
+}
+
+#[tokio::test]
 async fn tabs_select_unknown_page_is_invalid_params() {
     // mirrors tabs_close — an unknown id is invalid_params, not an
     // action failure.

@@ -42,6 +42,7 @@
 | `EngineRestarted` | — | supervisor 替换了死亡的引擎；重启前的状态已不存在 |
 | `PageOpened` / `PageClosed` | `page` | 页面在 session 的 context 中打开/关闭 |
 | `PageNavigated` | `page`, `url` | 活动页面导航（`url` 是重定向后的生效值） |
+| `PageActivated` | `page` | 某个页面成为 session 的活动页面（`tabs_select`） |
 | `ActionRequested` | `page`, `origin`, `action` | 动作被请求，尚未开始执行 |
 | `ActionCompleted` | `page`, `origin`, `action` | 动作成功完成 |
 | `ActionFailed` | `page`, `origin`, `action`, `error` | 动作失败；`error` 携带[错误分类](tool-catalog.zh.md#2-结果约定) |

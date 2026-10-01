@@ -46,6 +46,7 @@ variant is produced by the session or manager layer as labeled.
 | `EngineRestarted` | — | the supervisor replaced a dead engine; state before the restart is gone |
 | `PageOpened` / `PageClosed` | `page` | a page opened/closed inside the session's context |
 | `PageNavigated` | `page`, `url` | the active page navigated (`url` is effective after redirects) |
+| `PageActivated` | `page` | a page became the session's active one (`tabs_select`) |
 | `ActionRequested` | `page`, `origin`, `action` | an action was requested, before execution starts |
 | `ActionCompleted` | `page`, `origin`, `action` | an action finished successfully |
 | `ActionFailed` | `page`, `origin`, `action`, `error` | an action failed; `error` carries the [error taxonomy](tool-catalog.md#2-result-conventions) |
