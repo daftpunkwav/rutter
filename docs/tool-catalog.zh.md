@@ -115,7 +115,8 @@
 
 ## 4. 工具
 
-二十五个工具。参数类型：`reference` 是快照句柄（`e17`）；
+二十五个工具。参数类型：`reference` 是快照句柄（`e17-9x2f`；
+`-<scope>` 后缀按文档区分，引用只匹配铸造它的页面）；
 `direction` 是 `up|down|left|right` 之一；时长单位为毫秒。
 
 **对话框。**页面调用 `alert`、`confirm`、`prompt` 或触发

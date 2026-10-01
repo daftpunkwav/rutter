@@ -83,10 +83,14 @@ Skipped elements: `script`, `style`, `noscript`, `template`, `head`,
 
 - The serializer keeps a per-page store on `window`
   (`__rutterRefStore`: a `WeakMap<Element, string>` that mints refs,
-  a reverse `Map<string, WeakRef<Element>>` that resolves them, and an
-  integer counter). An actionable element receives `e<N>` the first
-  time it is observed and keeps it for later snapshots of the same
-  page.
+  a reverse `Map<string, WeakRef<Element>>` that resolves them, an
+  integer counter, and a per-document random `scope`). An actionable
+  element receives `e<N>-<scope>` (for example `e17-9x2f`, a 4-character
+  base36 scope) the first time it is observed and keeps it for later
+  snapshots of the same page. The scope namespaces each document's
+  refs: every document counts from 1, so without it two snapshotted
+  pages could hold the same `e17` and a reference captured before a
+  tab switch would silently resolve to the other page's own element.
 - The reverse map is swept between snapshots: entries whose element the
   page has already collected are dropped, so a long-lived document
   that re-renders does not grow the store (and the browser process)
@@ -96,20 +100,21 @@ Skipped elements: `script`, `style`, `noscript`, `template`, `head`,
 - Actionable roles v1: `button`, `link`, `textbox`, `searchbox`,
   `checkbox`, `radio`, `combobox`, `listbox`, `option`, `menuitem`,
   `tab`, `slider`, `spinbutton`, `switch`, `treeitem`.
-- After a navigation the counter resets; old references no longer
-  match any element and resolve to `ActionError::ReferenceExpired`.
+- After a navigation the counter and the scope are minted anew; old
+  references no longer match any element and resolve to
+  `ActionError::ReferenceExpired`.
 
 ## 5. Text rendering (YAML style)
 
 One node per line, children indented two spaces per level:
 
 ```
-- button "Sign in" [checked] [ref=e17]
+- button "Sign in" [checked] [ref=e17-9x2f]
 ```
 
 Suffixes render in this order: `"name"` (double quotes inside names
 escaped as `\"`), `[checked]` (only when true), `[disabled]` (only
-when true), `[ref=eN]`, `× N` (folded-subtree count, the [token budget](#6-token-budget-v1)). A folded
+when true), `[ref=eN-scope]`, `× N` (folded-subtree count, the [token budget](#6-token-budget-v1)). A folded
 summary line renders as `- listitem × 20` (role of the folded items,
 their count as `× N`). This format is implemented by `Snapshot`'s
 `Display` in `rutter-core` and pinned by its unit tests.

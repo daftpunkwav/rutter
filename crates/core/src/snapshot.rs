@@ -4,7 +4,7 @@
 //! a serialized DOM tree lives in `rutter-observe`, including the
 //! culling and folding policy. The text
 //! rendering follows a YAML style, one node per
-//! line: `- button "Sign in" [ref=e17]`, children indented two spaces.
+//! line: `- button "Sign in" [ref=e17-9x2f]`, children indented two spaces.
 
 use std::fmt;
 

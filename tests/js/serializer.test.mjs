@@ -53,9 +53,25 @@ test('an actionable element carries a ref and a generic one does not', () => {
   const [button, generic] = envelope.root.children;
   assert.equal(button.role, 'button');
   assert.equal(button.name, 'Save');
-  assert.match(button.ref, /^e\d+$/, 'an actionable element is addressable');
+  assert.match(button.ref, /^e\d+-[a-z0-9]+$/, 'an actionable element is addressable');
   assert.equal(generic.role, 'generic');
   assert.equal(generic.ref, undefined, 'a generic element is not actionable');
+});
+
+test('two documents mint disjoint refs even at the same counter', () => {
+  // The regression this pins: every document counts its refs from 1,
+  // so two snapshotted pages used to hold the same `e17` and, after a
+  // tab switch, a stale reference silently addressed the other page's
+  // own element. The per-document scope makes the counters collide
+  // without the scopes.
+  const pageA = pageOver(el('body', {}, [el('button', {}, ['Save'])]));
+  const pageB = pageOver(el('body', {}, [el('button', {}, ['Save'])]));
+  const refA = pageA.run(SERIALIZER_JS).root.children[0].ref;
+  const refB = pageB.run(SERIALIZER_JS).root.children[0].ref;
+  assert.match(refA, /^e1-/);
+  assert.match(refB, /^e1-/);
+  assert.notEqual(refA, refB, 'the scopes keep one page stale ref from hitting the other');
+  assert.equal(pageA.run(SERIALIZER_JS).root.children[0].ref, refA, 'scope is stable per document');
 });
 
 test('a snapshot below the sweep threshold leaves the store alone', () => {
@@ -102,7 +118,7 @@ test('a snapshot sweeps the refs whose elements the page collected', () => {
     1,
     'the sweep dropped every collected ref; only the new element remains'
   );
-  assert.equal(store.counter, 601, 'a sweep renumbers nothing; the new ref is e601');
+  assert.equal(store.counter, 601, 'a sweep renumbers nothing; the new ref starts at e601');
 });
 
 test('the sweep spares the refs whose elements are still alive', () => {
@@ -111,7 +127,7 @@ test('the sweep spares the refs whose elements are still alive', () => {
   // element the same ref.
   const buttons = Array.from({ length: 600 }, (_, i) => el('button', {}, [`b${i}`]));
   const page = pageOver(el('body', {}, buttons));
-  page.run(SERIALIZER_JS);
+  const first = page.run(SERIALIZER_JS);
   const store = page.window.__rutterRefStore;
   assert.equal(collectRange(page, 0, 500).marked, 500, 'the first five hundred went away');
 
@@ -121,10 +137,10 @@ test('the sweep spares the refs whose elements are still alive', () => {
   assert.equal(rendered.length, 600, 'the same document is still fully rendered');
   assert.equal(
     rendered[500].ref,
-    'e501',
+    first.root.children[500].ref,
     'a live element keeps the ref it was first given'
   );
-  assert.equal(rendered[599].ref, 'e600', 'and so does the last');
+  assert.equal(rendered[599].ref, first.root.children[599].ref, 'and so does the last');
 });
 
 test('a store with no usable shape is left alone instead of throwing', () => {

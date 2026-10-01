@@ -62,12 +62,14 @@ pub fn files_check_script(reference: &str) -> String {
     FILE_CHECK_TEMPLATE.replace("__REF__", &sanitized(reference))
 }
 
-/// Strips a reference to its alphanumeric core; the only form that may
-/// be embedded into a page script.
+/// Strips a reference to its alphanumeric-and-dash core; the only form
+/// that may be embedded into a page script. The dash is part of the
+/// minted form (`e17-9x2f`) and is inert inside a string literal, so
+/// it survives with the rest of the injection-safe alphabet.
 fn sanitized(reference: &str) -> String {
     reference
         .chars()
-        .filter(char::is_ascii_alphanumeric)
+        .filter(|c| char::is_ascii_alphanumeric(c) || *c == '-')
         .collect()
 }
 
@@ -235,6 +237,14 @@ mod tests {
     fn embeds_the_sanitized_reference() {
         let script = resolver_script("e17");
         assert!(script.contains("\"e17\""));
+    }
+
+    #[test]
+    fn the_scoped_reference_reaches_the_script_intact() {
+        // The dash is part of the minted form; stripping it would turn
+        // a live lookup into a guaranteed miss.
+        let script = resolver_script("e1-fjm1");
+        assert!(script.contains("\"e1-fjm1\""), "scope kept: {script}");
     }
 
     #[test]
