@@ -237,3 +237,125 @@ impl PageHandle for BrokenLens {
         Err(EngineError::Terminated)
     }
 }
+
+/// Pins which engine failures fold into which action-taxonomy entry.
+/// The mapping (`as_action_error`) ends in an `other => Internal`
+/// fallback, so the compiler cannot flag a newly added `EngineError`
+/// variant as undecided; the exhaustive mirror match below breaks the
+/// build instead, forcing the decision to land here — including the
+/// decision to fall back, which is deliberate for the five non-action
+/// failures.
+#[test]
+fn every_engine_error_variant_has_a_decided_action_mapping() {
+    // Exhaustive over `EngineError`: a new variant is a compile error
+    // here until its mapping below is decided on purpose.
+    fn every_variant(error: &EngineError) {
+        match error {
+            EngineError::NavigationFailed { .. }
+            | EngineError::LaunchFailed { .. }
+            | EngineError::Terminated
+            | EngineError::Timeout { .. }
+            | EngineError::Unsupported { .. }
+            | EngineError::Internal { .. }
+            | EngineError::Capacity { .. }
+            | EngineError::DownloadFailed { .. }
+            | EngineError::ReferenceExpired { .. } => {}
+        }
+    }
+
+    let session = SessionId::new("s1");
+    let cases: Vec<(EngineError, ActionError)> = vec![
+        // The deliberate one-to-one mappings.
+        (
+            EngineError::NavigationFailed {
+                url: "https://a.example".to_owned(),
+                cause: rutter_core::error::TransportCause::DnsFailed,
+                detail: "no resolution".to_owned(),
+            },
+            ActionError::NavigationFailed {
+                url: "https://a.example".to_owned(),
+                cause: rutter_core::error::TransportCause::DnsFailed,
+            },
+        ),
+        (
+            EngineError::Terminated,
+            ActionError::EngineTerminated {
+                session: session.clone(),
+            },
+        ),
+        // Engine-level timeouts are reported as the act phase on purpose
+        // (see `as_action_error`); the pin keeps that decision visible.
+        (
+            EngineError::Timeout {
+                operation: "click".to_owned(),
+                elapsed: Duration::from_secs(1),
+            },
+            ActionError::TimedOut {
+                phase: rutter_core::error::WaitPhase::Act,
+                elapsed: Duration::from_secs(1),
+            },
+        ),
+        (
+            EngineError::ReferenceExpired {
+                reference: "e17".to_owned(),
+            },
+            ActionError::ReferenceExpired {
+                reference: rutter_core::reference::Reference::new("e17"),
+            },
+        ),
+        // The deliberate fallbacks: launch, capability, contained bugs,
+        // caps, and download failures are not action-shaped, so they
+        // wear `Internal` while the tool result still carries the
+        // engine's own message.
+        (
+            EngineError::LaunchFailed {
+                detail: "no binary".to_owned(),
+            },
+            ActionError::Internal {
+                detail: String::new(),
+            },
+        ),
+        (
+            EngineError::Unsupported {
+                operation: "op".to_owned(),
+                reason: "no".to_owned(),
+            },
+            ActionError::Internal {
+                detail: String::new(),
+            },
+        ),
+        (
+            EngineError::Internal {
+                detail: "bug".to_owned(),
+            },
+            ActionError::Internal {
+                detail: String::new(),
+            },
+        ),
+        (
+            EngineError::Capacity {
+                detail: "full".to_owned(),
+            },
+            ActionError::Internal {
+                detail: String::new(),
+            },
+        ),
+        (
+            EngineError::DownloadFailed {
+                detail: "gone".to_owned(),
+            },
+            ActionError::Internal {
+                detail: String::new(),
+            },
+        ),
+    ];
+    for (engine, expected) in cases {
+        every_variant(&engine);
+        let mapped = as_action_error(&session, &SessionError::Engine(engine));
+        assert_eq!(
+            std::mem::discriminant(&mapped),
+            std::mem::discriminant(&expected),
+            "the engine failure must keep its decided taxonomy entry, got {mapped:?}"
+        );
+    }
+}

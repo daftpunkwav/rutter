@@ -150,6 +150,13 @@ fn append_line(path: &Path, line: &str) -> std::io::Result<()> {
     }
     let mut options = std::fs::OpenOptions::new();
     options.append(true).create(true);
+    // No Windows sharing-refusal retry here, unlike the storage state's
+    // publish (`is_transient_publish_error` in storage.rs) — one-sided
+    // on purpose: that write renames onto a destination another writer
+    // may hold, which Windows refuses, while this append only opens the
+    // file, and std's default share mode lets concurrent openers
+    // coexist. The interleaving hazard this write does have is handled
+    // by the single-write rule below, not by retrying.
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;

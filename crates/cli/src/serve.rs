@@ -105,22 +105,10 @@ async fn serve_stdio(manager: Arc<SessionManager>) -> Result<(), CliError> {
             message: error.to_string(),
         })?;
 
-    let interrupt = tokio::signal::ctrl_c();
-    let wait = running.waiting();
-    tokio::select! {
-        result = wait => {
-            result.map_err(|error| CliError::StdioTransport {
-                message: error.to_string(),
-            })?;
-        }
-        result = interrupt => {
-            result.map_err(|error| CliError::SignalHandling {
-                mode: "serve".to_owned(),
-                reason: format!("signal handling failed: {error}"),
-            })?;
-        }
-    }
-    Ok(())
+    serve_with_interrupt(running.waiting(), |error| CliError::StdioTransport {
+        message: error.to_string(),
+    })
+    .await
 }
 
 /// Refuses a non-loopback HTTP bind unless the caller confirmed it:
@@ -136,18 +124,39 @@ fn ensure_bind_is_consented(
     Err(CliError::RemoteHttpBind { addr })
 }
 
-/// Serves MCP over streamable HTTP until Ctrl-C fires. The interrupt
-/// must be observed here because `serve_http` otherwise only returns
-/// when the listener fails; without it, no Ctrl-C path could shut the
-/// engine down.
+/// Serves MCP over streamable HTTP until Ctrl-C fires.
 async fn serve_http(
     manager: Arc<SessionManager>,
     addr: std::net::SocketAddr,
 ) -> Result<(), CliError> {
-    let http = rutter_mcp::http::serve_http(manager, addr);
+    // The interrupt must be observed here because `serve_http` otherwise
+    // only returns when the listener fails; without it, no Ctrl-C path
+    // could shut the engine down.
+    serve_with_interrupt(rutter_mcp::http::serve_http(manager, addr), |message| {
+        CliError::HttpTransport { message }
+    })
+    .await
+}
+
+/// Parks on one transport's service future until it ends or Ctrl-C
+/// fires, whichever comes first. The interrupt and its
+/// [`CliError::SignalHandling`] mapping are written once, so the two
+/// transports cannot grow copies that drift from the shutdown contract
+/// `run` relies on: every exit path out of here ends in `run`'s
+/// `manager.shutdown()`.
+async fn serve_with_interrupt<S, T, E>(
+    service: S,
+    map_service_error: impl Fn(E) -> CliError,
+) -> Result<(), CliError>
+where
+    S: std::future::Future<Output = Result<T, E>>,
+{
     let interrupt = tokio::signal::ctrl_c();
     tokio::select! {
-        result = http => result.map_err(|message| CliError::HttpTransport { message }),
+        result = service => {
+            result.map_err(map_service_error)?;
+            Ok(())
+        }
         result = interrupt => {
             result.map_err(|error| CliError::SignalHandling {
                 mode: "serve".to_owned(),

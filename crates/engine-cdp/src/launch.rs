@@ -330,8 +330,11 @@ fn profile_dir() -> Result<PathBuf, EngineError> {
 }
 
 /// 64 bits keyed by OS entropy, the same construction the dashboard
-/// token uses: unpredictable to another process, unlike the pid and the
-/// per-process serial the directory name also carries.
+/// token uses (crates/dashboard/src/lib.rs `generate_token`): kept
+/// inline on purpose — four lines each, in layers that share no crate —
+/// and cross-referenced both ways. Unpredictable to another process,
+/// unlike the pid and the per-process serial the directory name also
+/// carries.
 fn launch_secret() -> u64 {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hash, Hasher};

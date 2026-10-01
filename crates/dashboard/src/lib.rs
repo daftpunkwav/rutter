@@ -242,10 +242,14 @@ const TOKEN_DIGITS: usize = 16;
 
 /// The per-launch token: launch time and process id hashed with a
 /// randomly keyed hasher seeded from OS entropy, so the value is not
-/// predictable from launch circumstances alone. `RUTTER_DASHBOARD_TOKEN`
-/// overrides it for automation — but that override travels in the
-/// environment of the process being supervised, so it belongs to a
-/// trusted launcher rather than to a human-only channel.
+/// predictable from launch circumstances alone. The engine profile
+/// directory's `launch_secret` (crates/engine-cdp/src/launch.rs) is the
+/// same construction; the two stay inline on purpose — four lines each,
+/// in layers that share no crate — and keep step by this comment in
+/// both directions. `RUTTER_DASHBOARD_TOKEN` overrides it for
+/// automation — but that override travels in the environment of the
+/// process being supervised, so it belongs to a trusted launcher rather
+/// than to a human-only channel.
 fn generate_token() -> String {
     if let Ok(token) = std::env::var("RUTTER_DASHBOARD_TOKEN")
         && !token.is_empty()

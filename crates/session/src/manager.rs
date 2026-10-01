@@ -315,6 +315,15 @@ async fn start_running(inner: &Arc<Inner>) -> Result<Running, EngineError> {
     })
 }
 
+/// Whether `id` still names an open session. The recovery loop consults
+/// this before and after each rebuild — its snapshot was taken earlier —
+/// and both checks must answer the same membership question, so the
+/// predicate lives here instead of in two lock-and-`contains_key` copies
+/// that could drift.
+async fn session_is_open(inner: &Arc<Inner>, id: &SessionId) -> bool {
+    inner.sessions.lock().await.contains_key(id)
+}
+
 /// Watches for engine replacements and rebuilds every session:
 /// fresh context, storage-state replay, page restoration, and an
 /// `EngineRestarted` event per session.
@@ -378,7 +387,7 @@ fn spawn_recovery_watcher(
                     // Re-check membership: the snapshot was taken before this
                     // point, and a session closed in the meantime must not be
                     // rebuilt into a context nobody will ever close again.
-                    if !inner.sessions.lock().await.contains_key(session.id()) {
+                    if !session_is_open(&inner, session.id()).await {
                         continue;
                     }
                     match engine.create_context(inner.config.context_config()).await {
@@ -392,7 +401,7 @@ fn spawn_recovery_watcher(
                             // Drop cleanup), and the rebuild's events
                             // re-created the ring the close forgot; finish
                             // both here. An open session is untouched.
-                            if !inner.sessions.lock().await.contains_key(session.id()) {
+                            if !session_is_open(&inner, session.id()).await {
                                 session.close().await;
                                 session.backbone().forget(session.id());
                             }

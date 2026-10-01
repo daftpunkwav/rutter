@@ -345,15 +345,7 @@ impl RutterMcp {
         Parameters(PageParams { page_id }): Parameters<PageParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
-        // An unknown page id is invalid_params, not an action failure.
-        if !session
-            .pages()
-            .await
-            .iter()
-            .any(|page| page.id.as_str() == page_id)
-        {
-            return Err(invalid_params(format!("no open page with id '{page_id}'")));
-        }
+        require_open_page(&session, &page_id).await?;
         match session.select_page(PageId::new(page_id)).await {
             Ok(snapshot) => Ok(snapshot_result(&snapshot)),
             Err(error) => Ok(error_result(&error)),
@@ -380,16 +372,7 @@ impl RutterMcp {
         Parameters(PageParams { page_id }): Parameters<PageParams>,
     ) -> Result<CallToolResult, McpError> {
         let session = self.session().await?;
-        // A page id names an open page, so an unknown id is
-        // invalid_params as in tabs_select, not an action failure.
-        if !session
-            .pages()
-            .await
-            .iter()
-            .any(|page| page.id.as_str() == page_id)
-        {
-            return Err(invalid_params(format!("no open page with id '{page_id}'")));
-        }
+        require_open_page(&session, &page_id).await?;
         match session.close_page(PageId::new(page_id)).await {
             Ok(confirmation) => Ok(CallToolResult::success(vec![ContentBlock::text(
                 confirmation,
@@ -506,6 +489,24 @@ impl RutterMcp {
             Err(error) => Ok(error_result(&error)),
         }
     }
+}
+
+/// Refuses a page id the session does not track. A page id names an
+/// open page, so an unknown id is a client error (`invalid_params`),
+/// not an action failure; both page-naming tools share the gate so they
+/// cannot drift into disagreeing about what an unknown id means. The
+/// listing runs first, so the discovery pass adopts foreign pages
+/// exactly as it did before the gate.
+async fn require_open_page(session: &Session, page_id: &str) -> Result<(), McpError> {
+    if session
+        .pages()
+        .await
+        .iter()
+        .any(|page| page.id.as_str() == page_id)
+    {
+        return Ok(());
+    }
+    Err(invalid_params(format!("no open page with id '{page_id}'")))
 }
 
 #[tool_handler]
