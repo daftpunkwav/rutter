@@ -133,7 +133,30 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                             break;
                         }
                     }
-                    None => current = None,
+                    None => {
+                        // The capture ended without the viewer stopping
+                        // it — the page closed, the engine restarted,
+                        // the transport tore the capture down. A
+                        // notice keeps the last frame from posing as a
+                        // live one. A viewer's own stop never reaches
+                        // this branch: that stream is dropped before
+                        // it is polled again, so the notice fires once
+                        // per stream and only for ends nobody asked
+                        // for. `next_frame` carries no cause across
+                        // its `None`, so the reason stays the fixed
+                        // phrase rather than a guess.
+                        let stopped = serde_json::json!({
+                            "type": "screencast-stopped",
+                            "reason": "capture ended",
+                        });
+                        if send_within(&mut socket, Message::text(stopped.to_string()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                        current = None;
+                    }
                 }
             }
             incoming = socket.recv() => {
