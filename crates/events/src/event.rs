@@ -51,6 +51,13 @@ pub enum Event {
         /// Effective URL after redirects.
         url: String,
     },
+    /// A page became the session's active one (`tabs_select`); until
+    /// this event existed the switch was visible to consumers only
+    /// through the next action's events.
+    PageActivated {
+        /// The page that became active.
+        page: PageId,
+    },
     /// An action was requested; recorded before execution starts.
     ActionRequested {
         /// Page the action targets.
@@ -157,6 +164,21 @@ mod tests {
         assert_eq!(back, event);
         assert!(
             json.contains(r#""type":"dialog_auto_dismissed""#),
+            "tagged enum: {json}"
+        );
+    }
+
+    #[test]
+    fn the_page_activation_event_round_trips_through_json() {
+        let event = Event::PageActivated {
+            page: PageId::new("ctx-1:page-0"),
+        };
+
+        let json = serde_json::to_string(&event).expect("serialize");
+        let back: Event = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, event);
+        assert!(
+            json.contains(r#""type":"page_activated""#),
             "tagged enum: {json}"
         );
     }

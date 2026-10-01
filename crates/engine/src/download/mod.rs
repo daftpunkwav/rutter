@@ -6,13 +6,17 @@
 //! manifest over the network. Nothing else in the codebase launches or
 //! downloads engines directly.
 
-pub mod fetch;
-pub mod manifest;
-pub mod store;
+// The pipeline stages stay private: consumers resolve an engine through
+// `ensure` alone, and the manifest/fetch/store mechanics are not contract.
+mod fetch;
+mod manifest;
+mod store;
 
 use std::path::{Path, PathBuf};
 
-pub use store::{EngineStore, InstalledEngine};
+use store::EngineStore;
+
+pub use store::InstalledEngine;
 
 use crate::error::EngineError;
 

@@ -75,8 +75,12 @@ injected serializer (page)       rutter-observe
 
 - 序列化器在 `window` 上维护每页存储（`__rutterRefStore`：铸造
   ref 的 `WeakMap<Element, string>`、解析 ref 的反向
-  `Map<string, WeakRef<Element>>`，加整数计数器）。可操作元素第一次被
-  观察到时获得 `e<N>`，并在同一页面的后续快照中保持不变。
+  `Map<string, WeakRef<Element>>`、整数计数器，以及每文档随机的
+  `scope`）。可操作元素第一次被观察到时获得 `e<N>-<scope>`（例如
+  `e17-9x2f`，4 字符 base36 随机 scope），并在同一页面的后续快照中
+  保持不变。scope 为每文档的 ref 划定命名空间：每份文档都从 1 计数，
+  若无 scope，两份被快照过的页面可能同时持有 `e17`，切换标签页后
+  旧引用会静默解析到另一页面自己的元素上。
 - 反向 Map 在两次快照之间清扫：元素已被页面回收的条目会被丢弃，
   于是长时间存活的动态文档不会随着它展示过的每一个元素一起增长
   （浏览器进程也不会）。被回收元素的引用在清扫前同样解析为
@@ -84,19 +88,19 @@ injected serializer (page)       rutter-observe
 - v1 可操作 role：`button`、`link`、`textbox`、`searchbox`、
   `checkbox`、`radio`、`combobox`、`listbox`、`option`、`menuitem`、
   `tab`、`slider`、`spinbutton`、`switch`、`treeitem`。
-- 导航之后计数器重置；旧引用不再匹配任何元素，解析为
-  `ActionError::ReferenceExpired`。
+- 导航之后计数器与 scope 一并重新铸造；旧引用不再匹配任何元素，
+  解析为 `ActionError::ReferenceExpired`。
 
 ## 5. 文本渲染（YAML 风格）
 
 每行一个节点，子节点每层缩进两格：
 
 ```
-- button "Sign in" [checked] [ref=e17]
+- button "Sign in" [checked] [ref=e17-9x2f]
 ```
 
 后缀按此顺序渲染：`"name"`（名称中的双引号转义为 `\"`）、
-`[checked]`（仅 true 时）、`[disabled]`（仅 true 时）、`[ref=eN]`、
+`[checked]`（仅 true 时）、`[disabled]`（仅 true 时）、`[ref=eN-scope]`、
 `× N`（折叠子树计数，[令牌预算](#6-token-预算v1)）。折叠摘要行渲染为 `- listitem × 20`
 （被折叠项的 role，数量 `× N`）。该格式由 `rutter-core` 中
 `Snapshot` 的 `Display` 实现，由其单元测试钉住。

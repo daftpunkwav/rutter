@@ -22,6 +22,30 @@
   // the collected ones out. See pruneRefs.
   var REF_SWEEP_AT = 512;
 
+  // How many base36 characters a per-document ref scope carries. See
+  // mintScope.
+  var REF_SCOPE_CHARS = 4;
+
+  // Mints the scope every ref of one document carries.
+  //
+  // Each document counts its refs from 1, so two pages that were both
+  // snapshotted can hold the same `e17`. The resolver looks a
+  // reference up in whichever page is active and reports `missing`
+  // only when the store has no such ref, so after switching tabs a
+  // stale `e17` would silently resolve to the other page's own
+  // `e17` -- the wrong element, with no error. Suffixing one random
+  // scope shared by all of a document's refs (the store's lifetime is
+  // the document's) makes a cross-page hit need the counter and the
+  // scope to collide at once, while same-page refs keep the stability
+  // the snapshot format promises.
+  function mintScope() {
+    var scope = '';
+    while (scope.length < REF_SCOPE_CHARS) {
+      scope += Math.random().toString(36).slice(2);
+    }
+    return scope.slice(0, REF_SCOPE_CHARS);
+  }
+
   var SKIPPED_TAGS = {
     SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, HEAD: 1,
     META: 1, LINK: 1, TITLE: 1, BR: 1, BASE: 1, DATALIST: 1
@@ -95,11 +119,13 @@
       if (!window.__rutterRefStore) {
         // `map` mints refs (element -> ref); `reverse` resolves them
         // (ref -> WeakRef<element>) for the action executor. WeakRefs
-        // let garbage-collected elements resolve to nothing.
+        // let garbage-collected elements resolve to nothing. `scope`
+        // namespaces every ref this document mints; see mintScope.
         window.__rutterRefStore = {
           map: new WeakMap(),
           reverse: new Map(),
-          counter: 0
+          counter: 0,
+          scope: mintScope()
         };
       }
       pruneRefs(window.__rutterRefStore);
@@ -265,7 +291,7 @@
       var existing = store.map.get(el);
       if (existing) return existing;
       store.counter += 1;
-      var ref = 'e' + String(store.counter);
+      var ref = 'e' + String(store.counter) + '-' + store.scope;
       store.map.set(el, ref);
       store.reverse.set(ref, new WeakRef(el));
       return ref;

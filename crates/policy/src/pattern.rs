@@ -53,7 +53,7 @@ impl Pattern {
     /// except for the scheme and host, which URLs lowercase anyway.
     ///
     /// Precondition: `url` is the canonical form to judge — the output
-    /// of [`crate::canonical::canonical_url`] (lowercased host, default
+    /// of `crate::canonical::canonical_url` (lowercased host, default
     /// port gone, trailing root dot normalized). A raw agent-supplied
     /// string passed here verbatim can carry spellings a pattern was
     /// never written for (`EVIL.example:443`, a `user@host` decoy);

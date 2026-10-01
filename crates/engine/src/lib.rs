@@ -16,7 +16,9 @@
 // assertions and unwrapping on fixtures.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
-pub mod backoff;
+// `backoff` is the supervisor's and the downloader's timing mechanics;
+// no consumer names it, so it stays an implementation detail.
+mod backoff;
 pub mod config;
 pub mod context;
 pub mod descriptor;
@@ -28,7 +30,6 @@ pub mod input;
 pub mod page;
 pub mod supervisor;
 
-pub use backoff::Backoff;
 pub use config::{ContextConfig, LaunchMode};
 pub use context::ContextHandle;
 pub use descriptor::{EngineBackend, EngineCapabilities, EngineDescriptor};

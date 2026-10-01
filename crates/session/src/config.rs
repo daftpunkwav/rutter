@@ -33,8 +33,10 @@ pub struct SessionConfig {
 }
 
 impl SessionConfig {
-    /// Context caps handed to the engine.
-    pub fn context_config(&self) -> ContextConfig {
+    /// Context caps handed to the engine. Crate-internal: only the
+    /// manager names the engine's config type, and consumers depend on
+    /// `rutter-session` alone (see the crate boundary note).
+    pub(crate) fn context_config(&self) -> ContextConfig {
         ContextConfig {
             max_pages: self.max_pages,
             navigation_timeout: self.navigation_timeout,

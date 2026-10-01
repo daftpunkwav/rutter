@@ -115,8 +115,9 @@ fn park_reference(snapshot: &str) -> String {
         .find(marker)
         .unwrap_or_else(|| panic!("snapshot must contain {marker}: {snapshot}"));
     let tail = &snapshot[start + marker.len()..];
+    // The minted form carries a `-scope` suffix; the ref ends at `]`.
     tail.chars()
-        .take_while(|c| c.is_ascii_alphanumeric())
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
         .collect()
 }
 

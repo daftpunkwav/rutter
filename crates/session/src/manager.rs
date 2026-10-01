@@ -220,8 +220,10 @@ impl SessionManager {
         session.backbone().forget(id);
     }
 
-    /// Shuts the engine down; open sessions die with it, but their
-    /// storage states remain on disk and reload on the next start.
+    /// Shuts the engine down; open sessions die with it. Their storage
+    /// states stay on disk for an explicit `load_storage` to read;
+    /// nothing loads them automatically — a fresh session starts from
+    /// an empty state.
     pub async fn shutdown(&self) {
         let supervisor = {
             let mut engine = self.inner.engine.write().await;

@@ -19,6 +19,10 @@ rutter-core = { workspace = true }
 # (docs/policy.md).
 rutter-policy = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
+
+# The event types round-trip through serde only; the JSON representation
+# itself is asserted by tests alone (production code never parses events).
+[dev-dependencies]
+serde_json = { workspace = true }

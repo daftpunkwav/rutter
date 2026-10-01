@@ -75,6 +75,19 @@
         if (envelope.reason) { append(t('screencastRefused') + ' ' + envelope.reason); }
         return;
       }
+      if (envelope.type === 'screencast-stopped') {
+        // The capture ended on the server side (a closed page, an
+        // engine restart); without this the last frame would sit
+        // there posing as a live one. Resuming is the viewer's call,
+        // not an automatic reconnect.
+        var frame = document.getElementById('live-frame');
+        if (frame) {
+          if (frame.src.startsWith('blob:')) { URL.revokeObjectURL(frame.src); }
+          frame.hidden = true;
+        }
+        append(t('screencastStopped') + ' ' + envelope.reason);
+        return;
+      }
       render(envelope);
     };
     socket.onopen = function () { reconnectDelay = 1000; };

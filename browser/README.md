@@ -48,3 +48,36 @@ Chromium major stays within one step of the engine's Chrome for
 Testing line, then run the integration and e2e suites against the
 real pair — that is the compatibility contract, not the version
 numbers themselves.
+
+## Security gates
+
+Electron's defaults grant more than this shell should, so the shell
+pins its own:
+
+- **Permissions default to deny.** Permission requests and Chromium's
+  synchronous permission checks resolve through one predicate
+  (`browser/permission-gate.js`): only `fullscreen`, `pointerLock`,
+  and `clipboard-sanitized-write` — the powers that cannot pull data
+  off the machine — are granted; geolocation, camera, notifications,
+  and everything unlisted are refused. The gate is attached to the
+  default session and re-attached to every session created later
+  (`app.on('session-created')`), so no session inherits the allow-all
+  default.
+- **One navigation whitelist.** Renderer-initiated top-level
+  navigation (`will-navigate`) is gated by the same `isWebSchemeUrl`
+  predicate the main-process entry points use, so a page cannot steer
+  any window to `file:`, `devtools:`, or `javascript:` URLs.
+  Programmatic `loadFile`/`loadURL` never fire `will-navigate`, so the
+  shell's own toolbar and start targets are unaffected.
+- **Pinned renderer settings.** Both the toolbar window and the shared
+  view set `contextIsolation: true`, `nodeIntegration: false`,
+  `sandbox: true`, and `webviewTag: false` explicitly instead of
+  leaning on defaults that can drift across Electron releases.
+- **The navigate channel checks its sender.** Only a frame whose URL
+  is the toolbar document (`file://.../toolbar.html`, the same matcher
+  the Rust attach fallback uses) may send `navigate`; anything else is
+  ignored.
+
+Both gate predicates run in `scripts/check_js.sh`
+(`tests/js/scheme-gate.test.mjs`, `tests/js/permission-gate.test.mjs`),
+so the shipped refusals are pinned next to the acceptances.

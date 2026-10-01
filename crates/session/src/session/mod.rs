@@ -461,14 +461,17 @@ impl Session {
         }
     }
 
-    /// Makes another page active and returns its snapshot. No event is
-    /// published; the page switch is visible to consumers only through
-    /// the next action's events.
+    /// Makes another page active and returns its snapshot. The switch
+    /// publishes `PageActivated`, so the timeline names when the active
+    /// page changed and to which page — not only the next action's
+    /// events.
     pub async fn select_page(&self, page_id: PageId) -> Result<Snapshot, SessionError> {
         let handle = self
             .pages
             .activate(&page_id)
             .ok_or_else(|| unknown_page(&page_id))?;
+        self.backbone
+            .publish(self.id.clone(), Event::PageActivated { page: page_id });
         PageOps {
             page: handle.as_ref(),
             config: &self.config,
@@ -846,6 +849,13 @@ impl Session {
         let _ = context.close().await;
         self.pages.clear();
         self.feeds.clear();
+    }
+
+    /// The active page's id, if any page is tracked. A read-only
+    /// lookup like [`Session::console_messages`]: no engine roundtrip
+    /// and no page ever opens, unlike [`Session::pages`].
+    pub fn active_page_id(&self) -> Option<PageId> {
+        self.pages.active().map(|(page_id, _)| page_id)
     }
 
     /// The active page's console output and uncaught exceptions, oldest

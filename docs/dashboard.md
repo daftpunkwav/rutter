@@ -141,3 +141,16 @@ viewer loses frames, not memory, and the capture can never block
 action execution. CDP stops screencasts on navigation; the transport
 restarts the capture on the navigation event
 ([engine supervision](engine-supervision.md#4-cdp-transport-notes)).
+
+A stream can also end without its viewer asking — the page closed, the
+engine restarted, the transport tore the capture down. The server then
+sends the watching socket one text control frame,
+`{"type":"screencast-stopped","reason":"capture ended"}`, before the
+frames stop, so the last JPEG is never mistaken for a live one. The
+`reason` is a short cause phrase at the same trust level as a
+`screencast-ack` refusal's (the frontend renders it as text). A stop
+the viewer asked for — `on: false`, or dropping the connection — never
+produces one: that stream is dropped without being polled to its end,
+and starting a new stream over a live one replaces it the same way.
+Resuming after an end is the viewer's decision; nothing reconnects or
+restarts the capture on its own.

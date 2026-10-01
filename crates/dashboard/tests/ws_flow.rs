@@ -426,6 +426,95 @@ async fn screencast_of_an_open_page_acks_started() {
 }
 
 #[tokio::test]
+async fn a_stream_that_ends_on_its_own_notifies_the_viewer() {
+    // The stub engine's screencast is an already-drained stream: its
+    // sender is dropped the moment it is handed over, so the first
+    // poll ends the capture exactly the way a closed page or a
+    // restarted engine ends a real one. The viewer must be told, or
+    // the last frame sits on screen posing as a live one.
+    let serving = serve().await;
+    let session = serving
+        .manager
+        .session(SessionId::new("s-live"))
+        .await
+        .expect("the stub engine opens a session");
+    session.open_page(None).await.expect("the stub page opens");
+    let mut stream = connect(&serving).await;
+    stream
+        .send(Message::text(
+            serde_json::json!({"type": "screencast", "on": true, "session": "s-live"}).to_string(),
+        ))
+        .await
+        .expect("send screencast on");
+    let ack = next_of_type(&mut stream, "screencast-ack").await;
+    assert_eq!(ack["started"], true, "the stream starts: {ack}");
+
+    let stopped = next_of_type(&mut stream, "screencast-stopped").await;
+    assert!(
+        !stopped["reason"].as_str().expect("a reason").is_empty(),
+        "the notice names its cause: {stopped}"
+    );
+}
+
+#[tokio::test]
+async fn a_viewers_own_stop_sends_no_stopped_notice() {
+    // Stopping by the book takes the stream down by dropping it —
+    // never by polling it to its end — so no `screencast-stopped` may
+    // follow an `on: false`: the notice is for captures that die
+    // without the viewer asking.
+    let serving = serve().await;
+    let session = serving
+        .manager
+        .session(SessionId::new("s-live"))
+        .await
+        .expect("the stub engine opens a session");
+    session.open_page(None).await.expect("the stub page opens");
+    let mut stream = connect(&serving).await;
+    stream
+        .send(Message::text(
+            serde_json::json!({"type": "screencast", "on": true, "session": "s-live"}).to_string(),
+        ))
+        .await
+        .expect("send screencast on");
+    let ack = next_of_type(&mut stream, "screencast-ack").await;
+    assert_eq!(ack["started"], true, "the stream starts: {ack}");
+
+    stream
+        .send(Message::text(
+            serde_json::json!({"type": "screencast", "on": false}).to_string(),
+        ))
+        .await
+        .expect("send screencast off");
+    let ack = next_of_type(&mut stream, "screencast-ack").await;
+    assert_eq!(ack["started"], false, "the viewer's stop is acked: {ack}");
+
+    // One socket carries one ordered stream and this loop answers in
+    // order: a notice emitted by the off-branch would have to sit
+    // between this ack and the reply to the next message. The raw
+    // next frame is read exactly so the assertion covers the
+    // immediate successor — `next_of_type` skips, and a skipped
+    // notice would prove nothing.
+    let (approval, receiver) = serving.manager.broker().open();
+    stream
+        .send(Message::text(
+            serde_json::json!({
+                "type": "decision",
+                "request_id": approval.as_str(),
+                "grant": true,
+            })
+            .to_string(),
+        ))
+        .await
+        .expect("send decision after the stop");
+    let ack = next_json(&mut stream).await;
+    assert_eq!(
+        ack["type"], "decision-ack",
+        "nothing answers the stop but its ack: {ack}"
+    );
+    assert_eq!(receiver.await.expect("delivered"), Decision::Grant);
+}
+
+#[tokio::test]
 async fn a_decision_flood_is_acked_without_wedging_the_loop() {
     // The decision reply used to be handed to a bounded channel whose
     // only reader was this same select loop, so a client that out-ran

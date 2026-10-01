@@ -170,6 +170,22 @@ async fn select_page_switches_activity_and_unknown_pages_fail() {
         ),
         "an unknown page is not interactable, not an engine failure"
     );
+
+    // The switch lands on the timeline exactly once, naming the page,
+    // and a refused select publishes nothing.
+    let replay = session.backbone().replay(&SessionId::new("s-test"));
+    let activated: Vec<PageId> = replay
+        .iter()
+        .filter_map(|envelope| match &envelope.event {
+            Event::PageActivated { page } => Some(page.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        activated,
+        vec![second],
+        "the switch is announced exactly once, naming the page"
+    );
     let _ = first;
 }
 
