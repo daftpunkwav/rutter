@@ -16,6 +16,8 @@ const fs = require("fs");
 const net = require("net");
 const path = require("path");
 
+const { isWebSchemeUrl } = require("./scheme-gate.js");
+
 const TOOLBAR_HEIGHT = 48;
 const START_PAGE = "start.html";
 
@@ -74,15 +76,8 @@ function publishPort() {
   }
 }
 
-// The shared view's scheme gate: only web pages (and the blank start
-// target) may drive it. Both entry points that can navigate the shared
-// view — web content's window.open and the toolbar's navigate channel
-// — test this one predicate, so the whitelist exists once and the two
-// paths cannot drift into disagreeing about what may reach the page
-// (no file:, devtools:, or javascript: URLs through the main process).
-function isWebSchemeUrl(url) {
-  return /^https?:\/\//i.test(url) || url === "about:blank";
-}
+// The scheme gate itself lives in scheme-gate.js, shared by both
+// navigation entry points and tested from tests/js.
 
 function contentBounds() {
   const { width, height } = win.getContentBounds();

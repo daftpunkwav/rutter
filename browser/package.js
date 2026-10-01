@@ -24,7 +24,9 @@ fs.copyFileSync(
   path.join(dist, "RutterBrowser.exe"),
 );
 fs.mkdirSync(path.join(resources, "app"), { recursive: true });
-for (const file of ["package.json", "main.js", "preload.js", "toolbar.html", "start.html"]) {
+// The manifest must name every file main.js requires locally:
+// scheme-gate.js missing here would package a browser that cannot start.
+for (const file of ["package.json", "main.js", "preload.js", "scheme-gate.js", "toolbar.html", "start.html"]) {
   fs.cpSync(path.join(root, file), path.join(resources, "app", file));
 }
 console.log(`packaged: ${path.join(dist, "RutterBrowser.exe")}`);
