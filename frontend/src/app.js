@@ -239,21 +239,32 @@
     if (node) { node.remove(); }
   }
 
+  // Milliseconds a decision post may take before it is abandoned. The
+  // server answers in milliseconds when it is alive; a post that hangs
+  // this long is a wedged server, and the operator must see the failure
+  // instead of a card that sits there looking undecided.
+  var DECIDE_TIMEOUT = 10000;
+
   function decide(requestId, grant) {
     // A decision that never lands leaves the agent parked until its
     // window closes, so a failed post is surfaced in the timeline
     // instead of looking like a grant that did nothing.
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, DECIDE_TIMEOUT);
     fetch(withToken('/api/decisions'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ request_id: requestId, grant: grant })
+      body: JSON.stringify({ request_id: requestId, grant: grant }),
+      signal: controller.signal
     })
       .then(function (response) {
+        clearTimeout(timer);
         if (!response.ok) {
           append(t('decisionRefused') + ' ' + requestId + ' (' + response.status + ')');
         }
       })
       .catch(function () {
+        clearTimeout(timer);
         append(t('decisionUnreachable') + ' ' + requestId);
       });
   }

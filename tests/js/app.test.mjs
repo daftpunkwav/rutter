@@ -301,6 +301,29 @@ test('an unreachable decision endpoint is surfaced too', async () => {
   assert.equal(timeline(ids), 'decision could not be sent: apr-1');
 });
 
+test('a decision post that never answers is abandoned by its timeout', async () => {
+  // A wedged server would otherwise hold the post open forever and the
+  // operator would read the sitting card as an undecided approval. The
+  // abort timer is the answer: it fires, the fetch rejects, and the
+  // failure lands in the timeline like any other unreachable post.
+  const { socket, ids, timers } = await boot({
+    post: (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+      }),
+  });
+  socket.deliver(APPROVAL);
+  const [grant] = cards(ids)[0].childNodes.filter((node) => node.tagName === 'BUTTON');
+  grant.onclick();
+  await flush();
+  assert.equal(timeline(ids), '', 'a hanging post says nothing yet');
+  assert.equal(timers.length, 1, 'one abandonment timer is registered');
+  assert.equal(timers[0].ms, 10000);
+  timers[0].fn();
+  await flush();
+  assert.equal(timeline(ids), 'decision could not be sent: apr-1');
+});
+
 test('screencast control is refused locally while the socket is down', async () => {
   // A screencast on a dead socket would be dropped by the server
   // with no ack, leaving the operator waiting on a frame that can

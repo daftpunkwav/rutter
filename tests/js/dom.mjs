@@ -341,6 +341,7 @@ export function createPage({ document, window: windowExtras = {}, extra = {} } =
   const sandbox = {
     document,
     console,
+    AbortController,
     WeakMap,
     Map,
     Set,

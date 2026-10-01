@@ -20,6 +20,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use rutter_core::ids::SessionId;
 use rutter_engine::config::LaunchMode;
@@ -31,6 +32,26 @@ use rutter_policy::{ApprovalBroker, RuleSet};
 use crate::config::SessionConfig;
 use crate::error::SessionError;
 use crate::session::Session;
+
+/// How many rounds one bump's recovery spends on sessions whose
+/// rebuild context failed. A failed rebuild usually means the fresh
+/// engine died again; retrying on the watcher's own schedule keeps a
+/// session off its dead context without waiting for the next engine
+/// replacement to happen to land. Bounded, so a wedged engine cannot
+/// pin the watcher — the sole recovery driver — for longer than these
+/// rounds: a failure that outlives them waits for the next replacement
+/// bump, which runs a fresh pass.
+const RECOVERY_ROUNDS: u32 = 3;
+
+/// Pause before recovery round `round` (0-based): the first round runs
+/// immediately, the retries wait 500 ms and then 1 s.
+fn recovery_retry_delay(round: u32) -> Duration {
+    match round {
+        0 => Duration::ZERO,
+        1 => Duration::from_millis(500),
+        _ => Duration::from_secs(1),
+    }
+}
 
 /// The running supervisor plus the event backbone that belongs to it.
 ///
@@ -338,39 +359,60 @@ fn spawn_recovery_watcher(
                 "rutter: engine restarted; recovering {} session(s)",
                 pending.len()
             );
-            // Ask the supervisor for the engine that replaced the dead
-            // one; a cached `Arc` would still point at the dead instance.
-            let Ok(engine) = running.supervisor.engine().await else {
-                eprintln!("rutter: engine unavailable during recovery");
-                continue;
-            };
-            for session in pending {
-                // Re-check membership: the snapshot was taken before this
-                // point, and a session closed in the meantime must not be
-                // rebuilt into a context nobody will ever close again.
-                if !inner.sessions.lock().await.contains_key(session.id()) {
-                    continue;
-                }
-                match engine.create_context(inner.config.context_config()).await {
-                    Ok(context) => {
-                        session.recover(context).await;
-                        // The rebuild runs outside the map lock, so a
-                        // close can land while it is in flight — the
-                        // membership check above passed before that. A
-                        // closed session holds the fresh context with
-                        // nothing left to close it (contexts have no
-                        // Drop cleanup), and the rebuild's events
-                        // re-created the ring the close forgot; finish
-                        // both here. An open session is untouched.
-                        if !inner.sessions.lock().await.contains_key(session.id()) {
-                            session.close().await;
-                            session.backbone().forget(session.id());
+            // Rebuild rounds: each round attempts every session still
+            // pending once. A failed context creation usually means the
+            // fresh engine died again, so every round re-asks the
+            // supervisor for the engine that owns the slot now — a
+            // cached `Arc` would still point at the dead instance — and
+            // a round finding no engine hands the rest to the
+            // replacement bump that is on its way.
+            let mut remaining = pending;
+            for round in 0..RECOVERY_ROUNDS {
+                tokio::time::sleep(recovery_retry_delay(round)).await;
+                let Ok(engine) = running.supervisor.engine().await else {
+                    eprintln!("rutter: engine unavailable during recovery");
+                    break;
+                };
+                let mut failed = Vec::new();
+                for session in remaining {
+                    // Re-check membership: the snapshot was taken before this
+                    // point, and a session closed in the meantime must not be
+                    // rebuilt into a context nobody will ever close again.
+                    if !inner.sessions.lock().await.contains_key(session.id()) {
+                        continue;
+                    }
+                    match engine.create_context(inner.config.context_config()).await {
+                        Ok(context) => {
+                            session.recover(context).await;
+                            // The rebuild runs outside the map lock, so a
+                            // close can land while it is in flight — the
+                            // membership check above passed before that. A
+                            // closed session holds the fresh context with
+                            // nothing left to close it (contexts have no
+                            // Drop cleanup), and the rebuild's events
+                            // re-created the ring the close forgot; finish
+                            // both here. An open session is untouched.
+                            if !inner.sessions.lock().await.contains_key(session.id()) {
+                                session.close().await;
+                                session.backbone().forget(session.id());
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("rutter: recovery context failed: {error}");
+                            failed.push(session);
                         }
                     }
-                    Err(error) => {
-                        eprintln!("rutter: recovery context failed: {error}");
-                    }
                 }
+                remaining = failed;
+                if remaining.is_empty() {
+                    break;
+                }
+            }
+            if !remaining.is_empty() {
+                eprintln!(
+                    "rutter: {} session(s) stayed unrecovered; they rebuild on the next engine replacement",
+                    remaining.len()
+                );
             }
         }
     });
@@ -391,7 +433,7 @@ mod tests {
     use rutter_engine::descriptor::{EngineBackend, EngineCapabilities, EngineDescriptor};
     use rutter_engine::health::HealthReport;
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
     /// An engine whose contexts are observable and whose `create_context`
     /// can be made to fail on demand — or to park, so a test can
@@ -400,6 +442,9 @@ mod tests {
     struct RecoveryEngine {
         fail_contexts: AtomicBool,
         contexts: Mutex<Vec<Arc<MockContext>>>,
+        /// Every `create_context` entry, counted; the retry tests read
+        /// it to prove a second attempt ran without a second bump.
+        create_calls: AtomicU64,
         /// When set, the first `create_context` reports entry through the
         /// sender and then parks until the receiver fires: a controllable
         /// slow engine round trip.
@@ -434,6 +479,7 @@ mod tests {
             // it: the parked span is the window the test interleaves a
             // close into. The guard's scope ends before the await (the
             // future must stay `Send`).
+            self.create_calls.fetch_add(1, Ordering::SeqCst);
             let gate = self
                 .context_gate
                 .lock()
@@ -491,6 +537,7 @@ mod tests {
             let engine = Arc::new(RecoveryEngine {
                 fail_contexts: AtomicBool::new(false),
                 contexts: Mutex::new(Vec::new()),
+                create_calls: AtomicU64::new(0),
                 context_gate: Mutex::new(
                     self.context_gate
                         .lock()
@@ -777,6 +824,60 @@ mod tests {
             session.pages().await.len(),
             1,
             "the old tracking survives the failed rebuild"
+        );
+        running.supervisor.shutdown().await;
+    }
+
+    #[test]
+    fn recovery_retry_delays_run_now_then_back_off() {
+        assert_eq!(recovery_retry_delay(0), Duration::ZERO);
+        assert_eq!(recovery_retry_delay(1), Duration::from_millis(500));
+        assert_eq!(recovery_retry_delay(2), Duration::from_secs(1));
+        assert_eq!(
+            recovery_retry_delay(9),
+            Duration::from_secs(1),
+            "the pause stops growing"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_rebuild_retries_without_waiting_for_the_next_bump() {
+        // The first rebuild round fails; the retry rounds must follow on
+        // their own schedule — no second bump is sent — and the session
+        // must actually recover once the engine answers again.
+        let launcher = Arc::new(RecoveryLauncher {
+            engines: Mutex::new(Vec::new()),
+            context_gate: Mutex::new(None),
+        });
+        let inner = test_inner(Arc::clone(&launcher));
+        let (running, engine) = start_test_running(Arc::clone(&launcher)).await;
+        *inner.engine.write().await = Some(Arc::clone(&running));
+        let session = seeded_session(&running, &inner).await;
+
+        engine.fail_contexts.store(true, Ordering::SeqCst);
+        let (tx, rx) = tokio::sync::watch::channel(0_u64);
+        baselined(spawn_recovery_watcher(&inner, rx)).await;
+        tx.send_modify(|count| *count += 1);
+
+        // A second create_context call is the retry itself: single-pass
+        // recovery would stop at one and this wait would time out.
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while engine.create_calls.load(Ordering::SeqCst) < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the failed rebuild is retried without a new bump");
+
+        engine.fail_contexts.store(false, Ordering::SeqCst);
+        wait_for_event(&running.backbone, &SessionId::new("s1"), |event| {
+            matches!(event, Event::EngineRestarted)
+        })
+        .await;
+        assert_eq!(
+            session.pages().await.len(),
+            1,
+            "the retried rebuild restores the tracked page"
         );
         running.supervisor.shutdown().await;
     }
