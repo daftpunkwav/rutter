@@ -74,6 +74,16 @@ function publishPort() {
   }
 }
 
+// The shared view's scheme gate: only web pages (and the blank start
+// target) may drive it. Both entry points that can navigate the shared
+// view — web content's window.open and the toolbar's navigate channel
+// — test this one predicate, so the whitelist exists once and the two
+// paths cannot drift into disagreeing about what may reach the page
+// (no file:, devtools:, or javascript: URLs through the main process).
+function isWebSchemeUrl(url) {
+  return /^https?:\/\//i.test(url) || url === "about:blank";
+}
+
 function contentBounds() {
   const { width, height } = win.getContentBounds();
   // A window shorter than the toolbar (resize below 48px) would hand
@@ -109,11 +119,12 @@ function createWindow() {
   view.webContents.loadFile(START_PAGE);
 
   // No tab strip: a link that asks for a new window navigates in place.
-  // Web content initiates this callback, so only web schemes may drive
-  // the shared view — a page must not steer it to file:, devtools:, or
-  // javascript: URLs through the main process.
+  // Web content initiates this callback, so the scheme gate is the same
+  // `isWebSchemeUrl` the navigate channel tests: a page must not steer
+  // the shared view to file:, devtools:, or javascript: URLs through
+  // the main process.
   view.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url) || url === "about:blank") {
+    if (isWebSchemeUrl(url)) {
       loadSharedView(url);
     }
     return { action: "deny" };
@@ -159,14 +170,11 @@ function createWindow() {
 
 ipcMain.on("navigate", (_event, url) => {
   if (typeof url !== "string" || !url) return;
-  // The same web-scheme whitelist setWindowOpenHandler enforces: a
-  // bare word is read as a host and completed with https, and no
-  // file:, devtools:, or other privileged scheme may drive the shared
-  // view through this channel.
-  const target =
-    /^https?:\/\//i.test(url) || url === "about:blank"
-      ? url
-      : `https://${url}`;
+  // The same scheme gate `setWindowOpenHandler` applies: a bare word is
+  // read as a host and completed with https, and no file:, devtools:,
+  // or other privileged scheme may drive the shared view through this
+  // channel.
+  const target = isWebSchemeUrl(url) ? url : `https://${url}`;
   loadSharedView(target);
 });
 
