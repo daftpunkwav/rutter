@@ -81,6 +81,17 @@ pub(crate) struct Dashboard {
 /// while a long serve process is still running.
 const DEFAULT_KEEPALIVE: Duration = Duration::from_secs(20);
 
+/// A dashboard whose listener is already bound: the state its routes
+/// serve plus the socket that owns the port. The bind is split from
+/// serving so its failure reaches the caller that asked for the
+/// dashboard — spawning `serve` directly would answer a lost bind race
+/// with one stderr line and a serve process whose approval UI never
+/// comes up, leaving every parked approval to time out unseen.
+pub struct BoundDashboard {
+    listener: tokio::net::TcpListener,
+    state: Dashboard,
+}
+
 /// The dashboard server; bind and serve until the process exits.
 pub struct DashboardServer {
     manager: Arc<SessionManager>,
@@ -126,12 +137,22 @@ impl DashboardServer {
         self.token.clone()
     }
 
-    /// Serves until the process exits. The listener binds before the
-    /// hand-off so the URL and its file name carry the port the server
-    /// actually owns: `--dashboard 0` names its real port, and an
-    /// instance that lost the bind race never touches the hand-off file
-    /// of the instance that won it.
+    /// Serves until the process exits: binds, hands the access URL
+    /// over, then runs the routes. Bind and hand-off failures stop here
+    /// instead of inside [`BoundDashboard::serve`], so a caller that
+    /// spawns serving can tell "cannot start" from "started".
     pub async fn run(self) -> Result<(), String> {
+        self.bind().await?.serve().await
+    }
+
+    /// Binds the listener and writes the access hand-off. `Err` means
+    /// the dashboard cannot start: the port is taken, the bind failed,
+    /// or the hand-off had nowhere to go. The hand-off runs after the
+    /// bind so the URL and its file name carry the port the server
+    /// actually owns: `--dashboard 0` names its real port, and an
+    /// instance that lost the bind race never touches the hand-off
+    /// file of the instance that won it.
+    pub async fn bind(self) -> Result<BoundDashboard, String> {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", self.port))
             .await
             .map_err(|error| format!("cannot bind 127.0.0.1:{}: {error}", self.port))?;
@@ -150,24 +171,7 @@ impl DashboardServer {
             port: bound_port,
             keepalive: self.keepalive,
         };
-
-        let app = Router::new()
-            .route("/", get(index))
-            .route("/app.js", get(app_js))
-            .route("/i18n/en.json", get(i18n))
-            .route("/ws", get(ws_upgrade))
-            .route("/api/decisions", post(decide))
-            .route("/api/pending", get(pending))
-            .fallback(not_found)
-            // After every route, so the layer covers them all: the
-            // response headers are a property of the server, not a
-            // step each handler remembers.
-            .layer(axum::middleware::from_fn(harden_responses))
-            .with_state(state);
-
-        axum::serve(listener, app)
-            .await
-            .map_err(|error| format!("dashboard server failed: {error}"))
+        Ok(BoundDashboard { listener, state })
     }
 
     /// Puts the access URL where a human will find it, choosing the
@@ -202,6 +206,31 @@ impl DashboardServer {
             "access URL in {}; open it from a terminal you control",
             path.display()
         ))
+    }
+}
+
+impl BoundDashboard {
+    /// Serves the routes until the process exits or the listener
+    /// fails. Only a listener failure ends this future — the starting
+    /// failures were answered by [`DashboardServer::bind`].
+    pub async fn serve(self) -> Result<(), String> {
+        let app = Router::new()
+            .route("/", get(index))
+            .route("/app.js", get(app_js))
+            .route("/i18n/en.json", get(i18n))
+            .route("/ws", get(ws_upgrade))
+            .route("/api/decisions", post(decide))
+            .route("/api/pending", get(pending))
+            .fallback(not_found)
+            // After every route, so the layer covers them all: the
+            // response headers are a property of the server, not a
+            // step each handler remembers.
+            .layer(axum::middleware::from_fn(harden_responses))
+            .with_state(self.state);
+
+        axum::serve(self.listener, app)
+            .await
+            .map_err(|error| format!("dashboard server failed: {error}"))
     }
 }
 

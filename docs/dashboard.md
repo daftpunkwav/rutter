@@ -10,9 +10,13 @@ executes actions — observation plus verdict submission, nothing more.
 ## 1. Server
 
 Attached with `rutter serve --dashboard <PORT>`. Binds `127.0.0.1`
-only. The frontend is vanilla JS with no build step, embedded into the
-binary at compile time (`include_str!`); UI strings come from the
-`frontend/i18n/en.json` catalog.
+only. The bind is awaited before serving continues, so a dashboard
+that cannot start — the port is taken, the hand-off had nowhere to go
+— fails `serve` outright instead of leaving it running with no
+approval UI to answer its parked approvals. The frontend is vanilla
+JS with no build step, embedded into the binary at compile time
+(`include_str!`); UI strings come from the `frontend/i18n/en.json`
+catalog.
 
 | Route | Serves |
 |---|---|

@@ -63,6 +63,17 @@ pub enum CliError {
         /// What was wrong with it (read or parse error).
         reason: String,
     },
+
+    /// The dashboard could not start (the port is taken, the bind
+    /// failed, the access hand-off had nowhere to go). `serve` stops:
+    /// without the dashboard nothing can answer its approvals, so
+    /// running on would park every supervised action until its window
+    /// closed with nobody watching.
+    #[error("dashboard failed to start: {message}")]
+    Dashboard {
+        /// What went wrong on the way up.
+        message: String,
+    },
 }
 
 impl CliError {
@@ -91,6 +102,10 @@ impl CliError {
                  rejection rules), then rerun"
                     .to_owned()
             }
+            Self::Dashboard { .. } => "check that the --dashboard port is not already held by \
+                 another process (or pass --dashboard 0 to let rutter pick \
+                 a free one), then retry"
+                .to_owned(),
         }
     }
 }

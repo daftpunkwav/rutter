@@ -63,8 +63,18 @@ pub async fn run(
         let access_dir = Some(settings.cache_root.clone());
         let dashboard =
             rutter_dashboard::DashboardServer::new(Arc::clone(&manager), port, access_dir);
+        // The bind is awaited here, before serving is parked on its
+        // task: a dashboard that cannot start (the port is taken) fails
+        // the serve instead of leaving it to answer tool calls while
+        // every approval waits out its window with nobody able to
+        // answer it. Only a listener failure can end the spawned task,
+        // and that one stays a report.
+        let bound = dashboard
+            .bind()
+            .await
+            .map_err(|message| CliError::Dashboard { message })?;
         tokio::spawn(async move {
-            if let Err(error) = dashboard.run().await {
+            if let Err(error) = bound.serve().await {
                 eprintln!("rutter: {error}");
             }
         });
