@@ -16,18 +16,25 @@ The module map lives in [README.md](README.md) and
 - `src/assets/serializer.js` and `src/assets/reader.js` are plain ES.
   There is no build step. `assets.rs` embeds them with `include_str!`.
 - A script does not throw on hostile page input.
-- Storage helpers in `resolver.rs` return `{ unavailable: true }` when
-  `localStorage` is missing. They do not throw.
+- `storage_dump_script` returns `{ unavailable: true }` when
+  `localStorage` is missing or throws. `storage_restore_script`
+  swallows `setItem` failures and returns `{ restored: N }`. Neither
+  script throws out of the function.
 - Serializer output is the envelope `response.rs` parses. Reader
   output is the envelope `read.rs` parses.
-- A format change updates `docs/snapshot-format.md` or
-  `docs/read-format.md` and the matching `.zh.md`.
+- A readout format change updates `docs/read-format.md` and
+  `docs/read-format.zh.md` in the same change. A snapshot format
+  change updates `docs/snapshot-format.md` and
+  `docs/snapshot-format.zh.md` in their own docs commit, before the
+  implementation commit.
 - Behavior is pinned by `tests/js/` through `scripts/check_js.sh`.
 
 ## Snapshot builder
 
-- Order: convert, cut depth, fold sibling runs, cull to the viewport,
-  fit the character budget, render.
+- Order: convert, cut depth, fold sibling runs, measure, then one
+  `fit` walk that folds out-of-viewport subtrees and spends the
+  character budget, then `into_snapshot_node`. Text rendering stays
+  in `rutter-core`.
 - Budgets and line rules match `docs/snapshot-format.md`.
 - `src/snapshot_builder/tests.rs` pins them with insta and proptest.
 - A deliberate format change updates the golden files in that same

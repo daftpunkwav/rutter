@@ -20,7 +20,7 @@ Workspace dependencies are exactly:
 | `rutter-session` | `rutter-core`, `rutter-engine`, `rutter-events`, `rutter-observe`, `rutter-policy` |
 | `rutter-mcp` | `rutter-core`, `rutter-session` |
 | `rutter-dashboard` | `rutter-core`, `rutter-events`, `rutter-policy`, `rutter-session` |
-| `rutter` (`crates/cli`) | every workspace crate except `rutter-events` |
+| `rutter` (`crates/cli`) | `rutter-core`, `rutter-dashboard`, `rutter-engine`, `rutter-engine-cdp`, `rutter-mcp`, `rutter-observe`, `rutter-policy`, `rutter-session` |
 
 - `rutter-mcp` and `rutter-dashboard` may name `rutter-engine` only
   from a dev-dependency. `rutter-mcp` may name `rutter-policy` only
@@ -38,18 +38,24 @@ Workspace dependencies are exactly:
 
 - Clippy denies `unwrap_used`, `expect_used`, and `panic`. The allow
   is `#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]`
-  on a crate root or a test file. Production code does not carry that
-  allow.
+  on a crate root, on a module that contains tests, or on a test
+  file. Keep the attribute `cfg(test)`. A non-test build denies those
+  lints.
 - `todo`, `unimplemented`, and `dbg` are denied, including in tests.
 - `unsafe_code` is denied.
 - Public items are documented.
 - Every `*.rs` file opens with a `//!` header that states purpose and
   boundary.
-- Every wait has a deadline.
+- A wait that can finish on its own has a deadline. Ctrl-C, the MCP
+  serve loop, and the dashboard serve loop wait for the process
+  lifetime.
 - A dead, restarting, or breaker-open engine returns `Terminated`.
-- Failures agents see are `ActionError` values with an English hint.
-  `Internal` marks a bug.
-- Hostile page input is truncated, folded, or marked unknown.
+- `ActionFailed` carries an `ActionError` with an English hint.
+  `Internal` marks a bug. A tool result prints the `SessionError` and
+  its hint. An engine failure on that path stays an `EngineError`.
+- Hostile page input is truncated or folded. An unknown envelope
+  version sets `truncated`. An unknown viewport disables
+  viewport-first folding.
 - Publishing an event does not wait on subscribers.
 - Glossary names are exact. See
   [../docs/glossary.md](../docs/glossary.md).

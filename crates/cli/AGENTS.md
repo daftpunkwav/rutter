@@ -7,8 +7,9 @@ The module map lives in [README.md](README.md) and
 ## Boundary
 
 - This crate is the composition root. The package name is `rutter`.
-  The library target is `rutter_cli`. It depends on every workspace
-  crate except `rutter-events`.
+  The library target is `rutter_cli`. Its workspace dependencies are
+  the `rutter` row in [../AGENTS.md](../AGENTS.md). It does not depend
+  on `rutter-events`.
 - New behavior belongs in a lower crate. This crate parses arguments,
   resolves settings, wires processes, and presents errors.
 - `main.rs` calls `rutter_cli::entry::run`. The library's public
@@ -23,14 +24,16 @@ The module map lives in [README.md](README.md) and
 - `serve`: MCP, stdio unless `--http`. The engine is headless unless
   `--headed`. `--dashboard PORT` and `--policy FILE` are optional.
   `LazyLauncher` defers engine I/O until the first launch.
-- `serve` constructs one `ApprovalBroker`, passes it to
-  `SessionManager`, and shuts that manager down on client disconnect,
-  Ctrl-C, and serve failure.
+- `serve` constructs one `ApprovalBroker` and passes it to
+  `SessionManager`. Stdio shuts that manager down on client
+  disconnect, Ctrl-C, and serve failure. HTTP shuts it down on Ctrl-C
+  and on serve failure. One HTTP client disconnect does not.
 - A non-loopback `--http` address is refused unless `--allow-remote`
   is set.
-- `open`: one snapshot on stdout, then exit. No session and no policy.
-- `read`: one markdown readout on stdout, then exit. No session and
-  no policy.
+- `open` prints one snapshot on stdout, then exits. `read` prints one
+  markdown readout on stdout, then exits. Neither mode creates a
+  session or applies a rule set. A global `--policy` flag is still
+  parsed before dispatch.
 - A failed `open` or `read` still shuts the engine down.
 - Headed launch sets `--app` only when this crate resolved the
   executable itself. An explicit `--engine-executable` does not
@@ -38,5 +41,6 @@ The module map lives in [README.md](README.md) and
 
 ## Tests
 
-Library tests live in this crate's `tests/`. Binary acceptance lives
-in the workspace `tests/` package.
+Public flows live in this crate's `tests/`. Private behavior stays
+in `src/` under `#[cfg(test)]`. Binary acceptance lives in the
+workspace `tests/` package.

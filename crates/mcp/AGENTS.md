@@ -15,7 +15,10 @@ The module map lives in [README.md](README.md) and
   resolves the `schemars::` path.
 - This crate maps the protocol. Parameter checks return
   `invalid_params`. Business rules belong in `session`.
-- The engine starts on the first tool call that needs a page.
+- The engine starts on the first tool call that opens this
+  connection's session. `console_messages` and `network_requests` do
+  that and do not open a page. `close_session` on a connection that
+  never opened a session does not launch an engine.
 
 ## Tools
 

@@ -23,9 +23,14 @@ The module map lives in [README.md](README.md) and
 - The first matching rule wins, then the default verdict.
 - `Navigate` is judged on its target. Every other class is judged on
   the current page URL.
-- With no usable URL, URL-scoped rules match only the pattern `*`,
-  and a bare `allow` becomes `require_approval`. The brief carries
+- With no usable URL, `review` judges the empty string.
+- A URL pattern matches that string only when every character is `*`.
+  A rule with no `url_pattern` matches every URL, including that
+  string.
+- An `allow` on that path becomes `require_approval` with
   `judged_url: null` and basis `missing_url`.
+- A matching `deny` or `require_approval` keeps its verdict and
+  basis. `judged_url` on the brief stays null.
 - A rule sets `action_class`, `url_pattern`, or both. A blank pattern
   is rejected.
 - `approval_timeout_ms` of `0` is rejected. Values above 24 h are

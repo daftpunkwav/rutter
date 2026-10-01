@@ -45,9 +45,11 @@ change includes `README.zh.md`.
   is denied.
 - The gate is attached to the default session and on
   `session-created`.
-- Renderer-initiated top-level navigation (`will-navigate`) uses
-  `isWebSchemeUrl` from `scheme-gate.js`. `file:`, `devtools:`, and
-  `javascript:` are refused.
+- `will-navigate` on window web-contents allows only URLs
+  `isWebSchemeUrl` accepts: `http:`, `https:`, and `about:blank`.
+  Every other scheme is refused, including `file:`, `devtools:`, and
+  `javascript:`. Non-window contents, including DevTools, are not
+  gated here.
 - The toolbar window and the shared view set `contextIsolation: true`,
   `nodeIntegration: false`, `sandbox: true`, and `webviewTag: false`.
 - The `navigate` channel accepts a sender only when its URL is the

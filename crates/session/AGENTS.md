@@ -61,8 +61,8 @@ The module map lives in [README.md](README.md) and
   publish `EngineRestarted`.
 - `Session::pages` adopts pages in this session's context that rutter
   did not open. It does not adopt another context.
-- The registry keeps exactly one active page. `select_page` publishes
-  `PageActivated`.
+- The registry keeps at most one active page. An empty session has
+  none. `select_page` publishes `PageActivated`.
 
 ## Storage
 

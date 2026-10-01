@@ -8,7 +8,8 @@ The type map lives in [README.md](README.md) and
 ## Boundary
 
 - No workspace dependencies.
-- No I/O, no async, no engine types, no transport types.
+- No I/O, no async, and no engine types. `TransportCause` stays here
+  as the navigation-failure classification.
 - New domain vocabulary lands here before a consumer uses it.
 
 ## Shapes

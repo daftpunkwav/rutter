@@ -20,16 +20,25 @@ The module map lives in [README.md](README.md) and
 ## Access
 
 - The bind address is `127.0.0.1`.
-- A handler that returns an asset, a socket, or dashboard state calls
-  `auth::access_allowed` before that work: loopback `Host`, `Origin`
-  bound to this server's host and port, and the launch token compared
-  in constant time. The token arrives as a query parameter or an
-  HttpOnly cookie. The 404 fallback stays a bare `NOT_FOUND`.
+- Every route except the fallback calls `auth::access_allowed` before
+  other work. The fallback stays a bare `NOT_FOUND`.
+- `Host` must be a loopback name: `127.0.0.1`, `localhost`, or `::1`.
+  The `Host` port is not checked.
+- A missing `Origin` passes. A present `Origin` must parse as
+  `scheme://authority`, use a loopback name, and name the port this
+  server bound. An omitted port is 80 for `http` and 443 for `https`.
+  Any other scheme without an explicit port fails. `Origin: null`
+  fails.
+- The launch token is compared in constant time. It arrives as the
+  query parameter `token` or the HttpOnly cookie `rutter_token`.
 - Response hardening stays in the `harden_responses` layer.
 - `DashboardServer::hand_off` delivers the token. When stderr is a
-  terminal, the message contains the URL. Otherwise the URL is written
-  to `dashboard-access-<port>.url` (mode `0o600` on Unix) and the
-  message contains that path.
+  terminal, the message contains the URL. When it is not, and an
+  access directory was configured, the URL is written to
+  `dashboard-access-<bound-port>.url` in that directory (mode `0o600`
+  on Unix) and the message contains that path. The port is the port
+  the bind settled on, including a request for port `0`. With no
+  access directory, `bind` fails and writes no file.
 - `RUTTER_DASHBOARD_TOKEN` overrides the generated token. An empty
   value is ignored. A value shorter than 16 characters warns and is
   still used.
@@ -39,8 +48,9 @@ The module map lives in [README.md](README.md) and
 
 ## WebSocket
 
-- Connect order is replay, then live. A `Lagged` subscription resyncs
-  from the ring.
+- Connect order is subscribe, then replay, then live. Live envelopes
+  at or below the replay watermark are skipped. A `Lagged`
+  subscription resyncs with `replay_after`.
 - Client messages are `decision`, `screencast`, and `subscribe`.
 - Writes are bounded and the connection sends keepalive.
 

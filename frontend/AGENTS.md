@@ -25,8 +25,9 @@ embeds the files named below.
   exchanges it for an HttpOnly cookie.
 - `app.js` does not store the token. Later requests use the cookie
   when the query token is absent.
-- The client speaks the dashboard contract: replay, then live; client
-  messages `decision`, `screencast`, `subscribe`.
+- The client renders replay, then live events. It sends `screencast`
+  on the socket. Approval decisions are `POST /api/decisions`. It
+  does not send `subscribe` or a socket `decision`.
 - Reconnect starts at 1 s and backs off, capped at 30 s. A reconnect
   resets the timeline and the session set.
 

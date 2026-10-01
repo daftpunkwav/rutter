@@ -4,8 +4,9 @@ Reading order starts at [architecture.md](architecture.md).
 
 ## Pairs
 
-- Every English document has a Chinese `*.zh.md` mirror. Update both
-  in the same change.
+- Every English contract or guide in this directory has a Chinese
+  `*.zh.md` mirror. Update both in the same change. `AGENTS.md` and
+  `CLAUDE.md` have no mirror.
 - Glossary terms are exact. See [glossary.md](glossary.md). Docs and
   the code they name use those terms.
 
