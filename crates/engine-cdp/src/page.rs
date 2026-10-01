@@ -70,7 +70,9 @@ const OBSERVATION_TEXT_CAP: usize = 2_000;
 
 /// Bounds an observation text at [`OBSERVATION_TEXT_CAP`] characters.
 fn cap_text(text: String) -> String {
-    if text.chars().count() <= OBSERVATION_TEXT_CAP {
+    // Byte length bounds the char count, so a short line — the common
+    // console entry and request URL — skips the full character scan.
+    if text.len() <= OBSERVATION_TEXT_CAP || text.chars().count() <= OBSERVATION_TEXT_CAP {
         return text;
     }
     let mut capped: String = text.chars().take(OBSERVATION_TEXT_CAP).collect();
@@ -487,17 +489,30 @@ impl rutter_engine::page::PageHandle for CdpPage {
                             task_page.execute(ScreencastFrameAckParams::new(event.session_id)),
                         )
                         .await;
-                        use base64::Engine as _;
-                        let Ok(jpeg) =
-                            base64::engine::general_purpose::STANDARD.decode(AsRef::<[u8]>::as_ref(&event.data))
-                        else {
-                            continue;
-                        };
-                        match sender.try_send(ScreencastFrame { jpeg }) {
-                            Ok(()) => {}
+                        // A slot is reserved before the decode so a
+                        // stalled viewer drops frames at the cheap end:
+                        // over a full channel the frame is discarded
+                        // without paying the base64 decode, and the
+                        // memory stays bounded by the channel capacity.
+                        // Acks are unchanged — one per frame, sent
+                        // before this decision either way — so CDP's
+                        // capture cadence and the latest-wins delivery
+                        // are what they were.
+                        match sender.try_reserve() {
+                            Ok(permit) => {
+                                use base64::Engine as _;
+                                // On a decode failure the permit drops
+                                // and the slot frees; the ack above was
+                                // already sent, exactly as before.
+                                if let Ok(jpeg) = base64::engine::general_purpose::STANDARD
+                                    .decode(AsRef::<[u8]>::as_ref(&event.data))
+                                {
+                                    permit.send(ScreencastFrame { jpeg });
+                                }
+                            }
                             // A slow viewer loses frames, not memory.
-                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {}
-                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => break,
+                            Err(tokio::sync::mpsc::error::TrySendError::Full(())) => {}
+                            Err(tokio::sync::mpsc::error::TrySendError::Closed(())) => break,
                         }
                     }
                     Some(_) = navigations.next() => {

@@ -47,7 +47,7 @@ fn node_major() -> Option<u32> {
 
 /// The suites this test runs, with the number of tests each holds.
 const SUITES: [(&str, usize); 3] = [
-    ("tests/js/serializer.test.mjs", 9),
+    ("tests/js/serializer.test.mjs", 10),
     ("tests/js/reader.test.mjs", 16),
     ("tests/js/select.test.mjs", 4),
 ];

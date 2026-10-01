@@ -192,3 +192,43 @@ test('a role with no text name stays unnamed', () => {
   const envelope = page.run(SERIALIZER_JS);
   assert.equal(envelope.root.children[0].name, undefined);
 });
+
+test('a text name folds a growing window, not the whole subtree', () => {
+  // The name may fold the subtree's textContent; a text-dense
+  // container must not pay a whole-subtree fold on every snapshot for
+  // a clip that keeps 120 characters. The windowed fold therefore has
+  // to answer exactly what a fold of the full text answered, in both
+  // directions: a name long enough to clip, and one the whitespace
+  // delays past the first window. `fullFoldClip` restates the
+  // full-text path as the reference.
+  const fullFoldClip = (text, limit = 120) => {
+    const folded = text.replace(/\s+/g, ' ').trim();
+    if (folded.length <= limit) return folded;
+    let sliced = folded.slice(0, limit - 3);
+    const last = sliced.charCodeAt(sliced.length - 1);
+    if (last >= 0xd800 && last <= 0xdbff) sliced = sliced.slice(0, -1);
+    return `${sliced}...`;
+  };
+
+  const long = 'word '.repeat(100).trimEnd();
+  const page = pageOver(el('body', {}, [el('li', {}, [long])]));
+  const name = page.run(SERIALIZER_JS).root.children[0].name;
+  assert.equal(
+    name,
+    fullFoldClip(long),
+    'a 500-character name clips to what the full fold produced'
+  );
+
+  // Mostly whitespace: the first window folds to a fragment far below
+  // the limit, so the window must keep growing until the clip matches
+  // the full fold instead of clipping the fragment.
+  const padded = `${' '.repeat(1000)}tail of a very ${'loud '.repeat(40)}name`;
+  const paddedName = pageOver(
+    el('body', {}, [el('li', {}, [padded])])
+  ).run(SERIALIZER_JS).root.children[0].name;
+  assert.equal(paddedName, fullFoldClip(padded), 'the window grew until the clip matched');
+
+  // An all-whitespace name stays unnamed, as the full fold answered.
+  const blank = pageOver(el('body', {}, [el('li', {}, [' '.repeat(2000)])]));
+  assert.equal(blank.run(SERIALIZER_JS).root.children[0].name, undefined);
+});

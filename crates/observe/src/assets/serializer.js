@@ -159,6 +159,31 @@
     return sliced + '...';
   }
 
+  // The accessible name of a text-name role may fold the whole
+  // subtree's textContent, and the clip then keeps 120 characters of
+  // it. Folding a text-dense subtree (a listitem or blockquote holding
+  // the page's main content) pays for megabytes the clip throws away
+  // on every snapshot, so the fold runs on a raw window that grows
+  // only while the folded prefix is still too short to clip. A folded
+  // prefix of the raw text is always a prefix of the folded whole (a
+  // run of whitespace cut in half collapses to the same single space
+  // or trims away), so once the window's fold reaches NAME_LIMIT the
+  // clip below is the clip the full text would have produced. Only a
+  // pathological mostly-whitespace subtree keeps growing the window;
+  // the doubling stays bounded by the full text, and the last round
+  // folds all of it, which is the answer the old fold gave.
+  function textNameOf(el) {
+    var text = el.textContent || '';
+    var span = NAME_LIMIT * 2;
+    for (;;) {
+      var folded = text.slice(0, span).replace(/\s+/g, ' ').trim();
+      if (folded.length >= NAME_LIMIT || span >= text.length) {
+        return folded ? clip(folded, NAME_LIMIT) : null;
+      }
+      span *= 2;
+    }
+  }
+
   function nameOf(el, role) {
     try {
       var label = el.getAttribute('aria-label');
@@ -176,8 +201,7 @@
       var title = el.getAttribute('title');
       if (title && title.trim()) return clip(title, NAME_LIMIT);
       if (!TEXT_NAME_ROLES[role]) return null;
-      var text = (el.textContent || '').replace(/\s+/g, ' ').trim();
-      return text ? clip(text, NAME_LIMIT) : null;
+      return textNameOf(el);
     } catch (err) {
       return null;
     }
@@ -194,9 +218,11 @@
     return null;
   }
 
-  function checkedOf(el) {
+  // The role decides whether `checked` means anything; the caller has
+  // already computed it, so re-deriving it from the element here would
+  // repeat the attribute walk on every serialized node.
+  function checkedOf(el, role) {
     try {
-      var role = roleOf(el);
       if (role === 'checkbox' || role === 'radio') return Boolean(el.checked);
     } catch (err) {}
     return null;
@@ -272,7 +298,7 @@
     if (name) node.name = name;
     var value = valueOf(el);
     if (value !== null) node.value = value;
-    var checked = checkedOf(el);
+    var checked = checkedOf(el, role);
     if (checked !== null) node.checked = checked;
     if (disabledOf(el)) node.disabled = true;
     var rect = rectOf(el);

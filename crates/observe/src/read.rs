@@ -91,9 +91,11 @@ pub fn read_from_response(response: &Value) -> Readout {
 }
 
 /// Clamps `text` to `limit` characters, setting `truncated` when the
-/// clamp bites. Character-counted, so no UTF-8 boundary can split.
+/// clamp bites. Character-counted, so no UTF-8 boundary can split. The
+/// byte length bounds the char count, so a short field — the common
+/// title, and every readout under the cap — skips the full scan.
 fn clamp(text: &str, limit: usize, truncated: &mut bool) -> String {
-    if text.chars().count() <= limit {
+    if text.len() <= limit || text.chars().count() <= limit {
         return text.to_owned();
     }
     *truncated = true;
