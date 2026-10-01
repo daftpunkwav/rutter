@@ -416,7 +416,7 @@ impl PageOps<'_> {
         match found {
             Some(()) => self.snapshot().await,
             None => Err(SessionError::Action(ActionError::TimedOut {
-                phase: WaitPhase::Settle,
+                phase: WaitPhase::Poll,
                 elapsed: budget,
             })),
         }
@@ -430,7 +430,7 @@ fn phase_rank(phase: WaitPhase) -> u8 {
         WaitPhase::Visible => 0,
         WaitPhase::Stable => 1,
         WaitPhase::Enabled => 2,
-        WaitPhase::Act | WaitPhase::Settle => 3,
+        WaitPhase::Act | WaitPhase::Settle | WaitPhase::Poll => 3,
     }
 }
 

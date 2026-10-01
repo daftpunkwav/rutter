@@ -84,7 +84,7 @@
 | `NavigationFailed { url, cause }` | 页面无法加载；`cause` 对传输失败分类（`TimedOut`、`ConnectionFailed`、`DnsFailed`、`TlsFailed`、`Aborted`、`Http { status }`） |
 | `ReferenceExpired { reference }` | 引用指向的元素已不存在 |
 | `NotInteractable { reference, reason }` | 元素存在但无法接收该动作 |
-| `TimedOut { phase, elapsed }` | 某个 auto-wait 阶段未在时限内完成 |
+| `TimedOut { phase, elapsed }` | 某个等待阶段未在时限内完成：三阶段 auto-wait 之一，或 `wait_for` 文本轮询 |
 | `ApprovalDenied { reference }` | 人工审批者拒绝了该动作 |
 | `ApprovalTimedOut { waited }` | 窗口期内没有审批决定到达 |
 | `EngineTerminated { session }` | 引擎死亡；rutter 正在恢复 |

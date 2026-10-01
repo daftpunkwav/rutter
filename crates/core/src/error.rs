@@ -47,7 +47,7 @@ pub enum ActionError {
         reason: String,
     },
 
-    /// An auto-wait phase did not complete in time.
+    /// A wait phase did not complete in time.
     #[error("timed out during the '{phase}' phase after {elapsed:?}")]
     TimedOut {
         /// Phase of the auto-wait that did not complete.
@@ -150,8 +150,9 @@ pub enum TransportCause {
     },
 }
 
-/// Phases a mutating action moves through: the three-phase auto-wait
-/// before acting, then acting and settling.
+/// Phases a wait names when it times out: the three-phase auto-wait
+/// before a mutating action, acting and settling, and the `wait_for`
+/// text poll.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error, Serialize, Deserialize)]
 pub enum WaitPhase {
     /// Waiting for the element to become visible.
@@ -169,6 +170,9 @@ pub enum WaitPhase {
     /// Waiting for the page to settle after the action.
     #[error("settle")]
     Settle,
+    /// Waiting for the text a `wait_for` call asked for to appear.
+    #[error("poll")]
+    Poll,
 }
 
 #[cfg(test)]

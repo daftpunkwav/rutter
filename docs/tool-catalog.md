@@ -102,7 +102,7 @@ variant carries an English hint an agent can act on:
 | `NavigationFailed { url, cause }` | The page could not be loaded; `cause` classifies the transport failure (`TimedOut`, `ConnectionFailed`, `DnsFailed`, `TlsFailed`, `Aborted`, `Http { status }`) |
 | `ReferenceExpired { reference }` | The element the reference points to no longer exists |
 | `NotInteractable { reference, reason }` | The element exists but cannot receive the action |
-| `TimedOut { phase, elapsed }` | An auto-wait phase did not complete in time |
+| `TimedOut { phase, elapsed }` | A wait phase did not complete in time: one of the three auto-wait phases, or the `wait_for` text poll |
 | `ApprovalDenied { reference }` | A human approver rejected the action |
 | `ApprovalTimedOut { waited }` | No approval decision arrived within the window |
 | `EngineTerminated { session }` | The engine died; rutter is recovering it |
