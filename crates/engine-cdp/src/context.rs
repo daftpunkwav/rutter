@@ -450,16 +450,20 @@ impl ContextHandle for CdpContext {
 /// error "Not supported", which [`crate::error::fold`] keeps verbatim
 /// in the detail text.
 ///
-/// Upgrade checkpoint: this is a contract on upstream *wording*, and
-/// the pinned test (`a_cdp_refusal_is_recognized_as_not_supported`)
-/// builds its refusal by hand, so a chromiumoxide or Electron bump
-/// that changed the message would silence the attach fallback below
-/// without any test failing. If a bump lands, drive `open_page`
-/// against the real engine once (`cargo test -- --include-ignored`).
-/// The structured fix is already available: `chromiumoxide::types::Error`
-/// carries the refusal as a typed `code` (currently `-32000`) plus
-/// `message`, and matching on that code in [`crate::error::fold`] would
-/// remove the text dependency entirely.
+/// Upgrade checkpoint: this is a contract on the engine's *wording*,
+/// and the pinned test (`a_cdp_refusal_is_recognized_as_not_supported`)
+/// builds its refusal by hand, so a chromiumoxide or Electron bump that
+/// changed the message would silence the attach fallback below without
+/// any unit test failing — drive `open_page` against the real engine
+/// once (`cargo test -- --include-ignored`) when a bump lands. The
+/// typed alternative is a dead end: `chromiumoxide::types::Error`
+/// carries the refusal as a `code` plus `message`, but `-32000` is
+/// CDP's generic server-error code that unrelated refusals ride too
+/// ("Session with given id not found", stale-element answers), so a
+/// code-only match in [`crate::error::fold`] would widen the fallback
+/// below to every server error. Chromium's own message wording is the
+/// only discriminating signal the protocol gives, which is what is
+/// matched here.
 pub(crate) fn is_not_supported(error: &EngineError) -> bool {
     matches!(error, EngineError::Internal { detail }
         if detail.to_lowercase().contains("not supported"))
