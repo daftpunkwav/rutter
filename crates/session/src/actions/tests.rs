@@ -253,6 +253,84 @@ async fn a_flickering_enabled_state_cannot_restart_the_budget_forever() {
     );
 }
 
+#[tokio::test]
+async fn a_slow_but_monotonic_progression_still_finishes() {
+    // The other side of the restart cap: a genuinely progressing
+    // element (hidden, then visible but never twice in one place, then
+    // steady but disabled, then ready) advances Visible → Stable →
+    // Enabled, and each advance must restart the budget. Only the
+    // shipped cap of 2 — exactly what a monotonic progression can
+    // spend — lets the ladder finish and the click dispatch:
+    //
+    //   cap 0: no advance ever re-arms the clock, so the initial
+    //          budget dies while the element is still wandering.
+    //   cap 1: the second advance (Stable → Enabled) is refused a
+    //          restart, and the ready flip lands after the deadline
+    //          that first restart left — one budget past the first.
+    //
+    // The schedule keeps every boundary a full sampling window away
+    // from the deadlines it must fall on either side of (t=100 first
+    // advance, t≈350+4 samples second, deadline≈600 cap-1 expiry,
+    // t=700 ready), so Windows timer granularity under parallel test
+    // load shifts the outcome by tens of milliseconds, never past a
+    // boundary.
+    let harness = Harness::new(Duration::from_millis(500), Duration::from_millis(20));
+    harness.page.set_url("https://example.com");
+    let hidden = mock_box(true, false, 0.0, 0.0, 0.0, 0.0);
+    let wander = mock_box(false, true, 10.0, 20.0, 100.0, 30.0);
+    let wander_away = mock_box(false, true, 10.0, 80.0, 100.0, 30.0);
+    let steady_disabled = mock_box(false, true, 10.0, 20.0, 100.0, 30.0);
+    let ready = mock_box(false, false, 10.0, 20.0, 100.0, 30.0);
+
+    harness.page.set_default_answer(hidden);
+    let page = harness.page.clone();
+    let schedule = async move {
+        // Hidden for a fifth of a budget, then visible but jumping
+        // between two places: the Stable phase pends here, and its
+        // restart carries the wait past this window.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        page.push_resolve_answer(wander);
+        page.push_resolve_answer(wander_away);
+        page.set_cycle(true);
+        // Steady but disabled: cycle off drains the two queued answers
+        // first (both at new places, so still unstable), then two
+        // samples in one place make the Enabled phase pend, spending
+        // the second restart.
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        page.set_cycle(false);
+        page.set_default_answer(steady_disabled);
+        // Ready after the deadline a cap of 1 would have left the wait
+        // with (one budget past the first restart), well inside the
+        // budget the second restart hands out.
+        tokio::time::sleep(Duration::from_millis(350)).await;
+        page.set_default_answer(ready);
+    };
+    let executor = harness.executor();
+    let (snapshot, ()) = tokio::join!(
+        async {
+            tokio::time::timeout(Duration::from_secs(8), executor.run(&click("e1")))
+                .await
+                .expect("the wait must end, never hang")
+                .expect("a monotonic progression finishes inside the capped budget")
+        },
+        schedule,
+    );
+    let inputs = harness.page.inputs();
+    assert_eq!(inputs.len(), 2, "the click dispatches once it is ready");
+    assert!(matches!(
+        inputs[0],
+        rutter_engine::input::InputEvent::MousePressed {
+            x: 60.0,
+            y: 35.0,
+            ..
+        }
+    ));
+    assert!(
+        snapshot.to_string().contains("Ok"),
+        "the action answers with the fresh snapshot"
+    );
+}
+
 #[test]
 fn wheel_deltas_follow_directions() {
     assert_eq!(wheel_deltas(ScrollDirection::Down, 300), (0.0, 300.0));

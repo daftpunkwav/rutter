@@ -203,4 +203,38 @@ mod tests {
         ensure_bind_is_consented(addr("127.0.0.1:9800"), true)
             .expect("explicit confirmation is accepted");
     }
+
+    #[tokio::test]
+    async fn a_dashboard_port_that_cannot_bind_fails_the_serve() {
+        // The bind is awaited before serving parks on its task: a port
+        // that is already held must end the serve with the dashboard's
+        // error. The old shape — bind inside the spawned task — would
+        // park the serve on stdio with every approval waiting out its
+        // window on a dashboard that never came up; a regression there
+        // hangs this serve, which the outer timeout turns red.
+        let holder = std::net::TcpListener::bind("127.0.0.1:0").expect("a holder keeps the port");
+        let port = holder.local_addr().expect("local addr").port();
+        let settings = Settings {
+            engine_executable: None,
+            cache_root: std::env::temp_dir()
+                .join(format!("rutter-serve-bind-test-{}", std::process::id())),
+            extra_engine_args: Vec::new(),
+            navigation_timeout: std::time::Duration::from_secs(5),
+        };
+        let error = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            run(&settings, false, None, Some(port), None, false),
+        )
+        .await
+        .expect("the serve must end with the bind failure, not park on stdio")
+        .expect_err("a held dashboard port fails the serve");
+        assert!(
+            matches!(error, CliError::Dashboard { .. }),
+            "the failure is the dashboard's: {error:?}"
+        );
+        assert!(
+            error.to_string().contains(&port.to_string()),
+            "the message names the port it could not take: {error}"
+        );
+    }
 }

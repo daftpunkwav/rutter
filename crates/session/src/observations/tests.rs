@@ -9,9 +9,9 @@ use std::time::Duration;
 use rutter_core::ids::SessionId;
 use rutter_engine::context::ContextHandle;
 use rutter_engine::page::{ConsoleEntry, ConsoleLevel, DialogKind, PageObservation, RequestEntry};
-use rutter_events::Backbone;
+use rutter_events::{Backbone, Event};
 
-use super::{FEED_CAPACITY, ObservationFeeds, push_bounded};
+use super::{FEED_CAPACITY, ObservationFeeds, REQUEST_CAPACITY, push_bounded};
 use crate::mock::MockContext;
 
 #[test]
@@ -35,6 +35,53 @@ fn the_buffer_keeps_the_newest_capacity_entries() {
     assert_eq!(
         entries.back().map(|entry| entry.text.as_str()),
         Some(format!("line-{}", FEED_CAPACITY + 9).as_str())
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_request_ring_evicts_at_its_own_smaller_capacity() {
+    // `record_request` bounds by REQUEST_CAPACITY, not the console
+    // ring's: the network log is the larger stream and carries the
+    // smaller budget, so the two capacities must not drift together.
+    // Driven through `record_request` directly — pushing the entries
+    // through the feed's channel would drop them at the 16-slot
+    // boundary long before the ring's bound is reached.
+    let context = MockContext::new();
+    let (page_id, _handle) = context.open_page().await.expect("mock open");
+    let feeds = Arc::new(ObservationFeeds::default());
+    feeds.spawn(
+        session_id(),
+        page_id.clone(),
+        context.page_mock(page_id.clone()).expect("mock page"),
+        Arc::new(Backbone::new()),
+    );
+    for index in 0..REQUEST_CAPACITY + 10 {
+        feeds.record_request(
+            &page_id,
+            RequestEntry {
+                method: "GET".to_owned(),
+                url: format!("https://a.example/{index}"),
+                status: Some(200),
+                resource_type: None,
+                error: None,
+            },
+        );
+    }
+    let requests = feeds.requests(&page_id);
+    assert_eq!(requests.len(), REQUEST_CAPACITY);
+    assert_eq!(
+        requests.first().map(|entry| entry.url.as_str()),
+        Some("https://a.example/10"),
+        "the oldest entry falls off first"
+    );
+    assert_eq!(
+        requests.last().map(|entry| entry.url.as_str()),
+        Some(format!("https://a.example/{}", REQUEST_CAPACITY + 9).as_str()),
+        "the newest entry stays"
+    );
+    assert!(
+        feeds.entries(&page_id).is_empty(),
+        "the two rings stay separate"
     );
 }
 
@@ -80,6 +127,56 @@ async fn a_dialog_is_dismissed_and_recorded() {
         vec![(false, None)],
         "dialogs are dismissed, prompts keep their default"
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_dialog_is_recorded_even_when_the_dismissal_fails() {
+    // The dismissal answer is best-effort, the timeline event is not: a
+    // page that dies with the dialog open fails `handle_dialog`, and an
+    // implementation that publishes only after a successful answer
+    // would drop the event exactly when it matters — the operator
+    // watching the feed would never learn why the page stopped
+    // answering. The feed must also survive the failed answer and keep
+    // recording.
+    let context = MockContext::new();
+    let (page_id, _handle) = context.open_page().await.expect("mock open");
+    let mock = context.page_mock(page_id.clone()).expect("mock page");
+    mock.fail_dialogs(true);
+
+    let backbone = Arc::new(Backbone::new());
+    let feeds = Arc::new(ObservationFeeds::default());
+    feeds.spawn(
+        session_id(),
+        page_id.clone(),
+        context.page_mock(page_id.clone()).expect("mock page"),
+        Arc::clone(&backbone),
+    );
+    wait_for(|| mock.feed_claimed()).await;
+
+    mock.emit(PageObservation::DialogOpened {
+        kind: DialogKind::Alert,
+        message: "gone?".to_owned(),
+    });
+
+    wait_for(|| {
+        backbone
+            .replay(&session_id())
+            .iter()
+            .any(|envelope| matches!(envelope.event, Event::DialogAutoDismissed { .. }))
+    })
+    .await;
+    assert!(
+        mock.dialog_answers().is_empty(),
+        "the failed answer never reached the page"
+    );
+
+    mock.fail_dialogs(false);
+    mock.emit(PageObservation::ConsoleEmitted {
+        level: ConsoleLevel::Log,
+        text: "still alive".to_owned(),
+    });
+    wait_for(|| !feeds.entries(&page_id).is_empty()).await;
+    assert_eq!(feeds.entries(&page_id)[0].text, "still alive");
 }
 
 #[tokio::test(flavor = "current_thread")]

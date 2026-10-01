@@ -96,6 +96,50 @@ async fn wait_up(client: &reqwest::Client, base: &str, token: &str) {
 }
 
 #[tokio::test]
+async fn a_taken_port_fails_the_bind_without_touching_the_hand_off() {
+    // The bind is split ahead of serving so "cannot start" reaches the
+    // caller: a port that is already held — the second rutter process
+    // losing the bind race — must answer `bind` with `Err`, and it must
+    // not write the access file, whose name belongs to the instance
+    // that won the port. An implementation that bound inside the
+    // spawned serving task would answer `Ok` here and strand the
+    // operator's approvals instead.
+    let holder = std::net::TcpListener::bind("127.0.0.1:0").expect("a holder keeps the port");
+    let port = holder.local_addr().expect("local addr").port();
+
+    let access_dir = tempfile::tempdir().expect("temp dir for the access files");
+    let manager = Arc::new(SessionManager::new(
+        FlowLauncher::new(),
+        LaunchMode::Headless,
+        SessionConfig::default(),
+        Arc::new(RuleSet::default_set()),
+        Arc::new(ApprovalBroker::new()),
+        None,
+    ));
+    let server = DashboardServer::new(
+        Arc::clone(&manager),
+        port,
+        Some(access_dir.path().to_path_buf()),
+    );
+    let error = match tokio::time::timeout(Duration::from_secs(5), server.bind()).await {
+        Ok(Ok(_)) => panic!("a held port cannot start the dashboard"),
+        Ok(Err(message)) => message,
+        Err(_) => panic!("the bind answers promptly"),
+    };
+    assert!(
+        error.contains(&port.to_string()),
+        "the failure names the port it could not take: {error}"
+    );
+    assert!(
+        !access_dir
+            .path()
+            .join(format!("dashboard-access-{port}.url"))
+            .exists(),
+        "the loser of the bind race never writes the hand-off file"
+    );
+}
+
+#[tokio::test]
 async fn the_first_visit_exchanges_the_query_token_for_a_cookie() {
     let serving = serve().await;
     let response = serving

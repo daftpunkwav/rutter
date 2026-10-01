@@ -70,6 +70,9 @@ struct PageInner {
     /// What the localStorage dump script reports; `None` answers the
     /// opaque-origin `{ unavailable: true }` shape.
     storage: Mutex<Option<Value>>,
+    /// When set, `handle_dialog` fails without recording an answer, the
+    /// way a page that dies with the dialog open does.
+    fail_dialogs: AtomicBool,
 }
 
 /// A scriptable page handle. Queued resolve answers are consumed one per
@@ -182,6 +185,13 @@ impl MockPage {
     /// The `(width, height)` calls `set_viewport` received, in order.
     pub fn viewport_calls(&self) -> Vec<(u32, u32)> {
         lock(&self.inner.viewport_calls, |calls| calls.clone())
+    }
+
+    /// Makes `handle_dialog` fail without recording an answer, the way
+    /// a page that dies with the dialog open does; tests cover the
+    /// feed's best-effort dismissal through it.
+    pub fn fail_dialogs(&self, fail: bool) {
+        self.inner.fail_dialogs.store(fail, Ordering::SeqCst);
     }
 
     fn next_resolve_answer(&self) -> Value {
@@ -304,6 +314,9 @@ impl PageHandle for MockPage {
         accept: bool,
         prompt_text: Option<&str>,
     ) -> Result<(), EngineError> {
+        if self.inner.fail_dialogs.load(Ordering::SeqCst) {
+            return Err(EngineError::Terminated);
+        }
         lock(&self.inner.dialog_answers, |answers| {
             answers.push((accept, prompt_text.map(str::to_owned)))
         });

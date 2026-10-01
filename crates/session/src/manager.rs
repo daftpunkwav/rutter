@@ -892,6 +892,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_bump_that_exhausts_its_rounds_hands_the_session_to_the_next_one() {
+        // The rounds are one bump's whole retry budget: after the last
+        // round fails, the watcher must stop (no unbounded retry on its
+        // own schedule) and leave the session pending — so the NEXT
+        // engine replacement still rebuilds it. A bump that consumed
+        // the session on failure (or retried forever) breaks one side
+        // of that hand-off; both are pinned here.
+        let launcher = Arc::new(RecoveryLauncher {
+            engines: Mutex::new(Vec::new()),
+            context_gate: Mutex::new(None),
+        });
+        let inner = test_inner(Arc::clone(&launcher));
+        let (running, engine) = start_test_running(Arc::clone(&launcher)).await;
+        *inner.engine.write().await = Some(Arc::clone(&running));
+        let session = seeded_session(&running, &inner).await;
+
+        engine.fail_contexts.store(true, Ordering::SeqCst);
+        let (tx, rx) = tokio::sync::watch::channel(0_u64);
+        baselined(spawn_recovery_watcher(&inner, rx)).await;
+        tx.send_modify(|count| *count += 1);
+
+        // The bump spends every round it has (the retry delays stretch
+        // this past a second; the budget absorbs a loaded machine).
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while engine.create_calls.load(Ordering::SeqCst) < u64::from(RECOVERY_ROUNDS) {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the bump runs all of its rounds");
+        // Nothing may keep attempting the session once the rounds are
+        // gone. The window has to outlast one retry delay: a bump that
+        // kept retrying would spend the next round's back-off before
+        // its next attempt, and a shorter window would stare past it.
+        let window = recovery_retry_delay(RECOVERY_ROUNDS) + std::time::Duration::from_millis(500);
+        tokio::time::sleep(window).await;
+        assert_eq!(
+            engine.create_calls.load(Ordering::SeqCst),
+            u64::from(RECOVERY_ROUNDS),
+            "a bump stops at its round budget"
+        );
+        assert!(
+            running
+                .backbone
+                .replay(&SessionId::new("s1"))
+                .iter()
+                .all(|envelope| !matches!(envelope.event, Event::EngineRestarted)),
+            "an exhausted bump rebuilt nothing"
+        );
+
+        // The next bump picks the still-tracked session up where the
+        // last one left it.
+        engine.fail_contexts.store(false, Ordering::SeqCst);
+        tx.send_modify(|count| *count += 1);
+        wait_for_event(&running.backbone, &SessionId::new("s1"), |event| {
+            matches!(event, Event::EngineRestarted)
+        })
+        .await;
+        assert_eq!(
+            session.pages().await.len(),
+            1,
+            "the handed-over session is rebuilt by the next bump"
+        );
+        running.supervisor.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn a_session_closed_mid_rebuild_gets_its_fresh_context_closed() {
         // The membership re-check runs before the engine round trips, so
         // a close_session can land while the rebuild is in flight. The
