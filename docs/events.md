@@ -51,7 +51,7 @@ variant is produced by the session or manager layer as labeled.
 | `ActionFailed` | `page`, `origin`, `action`, `error` | an action failed; `error` carries the [error taxonomy](tool-catalog.md#2-result-conventions) |
 | `ApprovalRequested` | `request_id`, `page`, `brief` | [policy](policy.md#4-approvals) parked an action until a human decides |
 | `ApprovalResolved` | `request_id`, `granted` | a human answered, or the window timed out |
-| `DialogAutoDismissed` | `page`, `kind`, `message` | the page opened a JavaScript dialog (`alert`, `confirm`, `prompt`, or `beforeunload`) and the session dismissed it ([tool catalog](tool-catalog.md#4-tools)) |
+| `DialogAutoDismissed` | `page`, `kind`, `message` | the page opened a JavaScript dialog (`alert`, `confirm`, `prompt`, or `beforeunload`); the session answers every dialog, and the event is recorded when the dialog is observed. The dismissal answer is best-effort — a page that died with the dialog open never receives it ([tool catalog](tool-catalog.md#4-tools)) |
 
 Actions and errors embed as [serialized
 vocabulary](glossary.md#serialization-conventions) (`"type"` tag,

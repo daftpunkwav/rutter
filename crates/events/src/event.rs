@@ -101,8 +101,11 @@ pub enum Event {
     },
     /// A page opened a JavaScript dialog and the session dismissed it.
     /// Unanswered dialogs wedge a page, so sessions answer every dialog
-    /// (dismiss; a prompt keeps its default text) and the dismissal is
-    /// recorded like any other page fact.
+    /// (dismiss; a prompt keeps its default text). The event is published
+    /// when the dialog is observed, before the dismissal answer is sent,
+    /// and that answer is best-effort — a page that died with the dialog
+    /// open never receives it — so the event records the observed dialog,
+    /// not a confirmed dismissal on the page side.
     DialogAutoDismissed {
         /// The page that opened the dialog.
         page: PageId,

@@ -47,7 +47,7 @@
 | `ActionFailed` | `page`, `origin`, `action`, `error` | 动作失败；`error` 携带[错误分类](tool-catalog.zh.md#2-结果约定) |
 | `ApprovalRequested` | `request_id`, `page`, `brief` | [策略](policy.zh.md#4-审批)将动作搁置等待人工决定 |
 | `ApprovalResolved` | `request_id`, `granted` | 人类已答复，或窗口超时 |
-| `DialogAutoDismissed` | `page`, `kind`, `message` | 页面打开了 JavaScript 对话框（`alert`、`confirm`、`prompt` 或 `beforeunload`），session 已将其关闭（[工具目录](tool-catalog.zh.md#4-工具)） |
+| `DialogAutoDismissed` | `page`, `kind`, `message` | 页面打开了 JavaScript 对话框（`alert`、`confirm`、`prompt` 或 `beforeunload`）；session 会对每个对话框作答，事件在观测到对话框时即被记录。作答是尽力而为——带着对话框死亡的页面收不到答案（[工具目录](tool-catalog.zh.md#4-工具)） |
 
 动作与错误以[序列化词汇](glossary.zh.md#序列化约定)（`"type"`
 标签、snake_case）内嵌，消费者命名一个动作或失败与命名事件的方式

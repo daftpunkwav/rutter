@@ -119,10 +119,10 @@
 `direction` 是 `up|down|left|right` 之一；时长单位为毫秒。
 
 **对话框。**页面调用 `alert`、`confirm`、`prompt` 或触发
-`beforeunload` 确认时，session 永远不会被卡住：session 立即关闭每个
-对话框（`prompt` 按取消解析、`confirm` 按否解析），并把这次关闭
-记录到事件时间线（[events](events.zh.md)）上；页面无法阻塞
-等待它的工具。
+`beforeunload` 确认时，session 永远不会被卡住：session 立即应答每个
+对话框（`prompt` 按取消解析、`confirm` 按否解析），并把对话框记录
+到事件时间线（[events](events.zh.md)）上；应答是尽力而为——带着
+对话框死亡的页面收不到答案。页面无法阻塞等待它的工具。
 
 ### navigate
 `{ url: string }` → snapshot。导航活动页面（需要时打开第一个

@@ -141,10 +141,11 @@ milliseconds.
 
 **Dialogs.** A page that calls `alert`, `confirm`, `prompt`, or
 triggers a `beforeunload` confirmation never wedges the session: the
-session dismisses every dialog immediately (a `prompt` resolves to its
-dismiss value, `confirm` to `false`) and records the dismissal on the
-event timeline ([events](events.md)); the page cannot block tools
-waiting on it.
+session answers every dialog immediately (a `prompt` resolves to its
+dismiss value, `confirm` to `false`) and records the dialog on the
+event timeline ([events](events.md)); the answer is best-effort — a
+page that died with the dialog open never receives it — and the page
+cannot block tools waiting on it.
 
 ### navigate
 `{ url: string }` → snapshot. Navigates the active page (opening the
