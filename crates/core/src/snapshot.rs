@@ -61,15 +61,6 @@ impl SnapshotNode {
             children: Vec::new(),
         }
     }
-
-    /// Creates a fold summary line for `count` collapsed children of
-    /// the given role.
-    pub fn fold_summary(role: impl Into<String>, count: u32) -> Self {
-        Self {
-            folded_count: Some(count),
-            ..Self::leaf(role)
-        }
-    }
 }
 
 impl fmt::Display for Snapshot {
@@ -168,7 +159,12 @@ mod tests {
 
     #[test]
     fn fold_summary_lines_render_the_count() {
-        let fold = SnapshotNode::fold_summary("listitem", 7);
+        // A fold summary is a leaf plus a count; the builder (the only
+        // producer) sets the fields directly.
+        let fold = SnapshotNode {
+            folded_count: Some(7),
+            ..SnapshotNode::leaf("listitem")
+        };
         assert_eq!(fold.folded_count, Some(7));
         let snapshot = Snapshot {
             url: "https://example.com".to_owned(),
