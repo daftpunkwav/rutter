@@ -11,12 +11,20 @@
 // `<userData>/cdp-port` so the running browser can be discovered on
 // the machine later.
 
-const { app, BrowserWindow, WebContentsView, Menu, ipcMain } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  WebContentsView,
+  Menu,
+  ipcMain,
+  session,
+} = require("electron");
 const fs = require("fs");
 const net = require("net");
 const path = require("path");
 
 const { isWebSchemeUrl } = require("./scheme-gate.js");
+const { isPermissionGranted } = require("./permission-gate.js");
 
 const TOOLBAR_HEIGHT = 48;
 const START_PAGE = "start.html";
@@ -77,7 +85,41 @@ function publishPort() {
 }
 
 // The scheme gate itself lives in scheme-gate.js, shared by both
-// navigation entry points and tested from tests/js.
+// navigation entry points and tested from tests/js. The permission
+// predicate lives in permission-gate.js the same way; attaching it to
+// a session is Electron glue, so it stays here.
+
+// Electron grants every permission request by default (geolocation,
+// camera, notifications, ...), so each session gets the gate: the
+// async request handler and the synchronous check handler both resolve
+// through the same default-deny predicate. It is attached to the
+// default session at startup and re-attached to every session created
+// later, so a future session cannot silently inherit the allow-all
+// default. Attaching twice is harmless.
+function attachPermissionGate(sess) {
+  sess.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(isPermissionGranted(permission));
+  });
+  sess.setPermissionCheckHandler(
+    (_wc, permission, _requestingOrigin) => isPermissionGranted(permission)
+  );
+}
+
+app.on("session-created", attachPermissionGate);
+
+// Renderer-initiated top-level navigation gets the same gate as the
+// main-process entry points: a page that navigates itself cannot reach
+// file:, devtools:, or javascript: URLs even if Chromium's own default
+// blocks ever shift. loadFile/loadURL are programmatic and never fire
+// will-navigate, so the shell's own toolbar and start targets pass
+// untouched. Only window-typed contents are gated — devtools' internal
+// surfaces must keep navigating their own bundled pages.
+app.on("web-contents-created", (_event, contents) => {
+  if (contents.getType() !== "window") return;
+  contents.on("will-navigate", (event, url) => {
+    if (!isWebSchemeUrl(url)) event.preventDefault();
+  });
+});
 
 function contentBounds() {
   const { width, height } = win.getContentBounds();
@@ -99,6 +141,15 @@ function createWindow() {
     backgroundColor: "#ffffff",
     autoHideMenuBar: true,
     show: false,
+    // Pinned explicitly instead of leaning on Electron defaults: the
+    // sandboxed contextBridge preload keeps working under sandbox,
+    // and a pin cannot drift the way a default can across releases.
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+    },
   });
   // Cross-component contract: the Rust attach fallback
   // (crates/engine-cdp/src/context.rs, `is_toolbar_document`) excludes
@@ -108,7 +159,16 @@ function createWindow() {
   win.once("ready-to-show", () => win.show());
   win.on("resize", () => view.setBounds(contentBounds()));
 
-  view = new WebContentsView({ webPreferences: { contextIsolation: true } });
+  // The shared view renders untrusted web content: the same pinned
+  // webPreferences as the toolbar, so nothing here reaches Node.
+  view = new WebContentsView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+    },
+  });
   win.contentView.addChildView(view);
   view.setBounds(contentBounds());
   view.webContents.loadFile(START_PAGE);
@@ -163,7 +223,17 @@ function createWindow() {
   }
 }
 
-ipcMain.on("navigate", (_event, url) => {
+// Only the toolbar's own document may drive this channel: the sender
+// check mirrors the Rust attach fallback's `is_toolbar_document`
+// matcher (crates/engine-cdp/src/context.rs) — a file:// URL ending in
+// "/toolbar.html". A web page is never a file:// URL, so a frame that
+// is not shell UI cannot borrow the channel even if it learns it.
+ipcMain.on("navigate", (event, url) => {
+  const senderUrl = event.senderFrame?.url ?? "";
+  if (!(senderUrl.startsWith("file://") && senderUrl.endsWith("/toolbar.html"))) {
+    console.warn("rutter-browser: navigate rejected from non-toolbar frame");
+    return;
+  }
   if (typeof url !== "string" || !url) return;
   // The same scheme gate `setWindowOpenHandler` applies: a bare word is
   // read as a host and completed with https, and no file:, devtools:,
@@ -189,6 +259,9 @@ ipcMain.on("home", () => view.webContents.loadFile(START_PAGE));
 ensureDebugPort()
   .then(async () => {
     await app.whenReady();
+    // The default session may exist before this module loads, so the
+    // session-created hook cannot be relied on to cover it.
+    attachPermissionGate(session.defaultSession);
     Menu.setApplicationMenu(null);
     createWindow();
     publishPort();
