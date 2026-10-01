@@ -24,7 +24,10 @@
 
 pub mod brief;
 pub mod broker;
-pub mod canonical;
+// `canonical` is the judgment-URL normalization `rules` and `brief`
+// share; callers receive its output inside verdicts and briefs, so the
+// function itself stays internal.
+mod canonical;
 pub mod class;
 pub mod config;
 pub mod pattern;
@@ -32,7 +35,6 @@ pub mod rules;
 
 pub use brief::{ApprovalBrief, ApprovalEffect, VerdictBasis};
 pub use broker::{ApprovalBroker, ApprovalId, ApprovalOutcome, Decision};
-pub use canonical::canonical_url;
 pub use class::ActionClass;
 pub use config::parse_policy;
 pub use pattern::Pattern;
