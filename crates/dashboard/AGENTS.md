@@ -22,8 +22,11 @@ The module map lives in [README.md](README.md) and
 - The bind address is `127.0.0.1`.
 - Every route except the fallback calls `auth::access_allowed` before
   other work. The fallback stays a bare `NOT_FOUND`.
-- `Host` must be a loopback name: `127.0.0.1`, `localhost`, or `::1`.
-  The `Host` port is not checked.
+- Compare the `Host` name after parsing `host` or `host:port`, with
+  IPv6 in brackets. The name is `127.0.0.1`, `localhost` in any ASCII
+  case, or `::1`. A port that parses is not compared to the bound
+  port. A port that does not parse fails the check. A missing `Host`
+  fails.
 - A missing `Origin` passes. A present `Origin` must parse as
   `scheme://authority`, use a loopback name, and name the port this
   server bound. An omitted port is 80 for `http` and 443 for `https`.
