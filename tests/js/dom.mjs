@@ -97,6 +97,17 @@ class Element {
     return node;
   }
 
+  get lastChild() {
+    return this.childNodes[this.childNodes.length - 1] || null;
+  }
+
+  removeChild(node) {
+    const at = this.childNodes.indexOf(node);
+    if (at >= 0) this.childNodes.splice(at, 1);
+    node.parent = null;
+    return node;
+  }
+
   // --- attributes -----------------------------------------------------
 
   getAttribute(name) {

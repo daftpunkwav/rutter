@@ -261,11 +261,23 @@
   // Every line (events, notes, connection status) lands in the single
   // timeline content container (`#events`), so a reconnect can clear
   // them all together.
+  //
+  // The timeline keeps the newest TIMELINE_MAX lines: each one is a
+  // live DOM node, and a long-lived session (a chatty page's console
+  // and network feed) would otherwise grow the document without bound
+  // for as long as the dashboard stays open. Newest lines prepend, so
+  // the ones trimmed off the end are the oldest.
+  var TIMELINE_MAX = 500;
+
   function append(text) {
     var node = document.createElement('div');
     node.className = 'event';
     node.textContent = text;
     var list = document.getElementById('events');
-    if (list) { list.prepend(node); }
+    if (!list) { return; }
+    list.prepend(node);
+    while (list.children.length > TIMELINE_MAX) {
+      list.removeChild(list.lastChild);
+    }
   }
 })();

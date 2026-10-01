@@ -338,3 +338,19 @@ test('a malformed frame does not take the client down', async () => {
     'the socket is still being read after a bad frame'
   );
 });
+
+test('a long session trims the timeline instead of growing it forever', async () => {
+  // Every line is a live DOM node, so a chatty page's feed would grow
+  // the document without bound on a dashboard left open for days. The
+  // newest lines prepend, so the ones trimmed off the end are the
+  // oldest, and the newest line the operator is reading stays.
+  const MAX = 500;
+  const { socket, ids } = await boot();
+  for (let seq = 1; seq <= MAX + 10; seq += 1) {
+    socket.deliver({ type: 'note', text: `n${seq}` });
+  }
+  const lines = ids.events.children.map((node) => node.textContent);
+  assert.equal(lines.length, MAX, 'the timeline holds the cap');
+  assert.equal(lines[0], `n${MAX + 10}`, 'the newest line prepends');
+  assert.equal(lines[MAX - 1], 'n11', 'the oldest ten are the ones trimmed');
+});
