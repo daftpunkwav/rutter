@@ -9,6 +9,22 @@ and the project adheres to
 
 ### Fixed
 
+- A screencast stream that ends without its viewer asking — a closed
+  page, an engine restart, a torn-down capture — no longer leaves the
+  last frame on screen posing as a live one. The server now sends the
+  watching socket one `{"type":"screencast-stopped"}` control frame
+  (reason `capture ended`) before the frames stop, and the dashboard
+  hides the picture and notes the end in the timeline. A stop the
+  viewer asked for still sends nothing.
+- Snapshot references are now scoped to the document that minted them
+  (`e17` → `e17-9x2f`). Every document counts its references from 1,
+  so after `tabs_select` a reference taken on page A could silently
+  resolve to page B's own `e17` and act on the wrong element with no
+  error; a cross-page hit now also needs the per-document scope to
+  collide, and otherwise reports the usual `reference expired` with
+  its fresh-snapshot hint. Same-page references keep the stability the
+  snapshot format promises.
+
 - A session id that cannot safely name the session's on-disk storage
   file is now refused before anything starts. The id composes into
   `<cache-root>/sessions/<id>.storage.json`, so an id carrying a path
@@ -208,6 +224,21 @@ and the project adheres to
 
 ### Added
 
+- The Electron shell now pins its own security gates instead of
+  inheriting Electron's allow-all defaults: web permissions resolve
+  through a deny-by-default predicate that grants only `fullscreen`,
+  `pointerLock`, and `clipboard-sanitized-write`; renderer-initiated
+  top-level navigation passes the same web-scheme whitelist the
+  navigate entry points use; both windows pin `contextIsolation`,
+  `nodeIntegration`, `sandbox`, and `webviewTag` explicitly; and the
+  `navigate` IPC channel accepts frames only from the toolbar
+  document. The gate predicates are pinned by `scripts/check_js.sh`
+  (see browser/README.md, "Security gates").
+- `tabs_select` now publishes a `page_activated` event naming the page
+  that became active; the switch used to be visible only through the
+  next action's events. `console_messages` and `network_requests` open
+  their output with the active page's id, so an observation names the
+  page that produced it.
 - `set_cookies` accepts an optional `expires` field per cookie
   (seconds since the Unix epoch); omitting it keeps the session-cookie
   behavior. The write side now speaks the same expiry vocabulary the
