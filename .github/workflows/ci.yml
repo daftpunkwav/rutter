@@ -138,7 +138,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: 11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.120.0
       - uses: 6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Check
         run: cargo check --locked --workspace --all-targets
