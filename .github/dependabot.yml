@@ -38,8 +38,13 @@ updates:
       - "dependencies"
       - "rust"
     groups:
-      cargo:
-        patterns: ["*"]
+      # Minor and patch bumps travel together; major bumps open one
+      # PR each so every breaking change gets its own review and a
+      # bisectable diff.
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "npm"
     directory: "/browser"

@@ -10,7 +10,7 @@
 # `node --test` is a Node builtin, so this gate adds no dependency. It
 # needs Node 18 or newer; a runner without Node reports "skipped"
 # rather than failing, so a contributor without Node is not blocked --
-# CI runs this on every platform that has it.
+# CI runs this in the fast gates job.
 
 set -euo pipefail
 
