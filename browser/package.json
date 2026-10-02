@@ -10,6 +10,6 @@
     "package": "node package.js"
   },
   "devDependencies": {
-    "electron": "44.5.0"
+    "electron": "44.5.1"
   }
 }
