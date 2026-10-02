@@ -21,6 +21,13 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    ignore:
+      # Their "version" is a toolchain or binary name, not an action release
+      # (rust-toolchain@1.88.0 pins the MSRV). Dependabot still bumps
+      # version-looking refs and produces PRs that cannot pass CI, e.g. it
+      # tried to install the nonexistent rust 1.120.0 in PR #6.
+      - dependency-name: "dtolnay/rust-toolchain"
+      - dependency-name: "taiki-e/install-action"
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
