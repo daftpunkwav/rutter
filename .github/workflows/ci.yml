@@ -34,11 +34,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
-      - uses: 11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - uses: 6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -82,9 +82,9 @@ jobs:
     env:
       RUTTER_CACHE_DIR: ${{ github.workspace }}/.rutter-engine-cache
     steps:
-      - uses: 11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: 6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - uses: ./.github/actions/engine-setup
       - name: Integration tests
         run: cargo test --locked -p rutter-engine-cdp --tests -- --ignored
@@ -100,9 +100,9 @@ jobs:
     env:
       RUTTER_CACHE_DIR: ${{ github.workspace }}/.rutter-engine-cache
     steps:
-      - uses: 11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: 6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - uses: ./.github/actions/engine-setup
       - name: Build the binary the suites drive
         run: cargo build --locked --bin rutter
@@ -116,12 +116,12 @@ jobs:
     env:
       RUTTER_CACHE_DIR: ${{ github.workspace }}/.rutter-engine-cache
     steps:
-      - uses: 11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
       - uses: taiki-e/install-action@cargo-llvm-cov
-      - uses: 6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - uses: ./.github/actions/engine-setup
       - name: Measure (engine suites and e2e included)
         run: |
@@ -137,9 +137,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: 11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@1.88.0
-      - uses: 6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Check
         run: cargo check --locked --workspace --all-targets
 
@@ -148,15 +148,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: 11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: 3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
 
   npm-audit:
     name: npm audit (browser shell)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: 11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # The Electron shell is the workspace's only npm surface and the
       # production dependency set is empty, so the --omit=dev audit is
       # a cheap hard gate. The full audit stays informational: its
