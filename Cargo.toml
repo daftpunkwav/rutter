@@ -61,7 +61,7 @@ rutter-session = { path = "crates/session" }
 # the fake endpoint speaks the same websocket stack as the real
 # connection. Merging it into tokio-tungstenite is not an option: that
 # would test against a different tungstenite than the engine uses.
-async-tungstenite = { version = "0.32", features = ["tokio-runtime", "handshake"] }
+async-tungstenite = { version = "0.35", features = ["tokio-runtime", "handshake"] }
 axum = { version = "0.8", features = ["ws"] }
 # Server-side surface only: stdio (transport-io) + streamable HTTP.
 # The client-side transports are test-only: the root tests/ package
@@ -69,10 +69,10 @@ axum = { version = "0.8", features = ["ws"] }
 # speak MCP as a client.
 rmcp = { version = "3.4", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 async-trait = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
 chromiumoxide = "0.9"
-dirs = "6"
+dirs = "7"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 insta = "1"
 proptest = "1"
@@ -93,14 +93,14 @@ thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
 # Dashboard tests drive the real WebSocket loop over loopback.
-tokio-tungstenite = { version = "0.29", default-features = false }
-toml = "0.8"
+tokio-tungstenite = { version = "0.30", default-features = false }
+toml = "1.1"
 url = "2"
 # Held on 2.4: the newest non-yanked 2.x. The `arbitrary` entry the
 # lock carries for it is cfg(fuzzing)-gated upstream, so normal builds
 # never compile it; later majors change API and MSRV for no defect
 # this workspace has.
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 
 # Lint policy: no unwrap/expect/panic outside tests and
 # process init, no placeholder markers, public items documented.
