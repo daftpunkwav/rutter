@@ -1,14 +1,15 @@
-# gitleaks configuration. Extends the default rule set; the allowlist covers
-# the dashboard test tree, where fabricated WebSocket handshake keys
-# (sec-websocket-key) are fixtures by design - they exercise the HTTP flow
-# paths and are not secrets. Keep the list path-scoped: a real leak outside
-# the tests tree must stay loud.
+# gitleaks configuration. Extends the default rule set. One targeted
+# acceptance: the dashboard HTTP-flow test uses the RFC 6455 documented
+# example key (dGhlIHNhbXBsZSBub25jZQ==, "the sample nonce") as a
+# sec-websocket-key fixture - a public constant, not a secret. The allowlist
+# requires BOTH the fixture path AND that exact value (condition = "AND"),
+# so any other credential in the tests tree stays loud.
 
 [extend]
 useDefault = true
 
-[allowlist]
-description = "dashboard test fixtures use fabricated handshake keys on purpose"
-paths = [
-  '''crates/dashboard/tests/''',
-]
+[[allowlists]]
+description = "RFC 6455 example key used as the websocket handshake fixture"
+condition = "AND"
+paths = ['''crates/dashboard/tests/''']
+regexes = ['''dGhlIHNhbXBsZSBub25jZQ==''']
