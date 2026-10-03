@@ -19,6 +19,9 @@ on:
   push:
     branches: [main]
   pull_request:
+    # labeled / unlabeled carry the maintainer key that unlocks the
+    # expensive tier-2 jobs (see the full-approval guard below).
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   schedule:
     # Monday 06:23 UTC, off the top-of-hour thundering herd. Schedule
     # runs are not pull requests, so the path triage passes everything
@@ -28,6 +31,10 @@ on:
 # An updated pull_request run cancels the superseded one; push runs
 # queue behind the running one instead, and finished jobs keep their
 # results.
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -136,10 +143,45 @@ jobs:
           node --check crates/observe/src/assets/reader.js
           node --check crates/observe/src/assets/serializer.js
 
+  full-approval:
+    name: full-approval (maintainer key)
+    # Two-tier CI: cheap gates run on every event; the expensive tier below
+    # runs only after a maintainer attaches the ci-approved label. This
+    # guard FAILS (never pends) while unapproved, so the aggregate gate is
+    # red with an actionable message instead of a hanging check. GitHub
+    # forbids approving your own pull request, which makes an approval
+    # review unusable as the key for a solo maintainer - a label carries
+    # the same consent and works on the maintainer's own PRs too. Removing
+    # the label re-arms the gate (unlabeled re-triggers this workflow).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate maintainer approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "non-PR event ($EVENT): full CI runs unconditionally"
+            exit 0
+          fi
+          if gh api "repos/$REPO/pulls/$PR_NUMBER" \
+              --jq '[.labels[].name] | index("ci-approved") != null' | grep -q true; then
+            echo "ci-approved label present: tier-2 unblocked"
+            exit 0
+          fi
+          echo "::error title=Full CI awaiting approval::Tier-1 results are above; attach the ci-approved label to run the full suite (tier 2)."
+          exit 1
+
   quality:
     name: fmt, clippy, doc, tests (${{ matrix.os }})
-    needs: changes
-    if: ${{ always() && needs.changes.outputs.rust != 'false' }}
+    needs: [changes, full-approval]
+    # Tier 2: full approval plus the rust path flag (the labeled event
+    # carries no classifier output, so the key runs the tier in full).
+    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || github.event.action == 'labeled') }}
     strategy:
       fail-fast: false
       matrix:
@@ -167,8 +209,10 @@ jobs:
 
   integration:
     name: engine integration tests (${{ matrix.os }})
-    needs: changes
-    if: ${{ always() && needs.changes.outputs.rust != 'false' }}
+    needs: [changes, full-approval]
+    # Tier 2: full approval plus the rust path flag (the labeled event
+    # carries no classifier output, so the key runs the tier in full).
+    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || github.event.action == 'labeled') }}
     strategy:
       fail-fast: false
       matrix:
@@ -187,8 +231,10 @@ jobs:
 
   e2e:
     name: e2e acceptance suites (${{ matrix.os }})
-    needs: changes
-    if: ${{ always() && needs.changes.outputs.rust != 'false' }}
+    needs: [changes, full-approval]
+    # Tier 2: full approval plus the rust path flag (the labeled event
+    # carries no classifier output, so the key runs the tier in full).
+    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || github.event.action == 'labeled') }}
     strategy:
       fail-fast: false
       matrix:
@@ -209,8 +255,10 @@ jobs:
 
   coverage:
     name: coverage >= 90 % lines
-    needs: changes
-    if: ${{ always() && needs.changes.outputs.rust != 'false' }}
+    needs: [changes, full-approval]
+    # Tier 2: full approval plus the rust path flag (the labeled event
+    # carries no classifier output, so the key runs the tier in full).
+    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || github.event.action == 'labeled') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -234,8 +282,10 @@ jobs:
 
   msrv:
     name: msrv 1.88
-    needs: changes
-    if: ${{ always() && needs.changes.outputs.rust != 'false' }}
+    needs: [changes, full-approval]
+    # Tier 2: full approval plus the rust path flag (the labeled event
+    # carries no classifier output, so the key runs the tier in full).
+    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || github.event.action == 'labeled') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -283,7 +333,7 @@ jobs:
     # cancelled run can never masquerade as green. Future jobs join the needs
     # list; the required-checks entry never changes.
     name: gate
-    needs: [changes, title, gates, quality, integration, e2e, coverage, msrv, deny, npm-audit]
+    needs: [changes, title, gates, quality, integration, e2e, coverage, msrv, deny, npm-audit, full-approval]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -302,9 +352,10 @@ jobs:
           MSRV: ${{ needs.msrv.result }}
           DENY: ${{ needs.deny.result }}
           NPM_AUDIT: ${{ needs.npm-audit.result }}
+          FULL_APPROVAL: ${{ needs.full-approval.result }}
         run: |
           set -euo pipefail
-          results="changes=$CHANGES title=$TITLE gates=$GATES quality=$QUALITY integration=$INTEGRATION e2e=$E2E coverage=$COVERAGE msrv=$MSRV deny=$DENY npm_audit=$NPM_AUDIT"
+          results="changes=$CHANGES title=$TITLE gates=$GATES quality=$QUALITY integration=$INTEGRATION e2e=$E2E coverage=$COVERAGE msrv=$MSRV deny=$DENY npm_audit=$NPM_AUDIT full_approval=$FULL_APPROVAL"
           echo "$results"
           if grep -qE '=(failure|cancelled)' <<< "$results"; then
             echo "::error::one or more gates failed or were cancelled"
