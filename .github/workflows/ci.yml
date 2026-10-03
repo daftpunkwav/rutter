@@ -275,3 +275,37 @@ jobs:
       - name: Full report including dev dependencies
         continue-on-error: true
         run: npm --prefix browser audit
+
+  gate:
+    # Merge-time summary: branch protection requires this check. Always runs;
+    # passes when every job that ran succeeded (skipped areas are the path
+    # triage doing its job) and fails on any failure or cancellation, so a
+    # cancelled run can never masquerade as green. Future jobs join the needs
+    # list; the required-checks entry never changes.
+    name: gate
+    needs: [changes, title, gates, quality, integration, e2e, coverage, msrv, deny, npm-audit]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate gate results
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          TITLE: ${{ needs.title.result }}
+          GATES: ${{ needs.gates.result }}
+          QUALITY: ${{ needs.quality.result }}
+          INTEGRATION: ${{ needs.integration.result }}
+          E2E: ${{ needs.e2e.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+          MSRV: ${{ needs.msrv.result }}
+          DENY: ${{ needs.deny.result }}
+          NPM_AUDIT: ${{ needs.npm-audit.result }}
+        run: |
+          set -euo pipefail
+          results="changes=$CHANGES title=$TITLE gates=$GATES quality=$QUALITY integration=$INTEGRATION e2e=$E2E coverage=$COVERAGE msrv=$MSRV deny=$DENY npm_audit=$NPM_AUDIT"
+          echo "$results"
+          if grep -qE '=(failure|cancelled)' <<< "$results"; then
+            echo "::error::one or more gates failed or were cancelled"
+            exit 1
+          fi
+          echo "all triggered gates passed"
