@@ -12,4 +12,4 @@ useDefault = true
 description = "RFC 6455 example key used as the websocket handshake fixture"
 condition = "AND"
 paths = ['''crates/dashboard/tests/''']
-regexes = ['''dGhlIHNhbXBsZSBub25jZQ==''']
+regexes = ['''^dGhlIHNhbXBsZSBub25jZQ==$''']
