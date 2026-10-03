@@ -1,0 +1,14 @@
+# gitleaks configuration. Extends the default rule set; the allowlist covers
+# the dashboard test tree, where fabricated WebSocket handshake keys
+# (sec-websocket-key) are fixtures by design - they exercise the HTTP flow
+# paths and are not secrets. Keep the list path-scoped: a real leak outside
+# the tests tree must stay loud.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "dashboard test fixtures use fabricated handshake keys on purpose"
+paths = [
+  '''crates/dashboard/tests/''',
+]
