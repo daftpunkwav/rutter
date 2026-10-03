@@ -58,9 +58,10 @@ jobs:
         run: |
           set -euo pipefail
           # A 300-file-capped compare counts as code so pagination can
-          # never silently skip a build.
+          # never silently skip a build. Renames list both sides: a code
+          # file renamed into docs/ still counts as code.
           files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BASE...$HEAD" \
-            --jq 'if .truncated then "TRUNCATED" else .files | map(.filename) | join("\n") end')
+            --jq 'if .truncated then "TRUNCATED" else [.files[] | .filename, .previous_filename?] | map(select(. != null)) | join("\n") end')
           # The docs-only set: markdown anywhere (the README.zh.md
           # mirrors), plain text, license and git metadata. Everything
           # else — including .github/ and scripts/ — is code.
