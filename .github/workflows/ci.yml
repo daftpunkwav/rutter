@@ -178,10 +178,12 @@ jobs:
 
   quality:
     name: fmt, clippy, doc, tests (${{ matrix.os }})
+    # Tier 2: full approval plus the rust path flag. The triage does run
+    # on labeled events, but attaching the key means full validation, so
+    # only the ci-approved label bypasses the path flag; other labels do
+    # not. always() keeps a cancelled/failed triage from silently skipping.
     needs: [changes, full-approval]
-    # Tier 2: full approval plus the rust path flag (the labeled event
-    # carries no classifier output, so the key runs the tier in full).
-    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || github.event.action == 'labeled') }}
+    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || (github.event.action == 'labeled' && github.event.label.name == 'ci-approved')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -209,10 +211,12 @@ jobs:
 
   integration:
     name: engine integration tests (${{ matrix.os }})
+    # Tier 2: full approval plus the rust path flag. The triage does run
+    # on labeled events, but attaching the key means full validation, so
+    # only the ci-approved label bypasses the path flag; other labels do
+    # not. always() keeps a cancelled/failed triage from silently skipping.
     needs: [changes, full-approval]
-    # Tier 2: full approval plus the rust path flag (the labeled event
-    # carries no classifier output, so the key runs the tier in full).
-    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || github.event.action == 'labeled') }}
+    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || (github.event.action == 'labeled' && github.event.label.name == 'ci-approved')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -231,10 +235,12 @@ jobs:
 
   e2e:
     name: e2e acceptance suites (${{ matrix.os }})
+    # Tier 2: full approval plus the rust path flag. The triage does run
+    # on labeled events, but attaching the key means full validation, so
+    # only the ci-approved label bypasses the path flag; other labels do
+    # not. always() keeps a cancelled/failed triage from silently skipping.
     needs: [changes, full-approval]
-    # Tier 2: full approval plus the rust path flag (the labeled event
-    # carries no classifier output, so the key runs the tier in full).
-    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || github.event.action == 'labeled') }}
+    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || (github.event.action == 'labeled' && github.event.label.name == 'ci-approved')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -255,10 +261,12 @@ jobs:
 
   coverage:
     name: coverage >= 90 % lines
+    # Tier 2: full approval plus the rust path flag. The triage does run
+    # on labeled events, but attaching the key means full validation, so
+    # only the ci-approved label bypasses the path flag; other labels do
+    # not. always() keeps a cancelled/failed triage from silently skipping.
     needs: [changes, full-approval]
-    # Tier 2: full approval plus the rust path flag (the labeled event
-    # carries no classifier output, so the key runs the tier in full).
-    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || github.event.action == 'labeled') }}
+    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || (github.event.action == 'labeled' && github.event.label.name == 'ci-approved')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -282,10 +290,12 @@ jobs:
 
   msrv:
     name: msrv 1.88
+    # Tier 2: full approval plus the rust path flag. The triage does run
+    # on labeled events, but attaching the key means full validation, so
+    # only the ci-approved label bypasses the path flag; other labels do
+    # not. always() keeps a cancelled/failed triage from silently skipping.
     needs: [changes, full-approval]
-    # Tier 2: full approval plus the rust path flag (the labeled event
-    # carries no classifier output, so the key runs the tier in full).
-    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || github.event.action == 'labeled') }}
+    if: ${{ always() && needs.full-approval.result == 'success' && (needs.changes.outputs.rust != 'false' || (github.event.action == 'labeled' && github.event.label.name == 'ci-approved')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
