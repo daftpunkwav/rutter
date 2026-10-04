@@ -50,7 +50,7 @@ and the migration path. -->
 
 <!-- Does the change touch authentication or trust boundaries, Cargo.toml /
 Cargo.lock / package manifests, or GitHub workflows? cargo-deny gates the
-Rust dependency graph and security.yml audits the browser shell on their
+Rust dependency graph and ci.yml audits the browser shell on their
 respective triggers — use this section to give the reviewer context the
 scanners cannot infer. Otherwise write "N/A". -->
 
