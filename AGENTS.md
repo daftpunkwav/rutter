@@ -1,6 +1,7 @@
 ## Git conventions
 
-`main` must stay releasable at all times. Never commit or push to `main` directly.
+`main` must stay releasable at all times. Never commit or push to
+`main` directly — all changes land through reviewed PR merges.
 
 ### Branch naming
 
@@ -23,7 +24,7 @@ Format:
 ```
 
 - `<scope>` is optional; omit the parentheses when there is none.
-- `<subject>`: imperative, lowercase, no trailing period, 72 characters max.
+- `<subject>`: imperative, lowercase, no trailing period, 50 characters max.
 - `<body>` is required. State what changed and why. Wrap at 72 characters.
 
 Example:
@@ -58,13 +59,21 @@ Rules:
 
 ### Branch hygiene
 
+Set the upstream on the first push:
+
+```bash
+git push --set-upstream origin <branch>
+```
+
 ```bash
 git fetch origin
 git rebase origin/main
 git push --force-with-lease
 ```
 
-- Rebase on `origin/main` regularly. Never use plain `--force` on a shared branch.
+- Rebase on `origin/main` regularly. Never use plain `--force` on a shared
+  branch; published history is rewritten only with `--force-with-lease`,
+  immediately after a rebase.
 - Open a draft PR early when a change spans more than a few commits.
 - Ship a production-breaking fix from a `fix/*` branch off the broken `main` commit, then
   backport if a release branch exists.
