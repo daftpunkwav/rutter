@@ -34,7 +34,8 @@ failures before the push. State skipped checks honestly. -->
 - [ ] Ignored suites, when the change touches their surface:
       `cargo test --locked -p rutter-engine-cdp --tests -- --ignored` ·
       `cargo test --locked -p rutter-integration-tests --tests -- --ignored`
-- [ ] Browser shell: `npm --prefix browser audit` (and build/test if touched)
+- [ ] Browser shell: `npm --prefix browser audit` and
+      `npm --prefix browser audit --omit=dev` (and build/test if touched)
 - [ ] Anything the tests cannot reach was verified manually (describe below)
 
 <!-- Manual steps, before/after output. Delete if empty. -->
@@ -48,9 +49,10 @@ and the migration path. -->
 ## Security and supply chain
 
 <!-- Does the change touch authentication or trust boundaries, Cargo.toml /
-Cargo.lock / package manifests, or GitHub workflows? security.yml and
-cargo-deny scan on every PR regardless of paths — use this section to give
-the reviewer context the scanners cannot infer. Otherwise write "N/A". -->
+Cargo.lock / package manifests, or GitHub workflows? cargo-deny gates the
+Rust dependency graph and security.yml audits the browser shell on their
+respective triggers — use this section to give the reviewer context the
+scanners cannot infer. Otherwise write "N/A". -->
 
 ## Reviewer notes
 
