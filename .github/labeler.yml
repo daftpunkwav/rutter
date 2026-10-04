@@ -1,0 +1,25 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: "**/*.md"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: ".github/**"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/Cargo.toml"
+          - "**/Cargo.lock"
+          - "**/package-lock.json"
+          - "**/package.json"
+
+rust:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.rs"
+
+web:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "browser/**"
