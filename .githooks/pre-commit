@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#
+# Fast staged-only check that mirrors the CI format gate (the quality
+# job's `cargo fmt --all -- --check`). Clippy, doc, tests, coverage,
+# and the audits stay in CI; this hook just keeps unformatted Rust
+# from leaving the machine. Zero dependencies beyond the rustfmt that
+# ships with the toolchain.
+#
+# The staged file list comes from the git index, but each file is read
+# from the worktree: rustfmt has no working stdin mode on this
+# platform (`rustfmt -` fails with "file `-` does not exist"), so the
+# staged bytes cannot be piped in directly. Consequence: an unstaged
+# worktree reformat can mask an unformatted staged version, and the
+# reverse can fail a commit whose staged content is clean. When in
+# doubt run `cargo fmt --all -- --check` before pushing; CI has the
+# final word.
+#
+# No --edition flag is passed on purpose: rustfmt discovers
+# rustfmt.toml at the repo root from each input file's directory, and
+# that file pins edition and max_width precisely so direct rustfmt
+# runs match `cargo fmt`.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+staged=()
+while IFS= read -r f; do [ -n "$f" ] && staged+=("$f"); done < <(
+  git diff --cached --name-only --diff-filter=ACMR -- '*.rs'
+)
+
+[ "${#staged[@]}" -gt 0 ] || exit 0
+
+status=0
+for f in "${staged[@]}"; do
+  # A file staged and then deleted from the worktree has nothing on
+  # disk to check; skip it rather than fail the commit.
+  [ -f "$f" ] || continue
+  rustfmt --check "$f" || {
+    echo "pre-commit: rustfmt --check failed on $f" >&2
+    status=1
+  }
+done
+exit "$status"
