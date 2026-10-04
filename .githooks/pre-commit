@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+#
+# Fast staged-only check that mirrors the CI format gate (the quality
+# job's `cargo fmt --all -- --check`). Clippy, doc, tests, coverage,
+# and the audits stay in CI; this hook just keeps unformatted Rust
+# from leaving the machine. Zero dependencies beyond the rustfmt that
+# ships with the toolchain.
+#
+# Checks run against the STAGED contents (the git index), never the
+# worktree: each staged blob is piped to rustfmt via stdin. A dirty
+# worktree can neither mask an unformatted staged file nor fail a
+# commit whose staged content is clean, and an unstaged out-of-line
+# child module is never pulled into the check.
+#
+# Known rustfmt quirk (1.10): `rustfmt -` fails ("file `-` does not
+# exist") and no-argument stdin mode always exits 0, even when
+# --check prints a diff. Failure is therefore detected by non-empty
+# output; the exit code only guards parse and pipe errors.
+#
+# No --edition flag is passed: rustfmt applies rustfmt.toml from the
+# current directory in stdin mode, and the repo-root file pins
+# edition and max_width so direct rustfmt runs match `cargo fmt`.
+#
+# Staged paths are collected NUL-delimited so names that git would
+# otherwise quote survive intact.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+staged=()
+while IFS= read -r -d '' f; do staged+=("$f"); done < <(
+  git diff --cached -z --name-only --diff-filter=ACMR -- '*.rs'
+)
+
+[ "${#staged[@]}" -gt 0 ] || exit 0
+
+status=0
+for f in "${staged[@]}"; do
+  # stdout is captured because --check prints the diff there; stderr
+  # (rustfmt parse errors, git errors) passes through untouched.
+  out="$(git show ":$f" | rustfmt --check)" || {
+    echo "pre-commit: rustfmt failed on $f" >&2
+    status=1
+    continue
+  }
+  if [ -n "$out" ]; then
+    printf '%s\n' "$out" >&2
+    echo "pre-commit: rustfmt --check failed on $f" >&2
+    status=1
+  fi
+done
+exit "$status"

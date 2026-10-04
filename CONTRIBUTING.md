@@ -45,6 +45,10 @@ starting from the architecture map.
    bash scripts/check_encoding.sh
    ```
 
+   Optionally automate the format check: `git config core.hooksPath
+   .githooks` activates a pre-commit hook that runs rustfmt over
+   staged Rust files (see `.githooks/pre-commit`).
+
    CI additionally gates workspace line coverage at 90 % —
    `scripts/check_coverage.sh` over a cargo-llvm-cov report that
    includes the engine suites and the e2e suites; running it locally
