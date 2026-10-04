@@ -11,10 +11,12 @@
 # checksum; bump the version and the hash together. Authenticate with a
 # user-owned fine-grained PAT carrying the "Copilot Requests" account
 # permission and nothing else (classic PATs are not supported by the
-# Copilot CLI; repository secret COPILOT_PAT). The v1 backend this starter
-# shipped with - the GitHub Models inference endpoint - was retired on
-# 2026-07-30, which is why the run soft-skips while the secret is absent
-# instead of failing on every issue.
+# Copilot CLI; repository secret COPILOT_PAT). The job runs only for
+# issues opened by an owner, member, or collaborator: anyone can open an
+# issue, and the comment is posted with the repository identity. The v1
+# backend this starter shipped with - the GitHub Models inference
+# endpoint - was retired on 2026-07-30, which is why the run soft-skips
+# while the secret is absent instead of failing on every issue.
 name: Summarize new issues
 
 on:
@@ -40,6 +42,12 @@ permissions:
 
 jobs:
   summary:
+    # Trusted authors only. A drive-by issue must not be able to spend
+    # COPILOT_PAT or publish a comment under the repository identity.
+    if: >-
+      github.event.issue.author_association == 'OWNER' ||
+      github.event.issue.author_association == 'MEMBER' ||
+      github.event.issue.author_association == 'COLLABORATOR'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # issues: write posts the summary comment. The job does not check out
@@ -117,11 +125,23 @@ jobs:
       - name: Comment with AI summary
         if: steps.gate.outputs.available == 'true'
         run: |
+          set -euo pipefail
           if [ -z "$RESPONSE" ]; then
             echo "empty AI response; nothing to post"
             exit 0
           fi
-          printf '%s' "$RESPONSE" | gh issue comment "$ISSUE_NUMBER" --body-file -
+          # Character cap under the UTF-8 locale declared above. The prefix
+          # is written here, so the model cannot choose the comment's first
+          # line. A response that echoes the untrusted fence is not posted.
+          summary="${RESPONSE:0:1200}"
+          if printf '%s' "$summary" | grep -qE '<issue>|</issue>'; then
+            echo "response echoed the untrusted fence; nothing to post"
+            exit 0
+          fi
+          {
+            printf '%s\n\n' 'Automated issue summary. The issue text was treated as data.'
+            printf '%s\n' "$summary"
+          } | gh issue comment "$ISSUE_NUMBER" --body-file -
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
