@@ -46,6 +46,7 @@ Rules:
 - No WIP, debug output, commented-out code, or placeholder values.
 - No secrets, `.env` files, credentials, or large binaries.
 - Revert with `git revert`, keeping the original subject prefixed with `Revert: `.
+  Revert subjects are exempt from the lowercase and 50-character rules.
 
 ### Workflow
 
@@ -74,10 +75,11 @@ git rebase origin/main
 git push --force-with-lease
 ```
 
-- Rebase on `origin/main` regularly. Never use plain `--force` on a
-  shared branch; published history is rewritten only with
-  `--force-with-lease`, immediately after a rebase, and only for
-  maintenance the maintainer has approved in a linked issue.
+- Rebase on `origin/main` regularly. Never use plain `--force`;
+  published history is rewritten only with `--force-with-lease`,
+  immediately after a rebase. Rebasing your own open PR branch is
+  routine and needs no approval; rewriting any other published
+  branch is maintenance the maintainer approves in a linked issue.
 - Open a draft PR early when a change spans more than a few commits.
 - Ship a production-breaking fix from a `fix/*` branch off the broken `main` commit, then
   backport if a release branch exists.
