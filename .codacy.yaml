@@ -1,0 +1,16 @@
+---
+# Codacy analysis configuration.
+#
+# A generated lockfile has no source structure to measure: the
+# complexity analyzer (lizard) reports `Cargo.lock` as one 2 700-line
+# "method", which says nothing about this repository's code. Only that
+# one tool is told to skip the file, so dependency scanning (Trivy)
+# and every other analyzer still read it.
+#
+# Note for maintainers: while this file exists, Codacy reads ignored
+# paths from here and not from the repository's Ignored files settings
+# on the Codacy UI.
+engines:
+  lizard:
+    exclude_paths:
+      - "Cargo.lock"
