@@ -42,3 +42,7 @@ tokio = { workspace = true }
 # The one-shot engine double answers `evaluate` with an envelope, so
 # the test needs the JSON value type the page scripts return.
 serde_json = { workspace = true }
+# Policy fixtures: a scratch file the harness names and removes, rather
+# than a predictable path in the shared temp dir that another local
+# user could have planted a symlink at.
+tempfile = { workspace = true }

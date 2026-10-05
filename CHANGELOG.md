@@ -224,6 +224,11 @@ and the project adheres to
   could pre-create or plant a symlink at the path. The
   `rutter-engine-<pid>-` prefix is unchanged, so cleanup tooling that
   matched it still does.
+- Test scratch files and directories come from `tempfile`: the harness
+  names them and removes them on drop, where the upload, policy, and
+  launch-log fixtures used to write fixed names into the shared temp
+  dir — paths another local user could have planted a symlink at, and
+  that two concurrent runs could collide on.
 - The select-script builder in `rutter-observe` takes the option
   values as `&[String]` and serializes them itself; callers can no
   longer hand raw text through that would embed into the page as

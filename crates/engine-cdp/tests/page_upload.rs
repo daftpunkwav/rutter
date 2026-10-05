@@ -53,11 +53,23 @@ async fn files_reach_the_input_and_stale_references_fail() -> Result<(), Box<dyn
         .await?;
 
     // No snapshot yet: the reference store does not exist, so the
-    // upload fails with the shared expired-reference error.
-    let file = std::env::temp_dir().join("rutter-upload-integration.txt");
-    std::fs::write(&file, b"payload")?;
+    // upload fails with the shared expired-reference error. The fixture
+    // carries a harness-chosen name: a fixed one under the shared temp
+    // dir is a path another local user could have planted a symlink at.
+    let fixture = tempfile::Builder::new()
+        .prefix("rutter-upload-integration-")
+        .suffix(".txt")
+        .tempfile()?;
+    std::fs::write(fixture.path(), b"payload")?;
+    let path = fixture.path().to_string_lossy().into_owned();
+    let name = fixture
+        .path()
+        .file_name()
+        .expect("file name")
+        .to_string_lossy()
+        .into_owned();
     let stale = page
-        .set_input_files("e1", &[file.to_string_lossy().into_owned()])
+        .set_input_files("e1", std::slice::from_ref(&path))
         .await;
     assert!(
         matches!(
@@ -70,8 +82,7 @@ async fn files_reach_the_input_and_stale_references_fail() -> Result<(), Box<dyn
     // After a snapshot the reference resolves and the input receives
     // the file.
     let reference = only_reference(page.as_ref()).await;
-    page.set_input_files(&reference, &[file.to_string_lossy().into_owned()])
-        .await?;
+    page.set_input_files(&reference, &[path]).await?;
     let seen = page
         .evaluate(
             "(function () { var input = document.querySelector('input'); \
@@ -81,10 +92,10 @@ async fn files_reach_the_input_and_stale_references_fail() -> Result<(), Box<dyn
     assert_eq!(seen["count"], serde_json::json!(1));
     assert_eq!(
         seen["name"],
-        serde_json::json!("rutter-upload-integration.txt")
+        serde_json::json!(name),
+        "the input holds the fixture the harness named"
     );
 
-    let _ = std::fs::remove_file(&file);
     engine.shutdown().await?;
     Ok(())
 }

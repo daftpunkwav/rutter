@@ -578,28 +578,34 @@ mod tests {
 
     #[test]
     fn stderr_tail_collapses_the_log_into_one_line() {
-        let mut log = std::env::temp_dir();
-        // A name of this test's own: the sibling tail test would
-        // overwrite a shared path while running concurrently.
-        log.push(format!("rutter-tail-collapse-{}.log", std::process::id()));
+        // A scratch file of the harness's own name: a fixed path under
+        // the shared temp dir is one another local user could have
+        // planted a symlink at, and the sibling tail test would collide
+        // with it while running concurrently.
+        let log = tempfile::Builder::new()
+            .prefix("rutter-tail-collapse-")
+            .suffix(".log")
+            .tempfile()
+            .expect("scratch log");
         std::fs::write(
-            &log,
+            log.path(),
             "first line\n\nerror while loading\n  shared  libraries\n",
         )
         .unwrap();
-        let tail = stderr_tail(&log);
-        let _ = std::fs::remove_file(&log);
+        let tail = stderr_tail(log.path());
         assert_eq!(tail, "first line error while loading shared libraries");
     }
 
     #[test]
     fn stderr_tail_keeps_only_the_end_of_a_chatty_log() {
-        let mut log = std::env::temp_dir();
-        log.push(format!("rutter-tail-bounded-{}.log", std::process::id()));
+        let log = tempfile::Builder::new()
+            .prefix("rutter-tail-bounded-")
+            .suffix(".log")
+            .tempfile()
+            .expect("scratch log");
         let noise = "x".repeat(100_000);
-        std::fs::write(&log, format!("{noise}\nTHE ACTUAL CAUSE")).unwrap();
-        let tail = stderr_tail(&log);
-        let _ = std::fs::remove_file(&log);
+        std::fs::write(log.path(), format!("{noise}\nTHE ACTUAL CAUSE")).unwrap();
+        let tail = stderr_tail(log.path());
         assert!(tail.ends_with("THE ACTUAL CAUSE"));
         assert!(tail.len() < 5_000, "the tail must stay bounded");
     }
