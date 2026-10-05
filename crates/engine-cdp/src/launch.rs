@@ -344,10 +344,9 @@ fn profile_dir() -> Result<PathBuf, EngineError> {
             .mode(0o700)
             .create(&dir)
             .and_then(|()| {
-                std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).map_err(
-                    |error| {
+                std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).inspect_err(
+                    |_| {
                         let _ = std::fs::remove_dir(&dir);
-                        error
                     },
                 )
             })
