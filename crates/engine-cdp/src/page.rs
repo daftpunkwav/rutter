@@ -77,7 +77,7 @@ const ISOLATED_WORLD: &str = "rutter-ref-scope";
 
 /// The global the serializer reads its scope from; `entropy.js` locks the
 /// same name onto the global at document start.
-const REF_SCOPE_PROPERTY: &str = "__rutterRefScope";
+pub(crate) const REF_SCOPE_PROPERTY: &str = "__rutterRefScope";
 
 /// The isolated-world marker that binds a defined scope to the document
 /// it was defined on. The page cannot reach the isolated world, and a
@@ -623,6 +623,12 @@ impl CdpPage {
     /// catches it. The same check against a remembered scope is how a
     /// retry recognizes an install of its own.
     ///
+    /// `Ok(true)` means the minter the browser reports answers with the
+    /// scope named; `Ok(false)` means the browser answered and the
+    /// minter is someone else's; `Err` means nothing was learned -- a
+    /// wedged or slow browser must fail the caller rather than hand
+    /// back a page whose minter is unconfirmed.
+    ///
     /// The boundary this check cannot cross: a document that was already
     /// loaded when rutter attached can have made `Object.defineProperty`
     /// a spying no-op, so the define lands nowhere and the answer is the
@@ -630,7 +636,7 @@ impl CdpPage {
     /// way — the labels it renders are equally its choice — and every
     /// document the registration covers is immune, because the
     /// document-start install runs before any page script.
-    pub(crate) async fn verify_locked_scope(&self, scope: &str) -> Result<(), EngineError> {
+    pub(crate) async fn verify_locked_scope(&self, scope: &str) -> Result<bool, EngineError> {
         let minter = self.locked_scope_minter().await?;
         let object_id = minter
             .object_id
@@ -667,15 +673,7 @@ impl CdpPage {
             .value
             .as_ref()
             .and_then(Value::as_str);
-        if answered != Some(scope) {
-            return Err(EngineError::Internal {
-                detail: format!(
-                    "the document's {REF_SCOPE_PROPERTY} did not answer with the minted scope: \
-                     a page that keeps its own minter can choose its own scope"
-                ),
-            });
-        }
-        Ok(())
+        Ok(answered == Some(scope))
     }
 
     /// The locked scope minter the document holds, as the browser sees it.

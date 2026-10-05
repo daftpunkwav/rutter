@@ -29,6 +29,7 @@ use rutter_engine::error::EngineError;
 use rutter_engine::page::PageHandle;
 
 use crate::page::CdpPage;
+use crate::page::REF_SCOPE_PROPERTY;
 
 /// Pages of one CDP browser context, keyed by rutter page id.
 type PageMap = HashMap<PageId, Arc<CdpPage>>;
@@ -137,12 +138,15 @@ impl CdpContext {
     /// 3. Neither holds, so the document has no minter the engine put
     ///    there: mint one in the isolated world, claim it, and define
     ///    it. The claim and the record are written *before* the define,
-    ///    so a define or a verification whose answer was lost to a
-    ///    timeout leaves the candidate remembered and a retry takes path
-    ///    2 instead of defining a second time; a define that threw is
-    ///    not ambiguous -- the browser ran it and the property beat this
-    ///    attempt -- so the previous record is restored and the failure
-    ///    surfaces.
+    ///    so a define whose answer was lost to a timeout leaves the
+    ///    candidate remembered and a retry takes path 2 instead of
+    ///    defining a second time; a define that threw is not ambiguous
+    ///    -- the browser ran it and the property beat this attempt --
+    ///    so the previous record is restored and the failure surfaces.
+    ///    A verification that itself learns nothing -- a timeout, a
+    ///    transport failure -- fails the caller the same way: the claim
+    ///    predates the define and cannot stand in for the minter's own
+    ///    answer.
     async fn prepare_once(&self, handle: &CdpPage) -> Result<(), EngineError> {
         let gate = self.preparation_gate(&handle.target_id());
         let mut recorded = gate.lock().await;
@@ -158,25 +162,29 @@ impl CdpContext {
             && handle.document_scope_claimed(scope).await?
         {
             match handle.verify_locked_scope(scope).await {
-                Ok(()) => return Ok(()),
                 // The claim proves this document is the one the define
-                // named, and the property it defined is locked, so a
-                // check that merely ran out of time says nothing about
-                // the install; minting afresh here would meet the very
-                // property the claim vouches for. A confirmed mismatch
-                // is a different answer: the document holds a minter
-                // this engine did not install, and the fresh mint below
-                // must fail against it.
-                Err(EngineError::Timeout { .. }) => return Ok(()),
-                Err(_) => {}
+                // named, so a verified answer is the install it left.
+                Ok(true) => return Ok(()),
+                // The browser answered and the minter is not the one the
+                // claim names: the document holds a minter this engine
+                // did not install, and the fresh mint below must fail
+                // against it.
+                Ok(false) => {}
+                // Nothing was learned -- the check ran out of time or
+                // the transport failed, and the claim predates the
+                // define, so it cannot stand in for the minter's own
+                // answer. Fail the caller: a page whose minter is
+                // unconfirmed is not one to hand back, and the recorded
+                // candidate stays for the retry that follows.
+                Err(error) => return Err(error),
             }
         }
         // No claim for the remembered scope: the document was replaced
         // (a claim dies with it, and a document-start one leaves none),
-        // or an attempt before this one never got as far as a define.
-        // Either way the document gets a fresh mint below; the
-        // remembered scope stays until the define decides what replaces
-        // it.
+        // the minter the claim named is somebody else's, or an attempt
+        // before this one never got as far as a define. Either way the
+        // document gets a fresh mint below; the remembered scope stays
+        // until the define decides what replaces it.
         let scope = handle.mint_scope_in_isolated_world().await?;
         handle.claim_document_scope(&scope).await?;
         let previous = recorded.replace(scope.clone());
@@ -194,7 +202,16 @@ impl CdpContext {
                 }
                 Err(error)
             }
-            Ok(()) => handle.verify_locked_scope(&scope).await,
+            Ok(()) => match handle.verify_locked_scope(&scope).await {
+                Ok(true) => Ok(()),
+                Ok(false) => Err(EngineError::Internal {
+                    detail: format!(
+                        "the document's {REF_SCOPE_PROPERTY} did not answer with the minted \
+                         scope: a page that keeps its own minter can choose its own scope"
+                    ),
+                }),
+                Err(error) => Err(error),
+            },
         }
     }
 
