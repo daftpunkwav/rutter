@@ -64,7 +64,9 @@ Rendered, in document order:
 
 URLs are resolved against `document.baseURI` in the page, so links and
 images always carry absolute URLs. Link text escapes `[` and `]`;
-image alt escapes `]`.
+image alt escapes `]`; table cells escape `|`. Each of those escapes
+also escapes the backslash, so a page's own `\` cannot consume the
+escape and re-expose the character it was meant to hide.
 
 Omitted:
 

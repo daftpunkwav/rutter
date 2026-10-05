@@ -161,7 +161,11 @@
         const inner = collapse(inlineNodes(node.childNodes, depth + 1));
         if (!inner) continue;
         const href = absoluteUrl(attribute(node, 'href'));
-        const label = inner.replace(/\[/g, '\\[').replace(/\]/g, '\\]');
+        // The brackets end the label, and the backslash is in the class
+        // with them: escaping only the brackets would let a page's own
+        // `\` consume the escape added here, re-exposing the bracket it
+        // was meant to hide.
+        const label = inner.replace(/[\\[\]]/g, '\\$&');
         out += href ? '[' + label + '](' + href + ')' : label;
         continue;
       }
@@ -169,7 +173,7 @@
         const src = absoluteUrl(attribute(node, 'src') || '');
         if (src) {
           const alt = collapse(attribute(node, 'alt') || '');
-          out += '![' + alt.replace(/\]/g, '\\]') + '](' + src + ')';
+          out += '![' + alt.replace(/[\]\\]/g, '\\$&') + '](' + src + ')';
         }
         continue;
       }
@@ -216,8 +220,11 @@
     state.blocks = state.blocks.slice(0, start).concat(rendered);
   }
 
+  // A pipe in a cell would end the column, so it is escaped -- and the
+  // backslash with it, for the same reason as a link label: a page's own
+  // `\` would otherwise consume the escape and re-expose the pipe.
   function escapeCell(text) {
-    return collapse(text).replace(/\|/g, '\\|');
+    return collapse(text).replace(/[|\\]/g, '\\$&');
   }
 
   function headingLevel(el) {
@@ -414,7 +421,7 @@
       const src = absoluteUrl(attribute(el, 'src') || '');
       if (src) {
         const alt = collapse(attribute(el, 'alt') || '');
-        push('![' + alt.replace(/\]/g, '\\]') + '](' + src + ')');
+        push('![' + alt.replace(/[\]\\]/g, '\\$&') + '](' + src + ')');
       }
       return;
     }

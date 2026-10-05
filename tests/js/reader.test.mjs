@@ -123,6 +123,33 @@ test('a pipe inside a cell is escaped so the row keeps its shape', () => {
   assert.deepEqual(blocks(markdown), ['| expr |', '| --- |', '| a \\| b |']);
 });
 
+test("a page's own backslash cannot re-open an escape", () => {
+  // The escapes have to carry the backslash itself. Escaping only the
+  // metacharacter leaves the page's own `\` free to consume the escape
+  // this adds, so `a\` + `|` would emit `a\\|` -- a markdown parser
+  // reads that as an escaped backslash followed by a real column
+  // separator, and the row silently gains a column.
+  const cell = read(
+    el('body', {}, [
+      el('table', {}, [
+        el('tr', {}, [el('th', {}, ['expr'])]),
+        el('tr', {}, [el('td', {}, [String.raw`a \| b`])]),
+      ]),
+    ])
+  ).markdown;
+  assert.deepEqual(blocks(cell), ['| expr |', '| --- |', String.raw`| a \\\| b |`]);
+
+  const label = read(
+    el('body', {}, [el('p', {}, [el('a', { attrs: { href: '/x' } }, [String.raw`a \] b`])])])
+  ).markdown;
+  assert.equal(label, String.raw`[a \\\] b](https://page.example/x)`);
+
+  const alt = read(
+    el('body', {}, [el('img', { attrs: { src: 'pic.png', alt: String.raw`a \] b` } }, [])])
+  ).markdown;
+  assert.equal(alt, String.raw`![a \\\] b](https://page.example/a/pic.png)`);
+});
+
 test('a page past the character budget is marked truncated and clipped', () => {
   // Without the flag a clipped readout presented cut output as
   // complete, and the page-side budget is the only place the reader
