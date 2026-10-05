@@ -29,7 +29,7 @@ use rutter_engine::error::EngineError;
 use rutter_engine::page::PageHandle;
 
 use crate::page::CdpPage;
-use crate::page::REF_SCOPE_PROPERTY;
+use crate::page::{DEFINE_REFUSED_PREFIX, REF_SCOPE_PROPERTY};
 
 /// Pages of one CDP browser context, keyed by rutter page id.
 type PageMap = HashMap<PageId, Arc<CdpPage>>;
@@ -138,11 +138,12 @@ impl CdpContext {
     /// 3. Neither holds, so the document has no minter the engine put
     ///    there: mint one in the isolated world, claim it, and define
     ///    it. The claim and the record are written *before* the define,
-    ///    so a define whose answer was lost to a timeout leaves the
-    ///    candidate remembered and a retry takes path 2 instead of
-    ///    defining a second time; a define that threw is not ambiguous
-    ///    -- the browser ran it and the property beat this attempt --
-    ///    so the previous record is restored and the failure surfaces.
+    ///    so a define whose answer was lost -- a timeout, a transport
+    ///    drop -- leaves the candidate remembered and a retry takes
+    ///    path 2 instead of defining a second time; a define the
+    ///    browser ran and saw refused is not ambiguous -- the property
+    ///    beat this attempt -- so the previous record is restored and
+    ///    the failure surfaces.
     ///    A verification that itself learns nothing -- a timeout, a
     ///    transport failure -- fails the caller the same way: the claim
     ///    predates the define and cannot stand in for the minter's own
@@ -198,14 +199,17 @@ impl CdpContext {
         let previous = recorded.replace(scope.clone());
         match handle.define_locked_scope(&scope).await {
             Err(error) => {
-                // A timeout is ambiguous: the browser may have executed
-                // the define even though its answer was lost, so the
-                // candidate stays remembered and the retry verifies it
-                // (path 2) instead of meeting the property a second
-                // time. Every other failure is the browser answering
-                // that the property beat this attempt, which is not
-                // this attempt's to record.
-                if !matches!(error, EngineError::Timeout { .. }) {
+                // Two shapes of answer exist. The browser that RAN the
+                // define and saw it throw reports the refusal, and the
+                // property it met is not this attempt's to record. Every
+                // other failure -- a timeout, a transport drop -- is
+                // ambiguous: the define may have executed with its
+                // answer lost, so the candidate stays remembered and a
+                // later preparation verifies it (path 2) instead of
+                // meeting the property a second time.
+                if let EngineError::Internal { detail } = &error
+                    && detail.starts_with(DEFINE_REFUSED_PREFIX)
+                {
                     *recorded = previous;
                 }
                 Err(error)

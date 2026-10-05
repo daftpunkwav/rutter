@@ -88,6 +88,13 @@ pub(crate) const REF_SCOPE_PROPERTY: &str = "__rutterRefScope";
 /// script by design.
 const CLAIM_PROPERTY: &str = "__rutterEngineClaim";
 
+/// The prefix of the one define error the browser produced itself: the
+/// evaluation ran and the property refused the install. Every other
+/// define failure -- a timeout, a transport drop -- leaves whether the
+/// define executed unknown, and preparation records its candidate for
+/// a later verification instead of assuming the attempt never landed.
+pub(crate) const DEFINE_REFUSED_PREFIX: &str = "install the document scope:";
+
 /// How many base36 characters a scope carries, as the snapshot format
 /// documents.
 const REF_SCOPE_CHARS: usize = 4;
@@ -602,7 +609,7 @@ impl CdpPage {
         .await?;
         match installed.result.exception_details {
             Some(details) => Err(EngineError::Internal {
-                detail: format!("install the document scope: {}", exception_text(&details)),
+                detail: format!("{DEFINE_REFUSED_PREFIX} {}", exception_text(&details)),
             }),
             None => Ok(()),
         }
