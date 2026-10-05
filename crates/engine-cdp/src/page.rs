@@ -22,8 +22,8 @@ use chromiumoxide::cdp::browser_protocol::network::{
     EventLoadingFailed, EventRequestWillBeSent, EventResponseReceived, RequestId,
 };
 use chromiumoxide::cdp::browser_protocol::page::{
-    EventFrameNavigated, EventJavascriptDialogOpening, EventScreencastFrame,
-    GetNavigationHistoryParams, HandleJavaScriptDialogParams, NavigateParams,
+    AddScriptToEvaluateOnNewDocumentParams, EventFrameNavigated, EventJavascriptDialogOpening,
+    EventScreencastFrame, GetNavigationHistoryParams, HandleJavaScriptDialogParams, NavigateParams,
     NavigateToHistoryEntryParams, ScreencastFrameAckParams, StartScreencastFormat,
     StartScreencastParams, StopScreencastParams,
 };
@@ -270,6 +270,34 @@ impl CdpPage {
     /// Whether closing this page may close the underlying target.
     pub fn closable(&self) -> bool {
         self.closable
+    }
+
+    /// Registers the entropy capture for every document this page loads
+    /// from now on.
+    ///
+    /// A document's ref scope keeps a stale reference captured on one
+    /// page from resolving to another page's element after a tab switch,
+    /// and the serializer mints it from `crypto.getRandomValues` — a
+    /// global the page can replace, which would let a page hand every
+    /// document it opens the same scope. The capture script binds the
+    /// native generator before the document runs any script of its own
+    /// and locks it onto the global; see
+    /// [`rutter_observe::entropy_capture_script`].
+    ///
+    /// Registration is per target and survives navigation, so once is
+    /// enough for every document the page loads afterwards, including
+    /// ones the page starts itself. A failure is reported rather than
+    /// swallowed: a page whose scope the page itself can choose is a
+    /// weaker guarantee than the one callers are promised.
+    pub async fn install_entropy_capture(&self) -> Result<(), EngineError> {
+        let params = AddScriptToEvaluateOnNewDocumentParams::builder()
+            .source(rutter_observe::entropy_capture_script())
+            .build()
+            .map_err(|error| EngineError::Internal {
+                detail: format!("build the entropy capture registration: {error}"),
+            })?;
+        self.page.execute(params).await.map_err(fold)?;
+        Ok(())
     }
 
     /// Target id for closing the tab through the browser connection

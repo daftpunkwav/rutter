@@ -1,15 +1,18 @@
 //! Embedded JS assets owned by the observation layer.
 //!
-//! Boundary: static asset text only. The assets are the serializer and
-//! the reader scripts; both must stay ASCII-only and carry a truthful
-//! header (the CI encoding and header gates apply to them like any
-//! other source file).
+//! Boundary: static asset text only. The assets are the serializer, the
+//! reader, and the document-start entropy capture; all must stay
+//! ASCII-only and carry a truthful header (the CI encoding and header
+//! gates apply to them like any other source file).
 
 /// The in-page DOM serializer (see `assets/serializer.js`).
 pub const SERIALIZER_JS: &str = include_str!("assets/serializer.js");
 
 /// The in-page markdown reader (see `assets/reader.js`).
 pub const READER_JS: &str = include_str!("assets/reader.js");
+
+/// The document-start entropy capture (see `assets/entropy.js`).
+pub const ENTROPY_JS: &str = include_str!("assets/entropy.js");
 
 #[cfg(test)]
 mod tests {
@@ -67,6 +70,21 @@ mod tests {
         assert!(
             READER_JS.is_ascii(),
             "the reader must stay ASCII-only for the encoding gate"
+        );
+    }
+
+    #[test]
+    fn entropy_capture_names_the_property_the_serializer_reads() {
+        // The two assets meet at one name: the capture locks it onto the
+        // global, the serializer prefers it. A rename on either side
+        // would silently drop every document back to the page-replaceable
+        // generator, so it is asserted rather than assumed.
+        assert!(ENTROPY_JS.contains("__rutterGetRandomValues"));
+        assert!(SERIALIZER_JS.contains("__rutterGetRandomValues"));
+        assert!(ENTROPY_JS.is_ascii(), "the capture must stay ASCII-only");
+        assert!(
+            ENTROPY_JS.contains("configurable: false") && ENTROPY_JS.contains("writable: false"),
+            "the capture must lock the property it defines"
         );
     }
 }

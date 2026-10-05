@@ -39,22 +39,33 @@
   // scope to collide at once, while same-page refs keep the stability
   // the snapshot format promises.
   //
-  // The scope comes from `crypto`, not `Math.random`: `Math.random` is
-  // a plain page function, so a page can pin it to a constant and hand
-  // every document it opens the same scope -- which is the collision
-  // this exists to prevent. There is no fallback on purpose. A page
-  // that removes `crypto` gets the degradation every other failure
-  // here gets: `ensureRefStore` reports the snapshot truncated and
-  // hands out no references, rather than a scope that does not
-  // separate documents.
+  // The scope has to be random *to the page*, and every global a page
+  // can reach is one it can replace: `Math.random` and `crypto` alike,
+  // so a page could hand each document it opens the same scope. The
+  // engine therefore installs `entropy.js` at document start, before
+  // any page script runs, which binds the native generator and locks it
+  // onto the global (`__rutterGetRandomValues`); that is what this
+  // prefers. `crypto` is the fallback for a document that predates the
+  // installation -- rutter can attach to a browser whose page is
+  // already loaded -- where the page-replaceable source is all there
+  // is. A document with neither gets the degradation every other store
+  // failure gets: `ensureRefStore` reports the snapshot truncated and
+  // hands out no references, rather than a scope that does not separate
+  // documents.
   function mintScope() {
     const bytes = new Uint8Array(REF_SCOPE_CHARS);
-    crypto.getRandomValues(bytes);
-    let scope = '';
+    const fill =
+      typeof __rutterGetRandomValues === 'function'
+        ? __rutterGetRandomValues
+        : (target) => crypto.getRandomValues(target);
+    fill(bytes);
+    let value = 0;
     for (const byte of bytes) {
-      scope += byte.toString(36).padStart(2, '0');
+      value = value * 256 + byte;
     }
-    return scope.slice(0, REF_SCOPE_CHARS);
+    // The low base36 digits of the whole draw: four characters, as the
+    // snapshot format documents, with every random bit behind them.
+    return value.toString(36).padStart(REF_SCOPE_CHARS, '0').slice(-REF_SCOPE_CHARS);
   }
 
   // The lookup tables below are a Set or a Map, never an object

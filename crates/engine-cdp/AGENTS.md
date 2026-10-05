@@ -32,9 +32,15 @@ The module map lives in [README.md](README.md) and
   with `CREATE_NO_WINDOW`.
 - The profile directory is created exclusively under the temp dir,
   owner-only on Unix (`0700`): it holds the browser's cookies and login
-  state, and a directory made with the process umask would be readable
+  state, and a directory made with the process umask could be readable
   by every other local user. Creation failure, including a collision,
   is `LaunchFailed` and is not retried.
+- Opening or adopting a page registers
+  `rutter_observe::entropy_capture_script` with
+  `Page.addScriptToEvaluateOnNewDocument`, so it runs before the
+  document's own scripts. Failing to register fails the page: that
+  script is what stops a page from choosing the ref scope its documents
+  are given. The registration is per target and survives navigation.
 - `launch_secret` and the dashboard `generate_token` stay the same
   construction. A change to one updates the other.
 

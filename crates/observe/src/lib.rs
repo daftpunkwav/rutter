@@ -55,3 +55,20 @@ pub fn serializer_script() -> &'static str {
 pub fn reader_script() -> &'static str {
     assets::READER_JS
 }
+
+/// Returns the embedded document-start entropy capture.
+///
+/// The serializer mints each document's ref scope from a random source,
+/// and the scope is what keeps a stale reference captured on one page
+/// from resolving to another page's element after a tab switch. The
+/// page's own `crypto` is replaceable, so the engine installs this
+/// script with `Page.addScriptToEvaluateOnNewDocument` — before the
+/// document runs any script of its own — and the serializer prefers the
+/// generator it locks onto the global. A document that predates the
+/// installation falls back to `crypto`.
+///
+/// The script is a no-op on a document without `crypto`, where the
+/// serializer's store degrades instead.
+pub fn entropy_capture_script() -> &'static str {
+    assets::ENTROPY_JS
+}

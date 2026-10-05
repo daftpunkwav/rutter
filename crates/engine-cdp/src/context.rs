@@ -159,7 +159,7 @@ impl ContextHandle for CdpContext {
 
         let serial = self.page_counter.fetch_add(1, Ordering::Relaxed);
         let page_id = PageId::new(format!("{}:page-{}", self.id, serial));
-        let handle = Arc::new(if created {
+        let handle = if created {
             CdpPage::new(
                 page,
                 self.config.navigation_timeout,
@@ -171,7 +171,13 @@ impl ContextHandle for CdpContext {
                 self.config.navigation_timeout,
                 Some(self.config.screenshot_min_interval),
             )
-        });
+        };
+        // Before the page loads anything: a document's ref scope must not
+        // be a value the document itself can choose. A page that already
+        // exists keeps working on the serializer's fallback until its
+        // next navigation, which the registration covers.
+        handle.install_entropy_capture().await?;
+        let handle = Arc::new(handle);
 
         // The cap protects the shared engine process, so it is re-checked
         // under the lock that owns registration: a concurrent open may
@@ -357,12 +363,16 @@ impl ContextHandle for CdpContext {
             )
             .await?
         };
-        let handle = Arc::new(CdpPage::adopted(
+        let handle = CdpPage::adopted(
             page,
             self.config.navigation_timeout,
             Some(self.config.screenshot_min_interval),
             adopt_closable(&self.cdp_context_id, &info),
-        ));
+        );
+        // The adopted target already carries a document, so the capture
+        // applies to the documents it loads next.
+        handle.install_entropy_capture().await?;
+        let handle = Arc::new(handle);
         let previous = self.lock_pages().insert(id.clone(), Arc::clone(&handle));
         if let Some(existing) = previous {
             // A concurrent adoption won the race between the check and

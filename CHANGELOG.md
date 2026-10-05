@@ -184,20 +184,22 @@ and the project adheres to
   site chrome and dropped from a `read` readout. The tables now hold
   exactly the roles that were put in them, and an implicit role
   lookup answers for the element's own tag name only.
-- The per-document ref scope is minted from `crypto.getRandomValues`
-  instead of `Math.random`. `Math.random` is a plain page function, so
-  a page could pin it to a constant and hand every document it opened
-  the same scope — the collision the scope exists to prevent. A page
-  that removes `crypto` now gets the degradation every other store
-  failure gets: a snapshot reported as truncated with no references,
-  rather than one whose references cannot be told apart across
-  documents.
+- The per-document ref scope is no longer a value the page can choose.
+  It is minted from the native `crypto.getRandomValues`, which the
+  engine now captures at document start — before any page script runs —
+  and locks onto the global as a non-configurable property. `Math.random`
+  and `crypto` are both plain globals a page can replace, and one that
+  fills every buffer with the same bytes handed each document it opened
+  the same scope, after which a stale reference from one page could
+  resolve to another page's own element. A page that removes `crypto`
+  gets the degradation every other store failure gets: a snapshot
+  reported as truncated with no references.
 - The engine's per-launch profile directory is created owner-only on
   Unix (`0700`). It holds the browser's cookies, history, and login
-  state, and a directory made with the process umask was readable — and
-  under a permissive umask writable — by every other local user on the
-  machine, which is also what would let one of them plant a symlink at
-  a path the browser writes to inside it.
+  state, and a directory made with the process umask could be readable
+  — and, under a permissive umask, writable — by every other local user
+  on the machine, which is also what would let one of them plant a
+  symlink at a path the browser writes to inside it.
 
 ### Changed
 

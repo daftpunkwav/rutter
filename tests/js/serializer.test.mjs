@@ -19,6 +19,7 @@ import test from 'node:test';
 import { ControllableWeakRef, createPage, el, loadScript, makeDocument } from './dom.mjs';
 
 const SERIALIZER_JS = loadScript('crates/observe/src/assets/serializer.js');
+const ENTROPY_JS = loadScript('crates/observe/src/assets/entropy.js');
 
 /** A page over `body`, sharing `window` with every later snapshot. */
 function pageOver(body, window = {}) {
@@ -159,6 +160,61 @@ test('the sweep spares the refs whose elements are still alive', () => {
     'a live element keeps the ref it was first given'
   );
   assert.equal(rendered[599].ref, first.root.children[599].ref, 'and so does the last');
+});
+
+test('the captured generator keeps documents apart when the page patches crypto', () => {
+  // The attack the capture exists for: a page replaces
+  // `crypto.getRandomValues` with one that fills a constant, so every
+  // document it opens would mint the same scope and a stale reference
+  // from one page would resolve to another page's own `e1`. The engine
+  // installs the capture before any page script runs, so the scope
+  // comes from the generator bound then and the patch is irrelevant.
+  const patch = (page) => {
+    page.window.crypto = {
+      getRandomValues(bytes) {
+        bytes.fill(0);
+        return bytes;
+      },
+    };
+  };
+  const page = pageOver(el('body', {}, [el('button', {}, ['Save'])]));
+  page.run(ENTROPY_JS);
+  patch(page);
+  const refA = page.run(SERIALIZER_JS).root.children[0].ref;
+
+  const other = pageOver(el('body', {}, [el('button', {}, ['Save'])]));
+  other.run(ENTROPY_JS);
+  patch(other);
+  const refB = other.run(SERIALIZER_JS).root.children[0].ref;
+
+  assert.match(refA, /^e1-/);
+  assert.notEqual(refA, refB, 'a patched crypto cannot hand two documents one scope');
+  assert.notEqual(
+    page.window.__rutterRefStore.scope,
+    '0000',
+    'the constant fill never reached the scope'
+  );
+});
+
+test('the scope prefers the captured generator over crypto', () => {
+  // The contract read directly: the captured generator fills the bytes,
+  // so the scope is drawn from them and `crypto` is never consulted.
+  const page = pageOver(el('body', {}, [el('button', {}, ['Save'])]));
+  page.window.__rutterGetRandomValues = (bytes) => bytes.fill(35);
+  let consulted = false;
+  page.window.crypto = {
+    getRandomValues(bytes) {
+      consulted = true;
+      bytes.fill(0);
+      return bytes;
+    },
+  };
+  const envelope = page.run(SERIALIZER_JS);
+  const scope = page.window.__rutterRefStore.scope;
+  assert.equal(consulted, false, 'the replaceable source is not consulted');
+  assert.match(scope, /^[0-9a-z]{4}$/, 'the scope keeps the documented shape');
+  assert.notEqual(scope, '0000', 'the zero-filling crypto did not reach it');
+  assert.equal(envelope.root.children[0].ref, `e1-${scope}`);
 });
 
 test('a store with no usable shape is left alone instead of throwing', () => {
