@@ -229,6 +229,12 @@ and the project adheres to
   out together, so persisting a state costs roughly one round trip
   instead of one per origin on the critical path of every action. The
   captured state, its comparison, and its write are unchanged.
+- Every `uses:` in the workflows is pinned to a full commit SHA,
+  including the two whose ref used to name a toolchain
+  (`dtolnay/rust-toolchain`) or a tool (`taiki-e/install-action`):
+  both now take that name from an input, so the pin freezes the action
+  code while the toolchain, the MSRV, and the installed tool stay the
+  versions the inputs name.
 
 ### Added
 
