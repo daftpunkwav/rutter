@@ -328,10 +328,20 @@ fn profile_dir() -> Result<PathBuf, EngineError> {
     // Owner-only on Unix, where the mode is the whole point; elsewhere
     // the per-user ACL of the temp directory is what bounds access, and
     // this is the same exclusive create.
+    //
+    // The create's mode is masked by the process umask, and the umask can
+    // clear the owner bits too: a launcher running under a umask of 0777
+    // would otherwise hand the browser a profile it cannot read. The mode
+    // is therefore set outright once the directory exists, and failing to
+    // set it is the same refusal as failing to create it.
     #[cfg(unix)]
     let created = {
         use std::os::unix::fs::DirBuilderExt;
-        std::fs::DirBuilder::new().mode(0o700).create(&dir)
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&dir)
+            .and_then(|()| std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)))
     };
     #[cfg(not(unix))]
     let created = std::fs::create_dir(&dir);

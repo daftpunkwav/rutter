@@ -200,7 +200,9 @@ and the project adheres to
   state, and a directory made with the process umask could be readable
   — and, under a permissive umask, writable — by every other local user
   on the machine, which is also what would let one of them plant a
-  symlink at a path the browser writes to inside it.
+  symlink at a path the browser writes to inside it. The mode is set
+  outright after the create, since the create's own mode is masked by
+  the umask and a restrictive one can clear the owner bits.
 
 ### Changed
 

@@ -33,7 +33,9 @@ The module map lives in [README.md](README.md) and
 - The profile directory is created exclusively under the temp dir,
   owner-only on Unix (`0700`): it holds the browser's cookies and login
   state, and a directory made with the process umask could be readable
-  by every other local user. Creation failure, including a collision,
+  by every other local user. The mode is set outright after the create,
+  because the create's own mode is masked by the umask and a restrictive
+  one can clear the owner bits. Creation failure, including a collision,
   is `LaunchFailed` and is not retried.
 - Opening or adopting a page prepares its ref scope, both halves
   together: `rutter_observe::entropy_capture_script` registered with
