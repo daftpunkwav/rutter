@@ -100,8 +100,10 @@ function attachPermissionGate(sess) {
   sess.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(isPermissionGranted(permission));
   });
-  sess.setPermissionCheckHandler(
-    (_wc, permission, _requestingOrigin) => isPermissionGranted(permission)
+  // Electron passes a third `requestingOrigin` argument; the predicate
+  // does not read it, so the handler does not declare it.
+  sess.setPermissionCheckHandler((_wc, permission) =>
+    isPermissionGranted(permission)
   );
 }
 
@@ -199,7 +201,10 @@ function createWindow() {
   view.webContents.on("render-process-gone", (_event, details) => {
     if (details.reason === "clean-exit" || rendererCrashes >= 3) return;
     rendererCrashes += 1;
-    view.webContents.reload().catch(() => {});
+    view.webContents.reload().catch(() => {
+      // A rejected reload keeps the crashed page visible; CDP
+      // navigation remains the recovery path.
+    });
   });
   view.webContents.on("did-navigate", () => {
     rendererCrashes = 0;
@@ -243,11 +248,13 @@ ipcMain.on("navigate", (event, url) => {
   loadSharedView(target);
 });
 
-// Navigates the shared view, settling loadURL's rejection instead of
-// leaving it unhandled (a failed load already shows Chromium's error
-// page, so there is nothing left to report).
+// Navigates the shared view, settling the load's rejection instead of
+// leaving it unhandled.
 function loadSharedView(url) {
-  view.webContents.loadURL(url).catch(() => {});
+  view.webContents.loadURL(url).catch(() => {
+    // A failed load already shows Chromium's own error page, so there
+    // is nothing left to report.
+  });
 }
 ipcMain.on("back", () => view.webContents.goBack());
 ipcMain.on("forward", () => view.webContents.goForward());
