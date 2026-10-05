@@ -328,7 +328,9 @@ impl CdpPage {
     /// enough for every document the page loads afterwards, including
     /// ones the page starts itself. A failure is reported rather than
     /// swallowed: a page whose scope the page itself can choose is a
-    /// weaker guarantee than the one callers are promised.
+    /// weaker guarantee than the one callers are promised. Every call is
+    /// under a deadline like the rest of this file, so a browser that
+    /// stops answering cannot park a page open.
     pub async fn install_entropy_capture(&self) -> Result<(), EngineError> {
         let params = AddScriptToEvaluateOnNewDocumentParams::builder()
             .source(rutter_observe::entropy_capture_script())
@@ -336,7 +338,12 @@ impl CdpPage {
             .map_err(|error| EngineError::Internal {
                 detail: format!("build the entropy capture registration: {error}"),
             })?;
-        self.page.execute(params).await.map_err(fold)?;
+        with_deadline(
+            "install_entropy_capture",
+            COMMAND_TIMEOUT,
+            self.page.execute(params),
+        )
+        .await?;
         Ok(())
     }
 
@@ -350,15 +357,21 @@ impl CdpPage {
     /// own globals, which the page's patches do not reach, so the scope
     /// is minted there and then defined in the main world, locked, for
     /// the serializer to read.
+    ///
+    /// Every call is under a deadline like the rest of this file: this
+    /// runs while a page is being opened or adopted, so a browser that
+    /// stops answering must not park that.
     pub async fn install_current_scope(&self) -> Result<(), EngineError> {
-        let tree = self
-            .page
-            .execute(GetFrameTreeParams::default())
-            .await
-            .map_err(fold)?;
-        let world = self
-            .page
-            .execute(
+        let tree = with_deadline(
+            "get_frame_tree",
+            COMMAND_TIMEOUT,
+            self.page.execute(GetFrameTreeParams::default()),
+        )
+        .await?;
+        let world = with_deadline(
+            "create_isolated_world",
+            COMMAND_TIMEOUT,
+            self.page.execute(
                 CreateIsolatedWorldParams::builder()
                     .frame_id(tree.frame_tree.frame.id.clone())
                     .world_name(ISOLATED_WORLD)
@@ -366,12 +379,13 @@ impl CdpPage {
                     .map_err(|error| EngineError::Internal {
                         detail: format!("build the isolated world request: {error}"),
                     })?,
-            )
-            .await
-            .map_err(fold)?;
-        let minted = self
-            .page
-            .execute(
+            ),
+        )
+        .await?;
+        let minted = with_deadline(
+            "mint_ref_scope",
+            COMMAND_TIMEOUT,
+            self.page.execute(
                 EvaluateParams::builder()
                     .expression(SCOPE_IN_ISOLATED_WORLD)
                     .context_id(world.execution_context_id)
@@ -380,9 +394,9 @@ impl CdpPage {
                     .map_err(|error| EngineError::Internal {
                         detail: format!("build the scope evaluation: {error}"),
                     })?,
-            )
-            .await
-            .map_err(fold)?;
+            ),
+        )
+        .await?;
         if let Some(details) = minted.result.exception_details {
             return Err(EngineError::Internal {
                 detail: format!("mint the document scope: {}", exception_text(&details)),
@@ -407,9 +421,10 @@ impl CdpPage {
                value: function () {{ return '{scope}'; }}, \
                writable: false, configurable: false, enumerable: false }}); }})()"
         );
-        let installed = self
-            .page
-            .execute(
+        let installed = with_deadline(
+            "install_ref_scope",
+            COMMAND_TIMEOUT,
+            self.page.execute(
                 EvaluateParams::builder()
                     .expression(install)
                     .return_by_value(true)
@@ -417,9 +432,9 @@ impl CdpPage {
                     .map_err(|error| EngineError::Internal {
                         detail: format!("build the scope installation: {error}"),
                     })?,
-            )
-            .await
-            .map_err(fold)?;
+            ),
+        )
+        .await?;
         if let Some(details) = installed.result.exception_details {
             // A page that already owns the property as a non-configurable
             // one cannot be given a scope it does not control, and a
