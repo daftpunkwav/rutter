@@ -354,15 +354,23 @@ impl CdpPage {
     /// A target rutter attaches to carries a document whose own scripts
     /// have already run, so nothing in the main world can be trusted to
     /// draw a random value: `crypto` there is whatever the page left
-    /// behind. The isolated world is a separate realm with the platform's
-    /// own globals, which the page's patches do not reach, so the scope
-    /// is minted there and then defined in the main world, locked, for
-    /// the serializer to read.
+    /// behind. The scope is minted in an isolated world, defined in the
+    /// main world, and then checked through CDP -- the page cannot forge
+    /// that answer, and a page-chosen scope is the collision this exists
+    /// to prevent.
     ///
     /// Every call is under a deadline like the rest of this file: this
     /// runs while a page is being opened or adopted, so a browser that
     /// stops answering must not park that.
     pub async fn install_current_scope(&self) -> Result<(), EngineError> {
+        let scope = self.mint_scope_in_isolated_world().await?;
+        self.define_locked_scope(&scope).await?;
+        self.verify_locked_scope().await
+    }
+
+    /// Draws one scope in an isolated world: a separate realm with the
+    /// platform's own `crypto`, which the page's patches do not reach.
+    async fn mint_scope_in_isolated_world(&self) -> Result<String, EngineError> {
         let tree = with_deadline(
             "get_frame_tree",
             COMMAND_TIMEOUT,
@@ -403,20 +411,28 @@ impl CdpPage {
                 detail: format!("mint the document scope: {}", exception_text(&details)),
             });
         }
-        let scope = minted
+        minted
             .result
             .result
             .value
             .as_ref()
             .and_then(Value::as_str)
             .filter(|scope| is_scope(scope))
+            .map(str::to_owned)
             .ok_or_else(|| EngineError::Internal {
                 detail: "the isolated world returned no usable scope".to_owned(),
-            })?
-            .to_owned();
-        // Wrapped so the evaluation returns nothing: `Object.defineProperty`
-        // answers with the object it was given, and asking CDP to serialize
-        // the window back is an error, not a result.
+            })
+    }
+
+    /// Defines the scope in the main world as a locked property.
+    ///
+    /// The expression is wrapped so the evaluation returns nothing:
+    /// `Object.defineProperty` answers with the object it was given, and
+    /// asking CDP to serialize the window back is an error, not a result.
+    /// An exception here means the page already owns the property as a
+    /// non-configurable one, which is a page that can choose its own
+    /// scope.
+    async fn define_locked_scope(&self, scope: &str) -> Result<(), EngineError> {
         let install = format!(
             "(function () {{ Object.defineProperty(window, '{REF_SCOPE_PROPERTY}', {{ \
                value: function () {{ return '{scope}'; }}, \
@@ -436,22 +452,24 @@ impl CdpPage {
             ),
         )
         .await?;
-        if let Some(details) = installed.result.exception_details {
-            // A page that already owns the property as a non-configurable
-            // one cannot be given a scope it does not control, and a
-            // snapshot minted from the page's own value is the collision
-            // this exists to prevent.
-            return Err(EngineError::Internal {
+        match installed.result.exception_details {
+            Some(details) => Err(EngineError::Internal {
                 detail: format!("install the document scope: {}", exception_text(&details)),
-            });
+            }),
+            None => Ok(()),
         }
-        // The install is checked through CDP rather than by reading the
-        // property back in the page. The expression above runs in the
-        // main world, where a page can replace `Object.defineProperty`
-        // with a no-op -- or `Object.getOwnPropertyDescriptor` with
-        // something that lies -- and either would leave the snapshot
-        // minting from a scope the page chose. The browser's own view of
-        // the global cannot be forged from inside the page.
+    }
+
+    /// Checks the installation through CDP rather than by reading the
+    /// property back in the page.
+    ///
+    /// The expression above runs in the main world, where a page can
+    /// replace `Object.defineProperty` with a no-op -- or
+    /// `Object.getOwnPropertyDescriptor` with something that lies -- and
+    /// either would leave the snapshot minting from a scope the page
+    /// chose. The browser's own view of the global cannot be forged from
+    /// inside the page.
+    async fn verify_locked_scope(&self) -> Result<(), EngineError> {
         let global = with_deadline(
             "read_global",
             COMMAND_TIMEOUT,
