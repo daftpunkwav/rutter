@@ -150,9 +150,13 @@ impl CdpContext {
         let _ = crate::error::with_deadline(
             "close_unprepared_page",
             crate::error::COMMAND_TIMEOUT,
-            browser.execute(CloseTargetParams::new(target_id)),
+            browser.execute(CloseTargetParams::new(target_id.clone())),
         )
         .await;
+        drop(browser);
+        // The target is gone, so its gate would only be a leak: nothing
+        // will prepare this id again.
+        self.forget_preparation(&target_id);
     }
 }
 
@@ -359,7 +363,11 @@ impl ContextHandle for CdpContext {
         let target_id = handle.target_id();
         // An attached surface is the engine's own window content and
         // outlives the handle: closing its target would blank the
-        // browser's UI, so the registration alone goes.
+        // browser's UI, so the registration alone goes -- and the
+        // preparation gate stays with the target, which is still open
+        // with its locked scope in place. Forgetting it here would make
+        // the next adoption define that property a second time, which
+        // the document refuses.
         if handle.closable() {
             {
                 let browser = self.browser.lock().await;
@@ -379,9 +387,11 @@ impl ContextHandle for CdpContext {
                     }
                 }
             }
+            // The target is closed, so nothing will prepare this id
+            // again: the gate would only be a leak.
+            self.forget_preparation(&target_id);
         }
         self.lock_pages().remove(&id);
-        self.forget_preparation(&target_id);
         Ok(())
     }
 
