@@ -32,6 +32,7 @@ use chromiumoxide::cdp::js_protocol::runtime::{
     EvaluateParams, EventConsoleApiCalled, EventExceptionThrown, RemoteObject,
 };
 use chromiumoxide::error::CdpError;
+use chromiumoxide::listeners::EventStream;
 use chromiumoxide::page::ScreenshotParams;
 use serde_json::Value;
 
@@ -309,6 +310,49 @@ impl CdpPage {
             detail: "page URL unavailable after history navigation".to_owned(),
         })
     }
+
+    /// The event streams the page's observation feed consumes.
+    ///
+    /// An inherent method rather than part of `PageHandle`: the streams
+    /// are chromiumoxide's, and no other engine backend names them.
+    ///
+    /// Registration is all-or-nothing in effect: `observe` releases the
+    /// claim when this fails, because nothing was handed out and a set
+    /// claim would only disable the page's feed for the rest of its
+    /// life.
+    async fn observation_listeners(&self) -> Result<ObservationListeners, EngineError> {
+        let dialogs = self
+            .page
+            .event_listener::<EventJavascriptDialogOpening>()
+            .await
+            .map_err(fold)?;
+        let console = self
+            .page
+            .event_listener::<EventConsoleApiCalled>()
+            .await
+            .map_err(fold)?;
+        let exceptions = self
+            .page
+            .event_listener::<EventExceptionThrown>()
+            .await
+            .map_err(fold)?;
+        let requests = self
+            .page
+            .event_listener::<EventRequestWillBeSent>()
+            .await
+            .map_err(fold)?;
+        let responses = self
+            .page
+            .event_listener::<EventResponseReceived>()
+            .await
+            .map_err(fold)?;
+        let failures = self
+            .page
+            .event_listener::<EventLoadingFailed>()
+            .await
+            .map_err(fold)?;
+        Ok((dialogs, console, exceptions, requests, responses, failures))
+    }
 }
 
 #[async_trait]
@@ -545,57 +589,17 @@ impl rutter_engine::page::PageHandle for CdpPage {
     }
 
     async fn observe(&self) -> Result<ObservationStream, EngineError> {
-        use futures::StreamExt;
-
         claim_observation(&self.observation_claimed)?;
 
         // Register the listeners before returning so observations from
-        // the first ticks are not lost. Any failure here releases the
-        // claim: nothing was handed out, so a set flag would only disable
-        // the page's feed for the rest of its life.
-        let registered = async {
-            let dialogs = self
-                .page
-                .event_listener::<EventJavascriptDialogOpening>()
-                .await
-                .map_err(fold)?;
-            let console = self
-                .page
-                .event_listener::<EventConsoleApiCalled>()
-                .await
-                .map_err(fold)?;
-            let exceptions = self
-                .page
-                .event_listener::<EventExceptionThrown>()
-                .await
-                .map_err(fold)?;
-            let requests = self
-                .page
-                .event_listener::<EventRequestWillBeSent>()
-                .await
-                .map_err(fold)?;
-            let responses = self
-                .page
-                .event_listener::<EventResponseReceived>()
-                .await
-                .map_err(fold)?;
-            let failures = self
-                .page
-                .event_listener::<EventLoadingFailed>()
-                .await
-                .map_err(fold)?;
-            Ok((dialogs, console, exceptions, requests, responses, failures))
+        // the first ticks are not lost.
+        let listeners = match self.observation_listeners().await {
+            Ok(listeners) => listeners,
+            Err(error) => {
+                release_observation_claim(&self.observation_claimed);
+                return Err(error);
+            }
         };
-        let (mut dialogs, mut console, mut exceptions, mut requests, mut responses, mut failures) =
-            match registered.await {
-                Ok(listeners) => listeners,
-                Err(error) => {
-                    release_observation_claim(&self.observation_claimed);
-                    return Err(error);
-                }
-            };
-
-        let mut pending = PendingRequests::default();
 
         let (sender, receiver) = tokio::sync::mpsc::channel::<PageObservation>(64);
         // The forwarding task owns the feed: observations hand off
@@ -604,86 +608,7 @@ impl rutter_engine::page::PageHandle for CdpPage {
         // which are an unbounded queue (same rule as the screencast).
         // Every observation is droppable; the feed ends when the page
         // or the consumer goes away.
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    Some(event) = dialogs.next() => {
-                        let observation = PageObservation::DialogOpened {
-                            kind: dialog_kind(event.r#type.as_ref()),
-                            message: cap_text(event.message.clone()),
-                        };
-                        if !try_forward(&sender, observation) {
-                            break;
-                        }
-                    }
-                    Some(event) = console.next() => {
-                        let observation = PageObservation::ConsoleEmitted {
-                            level: console_level(event.r#type.as_ref()),
-                            text: console_text(&event.args),
-                        };
-                        if !try_forward(&sender, observation) {
-                            break;
-                        }
-                    }
-                    Some(event) = exceptions.next() => {
-                        let observation = PageObservation::UncaughtException {
-                            text: exception_text(&event.exception_details),
-                        };
-                        if !try_forward(&sender, observation) {
-                            break;
-                        }
-                    }
-                    Some(event) = requests.next() => {
-                        pending.note(
-                            event.request_id.clone(),
-                            event.request.method.clone(),
-                            event.request.url.clone(),
-                        );
-                    }
-                    Some(event) = responses.next() => {
-                        let (method, _) = pending
-                            .take(&event.request_id)
-                            .unwrap_or_else(|| (String::new(), String::new()));
-                        let observation = PageObservation::RequestObserved {
-                            entry: RequestEntry {
-                                method: or_unknown(method),
-                                url: cap_text(event.response.url.clone()),
-                                status: Some(event.response.status.clamp(0, u32::MAX as i64) as u32),
-                                resource_type: Some(event.r#type.as_ref().to_lowercase()),
-                                error: None,
-                            },
-                        };
-                        if !try_forward(&sender, observation) {
-                            break;
-                        }
-                    }
-                    Some(event) = failures.next() => {
-                        let (method, url) = pending
-                            .take(&event.request_id)
-                            .unwrap_or_else(|| (String::new(), String::new()));
-                        let observation = PageObservation::RequestObserved {
-                            entry: RequestEntry {
-                                method: or_unknown(method),
-                                url: cap_text(or_unknown(url)),
-                                status: None,
-                                resource_type: Some(event.r#type.as_ref().to_lowercase()),
-                                error: Some(cap_text(event.error_text.clone())),
-                            },
-                        };
-                        if !try_forward(&sender, observation) {
-                            break;
-                        }
-                    }
-                    // A quiet page produces no observations, so the
-                    // Closed arm inside `try_forward` may not fire for a
-                    // long time; watching the sender directly ends the
-                    // feed the moment the consumer leaves (same rule as
-                    // the screencast).
-                    _ = sender.closed() => break,
-                    else => break,
-                }
-            }
-        });
+        tokio::spawn(forward_observations(listeners, sender));
 
         Ok(ObservationStream::new(receiver))
     }
@@ -794,6 +719,118 @@ fn try_forward(
         // A stalled consumer loses observations, not memory.
         Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => true,
         Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => false,
+    }
+}
+
+/// The CDP event streams one page's observation feed consumes.
+///
+/// Named as a unit because they are always registered together: a feed
+/// missing one of them would silently lose that observation kind, which
+/// is why [`Page::observe`] hands the tuple out only when all six
+/// registrations succeeded.
+type ObservationListeners = (
+    EventStream<EventJavascriptDialogOpening>,
+    EventStream<EventConsoleApiCalled>,
+    EventStream<EventExceptionThrown>,
+    EventStream<EventRequestWillBeSent>,
+    EventStream<EventResponseReceived>,
+    EventStream<EventLoadingFailed>,
+);
+
+/// Forwards one page's raw CDP events as observations until the page or
+/// the consumer goes away.
+///
+/// The feed is deliberately lossy: `try_forward` drops what a stalled
+/// consumer cannot take instead of awaiting, and the task ends either
+/// when the consumer closes the channel or when the page's own events
+/// stop arriving.
+async fn forward_observations(
+    listeners: ObservationListeners,
+    sender: tokio::sync::mpsc::Sender<PageObservation>,
+) {
+    use futures::StreamExt;
+
+    let (mut dialogs, mut console, mut exceptions, mut requests, mut responses, mut failures) =
+        listeners;
+    // Request outcomes carry the method and URL seen on the way out, so
+    // the in-flight map is the forwarder's own state.
+    let mut pending = PendingRequests::default();
+    loop {
+        tokio::select! {
+            Some(event) = dialogs.next() => {
+                let observation = PageObservation::DialogOpened {
+                    kind: dialog_kind(event.r#type.as_ref()),
+                    message: cap_text(event.message.clone()),
+                };
+                if !try_forward(&sender, observation) {
+                    break;
+                }
+            }
+            Some(event) = console.next() => {
+                let observation = PageObservation::ConsoleEmitted {
+                    level: console_level(event.r#type.as_ref()),
+                    text: console_text(&event.args),
+                };
+                if !try_forward(&sender, observation) {
+                    break;
+                }
+            }
+            Some(event) = exceptions.next() => {
+                let observation = PageObservation::UncaughtException {
+                    text: exception_text(&event.exception_details),
+                };
+                if !try_forward(&sender, observation) {
+                    break;
+                }
+            }
+            Some(event) = requests.next() => {
+                pending.note(
+                    event.request_id.clone(),
+                    event.request.method.clone(),
+                    event.request.url.clone(),
+                );
+            }
+            Some(event) = responses.next() => {
+                let (method, _) = pending
+                    .take(&event.request_id)
+                    .unwrap_or_else(|| (String::new(), String::new()));
+                let observation = PageObservation::RequestObserved {
+                    entry: RequestEntry {
+                        method: or_unknown(method),
+                        url: cap_text(event.response.url.clone()),
+                        status: Some(event.response.status.clamp(0, u32::MAX as i64) as u32),
+                        resource_type: Some(event.r#type.as_ref().to_lowercase()),
+                        error: None,
+                    },
+                };
+                if !try_forward(&sender, observation) {
+                    break;
+                }
+            }
+            Some(event) = failures.next() => {
+                let (method, url) = pending
+                    .take(&event.request_id)
+                    .unwrap_or_else(|| (String::new(), String::new()));
+                let observation = PageObservation::RequestObserved {
+                    entry: RequestEntry {
+                        method: or_unknown(method),
+                        url: cap_text(or_unknown(url)),
+                        status: None,
+                        resource_type: Some(event.r#type.as_ref().to_lowercase()),
+                        error: Some(cap_text(event.error_text.clone())),
+                    },
+                };
+                if !try_forward(&sender, observation) {
+                    break;
+                }
+            }
+            // A quiet page produces no observations, so the Closed arm
+            // inside `try_forward` may not fire for a long time; watching
+            // the sender directly ends the feed the moment the consumer
+            // leaves (same rule as the screencast).
+            _ = sender.closed() => break,
+            else => break,
+        }
     }
 }
 

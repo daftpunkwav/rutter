@@ -19,6 +19,7 @@ use rutter_events::{Backbone, Envelope};
 use rutter_session::ScreencastStream;
 use serde_json::Value;
 use std::time::Duration;
+use tokio::sync::broadcast::error::RecvError;
 
 use crate::Dashboard;
 
@@ -39,8 +40,9 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Replays history per session, then forwards live events until the
 /// peer stops answering. Inbound text frames are dispatched on their
-/// `type` field: `screencast` and `subscribe` are handled in this
-/// loop, everything else goes to [`handle_decision`].
+/// `type` field by [`handle_text_message`]: `screencast` and
+/// `subscribe` are handled there, everything else goes to
+/// [`handle_decision`].
 pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
     let Some(backbone) = state.manager.backbone().await else {
         let _ = socket
@@ -90,32 +92,11 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
     loop {
         tokio::select! {
             envelope = live.recv() => {
-                match envelope {
-                    Ok(envelope) => {
-                        // Already covered by the replay snapshot or a gap refill.
-                        if sent_up_to.is_some_and(|seen| envelope.seq <= seen) {
-                            continue;
-                        }
-                        if send_within(&mut socket, Message::text(encode(&envelope)))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                        sent_up_to = Some(envelope.seq);
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        // The bus dropped envelopes while this client was
-                        // slow, but the rings still hold the semantic
-                        // events: resync from the last
-                        // sequence sent instead of losing the gap until a
-                        // reconnect.
-                        match drain_history(&state, &backbone, sent_up_to, &mut socket).await {
-                            Ok(watermark) => sent_up_to = watermark,
-                            Err(()) => break,
-                        }
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                if forward_live_event(&state, &backbone, &mut socket, &mut sent_up_to, envelope)
+                    .await
+                    .is_err()
+                {
+                    break;
                 }
             }
             frame = async {
@@ -124,85 +105,25 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                     None => std::future::pending().await,
                 }
             } => {
-                match frame {
-                    Some(jpeg_frame) => {
-                        if send_within(&mut socket, Message::binary(jpeg_frame.jpeg))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    None => {
-                        // The capture ended without the viewer stopping
-                        // it — the page closed, the engine restarted,
-                        // the transport tore the capture down. A
-                        // notice keeps the last frame from posing as a
-                        // live one. A viewer's own stop never reaches
-                        // this branch: that stream is dropped before
-                        // it is polled again, so the notice fires once
-                        // per stream and only for ends nobody asked
-                        // for. `next_frame` carries no cause across
-                        // its `None`, so the reason stays the fixed
-                        // phrase rather than a guess.
-                        let stopped = serde_json::json!({
-                            "type": "screencast-stopped",
-                            "reason": "capture ended",
-                        });
-                        if send_within(&mut socket, Message::text(stopped.to_string()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                        current = None;
-                    }
+                if forward_screencast_frame(
+                    &mut socket,
+                    &mut current,
+                    frame.map(|frame| frame.jpeg),
+                )
+                .await
+                .is_err()
+                {
+                    break;
                 }
             }
             incoming = socket.recv() => {
                 match incoming {
                     Some(Ok(Message::Text(text))) => {
-                        let value: Option<Value> = serde_json::from_str(&text).ok();
-                        match value.as_ref().and_then(|v| v.get("type")).and_then(Value::as_str) {
-                            Some("screencast") => {
-                                // Screencast control lives here because
-                                // the stream itself must live in this
-                                // loop. The previous stream is dropped
-                                // before a second one is registered:
-                                // its task would otherwise tear the new
-                                // capture down on its way out.
-                                drop(current.take());
-                                let (stream, ack) =
-                                    screencast_control(&state, value.as_ref()).await;
-                                current = stream;
-                                if send_within(&mut socket, Message::text(ack))
-                                    .await
-                                    .is_err()
-                                {
-                                    break;
-                                }
-                            }
-                            Some("subscribe") => {
-                                // `subscribe` is accepted as a client
-                                // message; replay and the live
-                                // stream start automatically on connect,
-                                // so there is nothing further to do.
-                            }
-                            _ => {
-                                // The decision path, and the only one
-                                // that answers. A message that names
-                                // no known type — or one whose body
-                                // does not parse — is dropped without
-                                // a reply rather than closing the
-                                // connection.
-                                if let Some(reply) = handle_decision(&state, &text)
-                                    && send_within(&mut socket, Message::text(reply))
-                                        .await
-                                        .is_err()
-                                {
-                                    break;
-                                }
-                            }
+                        if handle_text_message(&state, &mut socket, &mut current, &text)
+                            .await
+                            .is_err()
+                        {
+                            break;
                         }
                     }
                     // The peer's answer to the liveness ping; the next
@@ -213,20 +134,140 @@ pub(crate) async fn ws_loop(state: Dashboard, mut socket: WebSocket) {
                 }
             }
             _ = keepalive.tick() => {
-                if awaiting_pong {
+                if keepalive_tick(&mut socket, &mut awaiting_pong).await.is_err() {
                     break;
                 }
-                if send_within(&mut socket, Message::Ping(Bytes::new()))
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-                awaiting_pong = true;
             }
         }
     }
     // Dropping `current` stops the capture task.
+}
+
+/// One outcome from the live subscription: an envelope to write, a gap
+/// to refill, or the end of the stream. `Err` means the connection is
+/// over.
+///
+/// The watermark is what keeps replay and the live stream from
+/// overlapping: every write moves it forward, so an envelope the
+/// snapshot or a gap refill already covered is dropped when the
+/// subscription hands it back instead of being sent a second time.
+async fn forward_live_event(
+    state: &Dashboard,
+    backbone: &Backbone,
+    socket: &mut WebSocket,
+    sent_up_to: &mut Option<u64>,
+    received: Result<Envelope, RecvError>,
+) -> Result<(), ()> {
+    match received {
+        Ok(envelope) => {
+            // Already covered by the replay snapshot or a gap refill.
+            if sent_up_to.is_some_and(|seen| envelope.seq <= seen) {
+                return Ok(());
+            }
+            send_within(socket, Message::text(encode(&envelope))).await?;
+            *sent_up_to = Some(envelope.seq);
+        }
+        Err(RecvError::Lagged(_)) => {
+            // The bus dropped envelopes while this client was slow, but
+            // the rings still hold the semantic events: resync from the
+            // last sequence sent instead of losing the gap until a
+            // reconnect.
+            *sent_up_to = drain_history(state, backbone, *sent_up_to, socket).await?;
+        }
+        Err(RecvError::Closed) => return Err(()),
+    }
+    Ok(())
+}
+
+/// One on-demand frame pull: the JPEG that was read, or `None` when the
+/// capture ended on its own. `Err` means the connection is over.
+///
+/// The end-of-capture case has to be answered rather than swallowed: a
+/// viewer that asked to watch a page and then saw the frames stop
+/// cannot tell a closed page from a stalled one, and the last JPEG
+/// would sit on screen posing as a live frame.
+async fn forward_screencast_frame(
+    socket: &mut WebSocket,
+    current: &mut Option<ScreencastStream>,
+    jpeg: Option<Vec<u8>>,
+) -> Result<(), ()> {
+    let Some(jpeg) = jpeg else {
+        // The capture ended without the viewer stopping it — the page
+        // closed, the engine restarted, the transport tore the capture
+        // down. A notice keeps the last frame from posing as a live
+        // one. A viewer's own stop never reaches this branch: that
+        // stream is dropped before it is polled again, so the notice
+        // fires once per stream and only for ends nobody asked for.
+        // `next_frame` carries no cause across its `None`, so the
+        // reason stays the fixed phrase rather than a guess.
+        let stopped = serde_json::json!({
+            "type": "screencast-stopped",
+            "reason": "capture ended",
+        });
+        send_within(socket, Message::text(stopped.to_string())).await?;
+        *current = None;
+        return Ok(());
+    };
+    send_within(socket, Message::binary(jpeg)).await
+}
+
+/// One inbound text frame: screencast control, the accepted no-op
+/// `subscribe`, or the decision path. `Err` means the connection is
+/// over.
+async fn handle_text_message(
+    state: &Dashboard,
+    socket: &mut WebSocket,
+    current: &mut Option<ScreencastStream>,
+    text: &str,
+) -> Result<(), ()> {
+    let value: Option<Value> = serde_json::from_str(text).ok();
+    match value
+        .as_ref()
+        .and_then(|v| v.get("type"))
+        .and_then(Value::as_str)
+    {
+        Some("screencast") => {
+            // Screencast control lives here because the stream itself
+            // must live in this loop. The previous stream is dropped
+            // before a second one is registered: its task would
+            // otherwise tear the new capture down on its way out.
+            drop(current.take());
+            let (stream, ack) = screencast_control(state, value.as_ref()).await;
+            *current = stream;
+            send_within(socket, Message::text(ack)).await?;
+        }
+        Some("subscribe") => {
+            // `subscribe` is accepted as a client message; replay and
+            // the live stream start automatically on connect, so there
+            // is nothing further to do.
+        }
+        _ => {
+            // The decision path, and the only one that answers. A
+            // message that names no known type — or one whose body does
+            // not parse — is dropped without a reply rather than
+            // closing the connection.
+            if let Some(reply) = handle_decision(state, text) {
+                send_within(socket, Message::text(reply)).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// One liveness tick: ping unless the previous ping is still
+/// unanswered, which ends the connection. `Err` means the connection is
+/// over.
+///
+/// The tick cannot misfire on a slow client: the pong comes from the
+/// peer's protocol stack, not from its page, so answering does not
+/// depend on the page being responsive.
+async fn keepalive_tick(socket: &mut WebSocket, awaiting_pong: &mut bool) -> Result<(), ()> {
+    if *awaiting_pong {
+        return Err(());
+    }
+    send_within(socket, Message::Ping(Bytes::new())).await?;
+    *awaiting_pong = true;
+    Ok(())
 }
 
 /// Writes every session's history at or above `after` in sequence

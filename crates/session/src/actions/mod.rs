@@ -38,26 +38,7 @@ impl Executor<'_> {
     /// Runs one action to completion, returning the fresh snapshot.
     pub async fn run(&self, action: &Action) -> Result<Snapshot, SessionError> {
         match action {
-            Action::Navigate { url } => {
-                let effective = self
-                    .page
-                    .navigate(url)
-                    .await
-                    .map_err(SessionError::Engine)?;
-                self.backbone.publish(
-                    self.session.clone(),
-                    rutter_events::Event::PageNavigated {
-                        page: self.page_id.clone(),
-                        url: effective,
-                    },
-                );
-                // The one arm that does not settle: `navigate` already
-                // returned the loaded page, so the pause before the
-                // snapshot would only delay the answer the caller is
-                // already waiting on. Every other arm mutates a page
-                // that keeps moving afterwards and settles.
-                self.page_ops().snapshot().await
-            }
+            Action::Navigate { url } => self.run_navigate(url).await,
             Action::Back => {
                 self.page.go_back().await.map_err(SessionError::Engine)?;
                 self.settle_snapshot().await
@@ -83,131 +64,205 @@ impl Executor<'_> {
                     .await?;
                 self.settle_snapshot().await
             }
-            Action::Type { reference, text } => {
-                self.auto_wait(reference).await?;
-                let focused = self.evaluate(&focus_script(reference.as_str())).await?;
-                if focused.get("missing") == Some(&serde_json::Value::Bool(true)) {
-                    return Err(expired(reference.as_str()));
-                }
-                self.dispatch(rutter_engine::input::InputEvent::InsertText { text: text.clone() })
-                    .await?;
-                self.settle_snapshot().await
-            }
-            Action::PressKey { key } => {
-                for event in [
-                    rutter_engine::input::InputEvent::KeyPressed { key: key.clone() },
-                    rutter_engine::input::InputEvent::KeyReleased { key: key.clone() },
-                ] {
-                    self.dispatch(event).await?;
-                }
-                self.settle_snapshot().await
-            }
+            Action::Type { reference, text } => self.run_type(reference, text).await,
+            Action::PressKey { key } => self.run_press_key(key).await,
             Action::SelectOption { reference, values } => {
-                self.auto_wait(reference).await?;
-                let answer = self
-                    .evaluate(&select_script(reference.as_str(), values))
-                    .await?;
-                if answer.get("missing") == Some(&serde_json::Value::Bool(true)) {
-                    return Err(expired(reference.as_str()));
-                }
-                if answer.get("not_select") == Some(&serde_json::Value::Bool(true)) {
-                    return Err(SessionError::Action(ActionError::NotInteractable {
-                        reference: reference.clone(),
-                        reason: "the element is not a select".to_owned(),
-                    }));
-                }
-                let matched = answer
-                    .get("matched")
-                    .and_then(serde_json::Value::as_i64)
-                    .unwrap_or(0);
-                if matched == 0 {
-                    return Err(SessionError::Action(ActionError::NotInteractable {
-                        reference: reference.clone(),
-                        reason: "no option matched the requested values".to_owned(),
-                    }));
-                }
-                self.settle_snapshot().await
+                self.run_select_option(reference, values).await
             }
             Action::Scroll {
                 reference,
                 direction,
                 amount,
             } => {
-                let (x, y) = match reference {
-                    Some(reference) => {
-                        let element_box = self.auto_wait(reference).await?;
-                        element_box.center()
-                    }
-                    None => self.viewport_center().await,
-                };
-                let (delta_x, delta_y) = wheel_deltas(*direction, *amount);
-                self.dispatch(rutter_engine::input::InputEvent::MouseWheel {
-                    x,
-                    y,
-                    delta_x,
-                    delta_y,
-                })
-                .await?;
-                self.settle_snapshot().await
+                self.run_scroll(reference.as_ref(), *direction, *amount)
+                    .await
             }
             Action::SetInputFiles { reference, paths } => {
-                if paths.is_empty() {
-                    return Err(SessionError::Action(ActionError::NotInteractable {
-                        reference: reference.clone(),
-                        reason: "no files were given".to_owned(),
-                    }));
-                }
-                self.auto_wait(reference).await?;
-                let check = self
-                    .evaluate(&files_check_script(reference.as_str()))
-                    .await?;
-                if check.get("missing") == Some(&serde_json::Value::Bool(true)) {
-                    return Err(expired(reference.as_str()));
-                }
-                if check.get("not_file") == Some(&serde_json::Value::Bool(true)) {
-                    return Err(SessionError::Action(ActionError::NotInteractable {
-                        reference: reference.clone(),
-                        reason: "the element is not a file input".to_owned(),
-                    }));
-                }
-                let multiple = check
-                    .get("multiple")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false);
-                if !multiple && paths.len() > 1 {
-                    return Err(SessionError::Action(ActionError::NotInteractable {
-                        reference: reference.clone(),
-                        reason: "the file input accepts a single file".to_owned(),
-                    }));
-                }
-                // The engine resolves paths on this machine; a path
-                // that does not exist is caller feedback, not an
-                // engine failure.
-                for path in paths {
-                    let exists = std::path::Path::new(path).try_exists().unwrap_or(false);
-                    if !exists {
-                        return Err(SessionError::Action(ActionError::NotInteractable {
-                            reference: reference.clone(),
-                            reason: format!("file not found: {path}"),
-                        }));
-                    }
-                }
-                self.page
-                    .set_input_files(reference.as_str(), paths)
-                    .await
-                    .map_err(|error| match error {
-                        // The element vanished between the check and
-                        // the file handoff: same answer as above.
-                        EngineError::ReferenceExpired { reference } => {
-                            SessionError::Action(ActionError::ReferenceExpired {
-                                reference: Reference::new(&reference),
-                            })
-                        }
-                        other => SessionError::Engine(other),
-                    })?;
-                self.settle_snapshot().await
+                self.run_set_input_files(reference, paths).await
             }
         }
+    }
+
+    /// Navigates the page, publishes where it landed, and answers its
+    /// snapshot.
+    ///
+    /// The one action that does not settle: `navigate` already returned
+    /// the loaded page, so the pause before the snapshot would only
+    /// delay the answer the caller is already waiting on. Every other
+    /// action mutates a page that keeps moving afterwards and settles.
+    async fn run_navigate(&self, url: &str) -> Result<Snapshot, SessionError> {
+        let effective = self
+            .page
+            .navigate(url)
+            .await
+            .map_err(SessionError::Engine)?;
+        self.backbone.publish(
+            self.session.clone(),
+            rutter_events::Event::PageNavigated {
+                page: self.page_id.clone(),
+                url: effective,
+            },
+        );
+        self.page_ops().snapshot().await
+    }
+
+    /// Focuses the referenced element and inserts the text into it.
+    async fn run_type(&self, reference: &Reference, text: &str) -> Result<Snapshot, SessionError> {
+        self.auto_wait(reference).await?;
+        let focused = self.evaluate(&focus_script(reference.as_str())).await?;
+        if focused.get("missing") == Some(&serde_json::Value::Bool(true)) {
+            return Err(expired(reference.as_str()));
+        }
+        self.dispatch(rutter_engine::input::InputEvent::InsertText {
+            text: text.to_owned(),
+        })
+        .await?;
+        self.settle_snapshot().await
+    }
+
+    /// Sends one key press and its release.
+    async fn run_press_key(&self, key: &str) -> Result<Snapshot, SessionError> {
+        for event in [
+            rutter_engine::input::InputEvent::KeyPressed {
+                key: key.to_owned(),
+            },
+            rutter_engine::input::InputEvent::KeyReleased {
+                key: key.to_owned(),
+            },
+        ] {
+            self.dispatch(event).await?;
+        }
+        self.settle_snapshot().await
+    }
+
+    /// Selects option values on a select element.
+    ///
+    /// Three refusals live here because only the page can tell them
+    /// apart, and each is the caller's to fix rather than an engine
+    /// failure: the reference vanished, the element is not a select, or
+    /// no option carried the requested values.
+    async fn run_select_option(
+        &self,
+        reference: &Reference,
+        values: &[String],
+    ) -> Result<Snapshot, SessionError> {
+        self.auto_wait(reference).await?;
+        let answer = self
+            .evaluate(&select_script(reference.as_str(), values))
+            .await?;
+        if answer.get("missing") == Some(&serde_json::Value::Bool(true)) {
+            return Err(expired(reference.as_str()));
+        }
+        if answer.get("not_select") == Some(&serde_json::Value::Bool(true)) {
+            return Err(SessionError::Action(ActionError::NotInteractable {
+                reference: reference.clone(),
+                reason: "the element is not a select".to_owned(),
+            }));
+        }
+        let matched = answer
+            .get("matched")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0);
+        if matched == 0 {
+            return Err(SessionError::Action(ActionError::NotInteractable {
+                reference: reference.clone(),
+                reason: "no option matched the requested values".to_owned(),
+            }));
+        }
+        self.settle_snapshot().await
+    }
+
+    /// Scrolls the referenced container, or the viewport when the
+    /// action names no reference.
+    async fn run_scroll(
+        &self,
+        reference: Option<&Reference>,
+        direction: ScrollDirection,
+        amount: u32,
+    ) -> Result<Snapshot, SessionError> {
+        let (x, y) = match reference {
+            Some(reference) => {
+                let element_box = self.auto_wait(reference).await?;
+                element_box.center()
+            }
+            None => self.viewport_center().await,
+        };
+        let (delta_x, delta_y) = wheel_deltas(direction, amount);
+        self.dispatch(rutter_engine::input::InputEvent::MouseWheel {
+            x,
+            y,
+            delta_x,
+            delta_y,
+        })
+        .await?;
+        self.settle_snapshot().await
+    }
+
+    /// Sets the files of a file input element.
+    ///
+    /// Every refusal below is caller feedback, not an engine failure:
+    /// no paths, a reference that vanished, an element that is not a
+    /// file input, several paths on a single-file input, or a path that
+    /// does not exist on the machine the engine runs on.
+    async fn run_set_input_files(
+        &self,
+        reference: &Reference,
+        paths: &[String],
+    ) -> Result<Snapshot, SessionError> {
+        if paths.is_empty() {
+            return Err(SessionError::Action(ActionError::NotInteractable {
+                reference: reference.clone(),
+                reason: "no files were given".to_owned(),
+            }));
+        }
+        self.auto_wait(reference).await?;
+        let check = self
+            .evaluate(&files_check_script(reference.as_str()))
+            .await?;
+        if check.get("missing") == Some(&serde_json::Value::Bool(true)) {
+            return Err(expired(reference.as_str()));
+        }
+        if check.get("not_file") == Some(&serde_json::Value::Bool(true)) {
+            return Err(SessionError::Action(ActionError::NotInteractable {
+                reference: reference.clone(),
+                reason: "the element is not a file input".to_owned(),
+            }));
+        }
+        let multiple = check
+            .get("multiple")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        if !multiple && paths.len() > 1 {
+            return Err(SessionError::Action(ActionError::NotInteractable {
+                reference: reference.clone(),
+                reason: "the file input accepts a single file".to_owned(),
+            }));
+        }
+        // The engine resolves paths on this machine; a path that does
+        // not exist is caller feedback, not an engine failure.
+        for path in paths {
+            let exists = std::path::Path::new(path).try_exists().unwrap_or(false);
+            if !exists {
+                return Err(SessionError::Action(ActionError::NotInteractable {
+                    reference: reference.clone(),
+                    reason: format!("file not found: {path}"),
+                }));
+            }
+        }
+        self.page
+            .set_input_files(reference.as_str(), paths)
+            .await
+            .map_err(|error| match error {
+                // The element vanished between the check and the file
+                // handoff: same answer as above.
+                EngineError::ReferenceExpired { reference } => {
+                    SessionError::Action(ActionError::ReferenceExpired {
+                        reference: Reference::new(&reference),
+                    })
+                }
+                other => SessionError::Engine(other),
+            })?;
+        self.settle_snapshot().await
     }
 
     /// Runs the three-phase auto-wait: visible, then stable, then
