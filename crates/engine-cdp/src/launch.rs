@@ -576,11 +576,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(second);
     }
 
-    /// Serializes the two profile-mode fixtures below. The restrictive
-    /// fixture flips a process-wide setting, so the ordinary one must
-    /// not create its directory inside that window.
-    #[cfg(unix)]
-    static PROFILE_FIXTURE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// Serializes every fixture in this binary that touches the
+    /// filesystem against the restrictive-umask one: the umask is
+    /// process-wide, and a file or directory created inside its window
+    /// comes out with the owner bits masked away -- a tempfile drops
+    /// from `0600` to `0400`, which its later `fs::write` cannot reopen.
+    /// The umask half is Unix-only; the lock exists everywhere so the
+    /// fixtures that take it need no gate of their own.
+    static FILESYSTEM_FIXTURE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[cfg(unix)]
     #[test]
@@ -590,7 +593,7 @@ mod tests {
         // and must not be able to create files inside it, which is what
         // makes planting a symlink at a path the browser writes to
         // impossible.
-        let _fixture = PROFILE_FIXTURE.lock().unwrap_or_else(|p| p.into_inner());
+        let _fixture = FILESYSTEM_FIXTURE.lock().unwrap_or_else(|p| p.into_inner());
         assert_owner_only("an ordinary umask");
     }
 
@@ -603,12 +606,12 @@ mod tests {
     /// prevent, and exactly what an ordinary umask cannot expose: there
     /// the masked mode still lands on `0700` with the set removed. The
     /// umask is process-wide, so the fixture holds
-    /// [`PROFILE_FIXTURE`] for its whole window and the guard puts the
-    /// old mask back even when the assertion fails.
+    /// [`FILESYSTEM_FIXTURE`] for its whole window and the guard puts
+    /// the old mask back even when the assertion fails.
     #[cfg(unix)]
     #[test]
     fn a_profile_directory_survives_a_restrictive_umask() {
-        let _fixture = PROFILE_FIXTURE.lock().unwrap_or_else(|p| p.into_inner());
+        let _fixture = FILESYSTEM_FIXTURE.lock().unwrap_or_else(|p| p.into_inner());
         let _umask = UmaskGuard(set_umask(0o277));
         assert_owner_only("a restrictive umask");
     }
@@ -664,7 +667,11 @@ mod tests {
         // A scratch file of the harness's own name: a fixed path under
         // the shared temp dir is one another local user could have
         // planted a symlink at, and the sibling tail test would collide
-        // with it while running concurrently.
+        // with it while running concurrently. The shared fixture lock
+        // keeps the scratch file out of the restrictive-umask window:
+        // created there, its 0600 comes out 0400 and the write below
+        // could not reopen it.
+        let _fixture = FILESYSTEM_FIXTURE.lock().unwrap_or_else(|p| p.into_inner());
         let log = tempfile::Builder::new()
             .prefix("rutter-tail-collapse-")
             .suffix(".log")

@@ -155,7 +155,15 @@ impl CdpContext {
         // from here on must be covered by *this* session's registration,
         // not only by the one a previous adopter's session installed.
         handle.install_entropy_capture().await?;
-        if handle.document_start_ran().await? {
+        // The shadow in the isolated world proves the registration ran,
+        // and the main-world property must still be the locked one it
+        // defines: an actor that runs at document start too -- a preload
+        // or an extension -- can lock the name first, and the capture
+        // would swallow its own failed define. A main world with no
+        // minter, or a mutable one, falls through to the fresh mint
+        // below, which replaces what it can and fails against what it
+        // cannot.
+        if handle.document_start_ran().await? && handle.locked_scope_minter().await.is_ok() {
             return Ok(());
         }
         if let Some(scope) = recorded.as_ref()

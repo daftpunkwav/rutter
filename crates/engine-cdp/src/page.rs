@@ -686,7 +686,7 @@ impl CdpPage {
     /// reassign — and not through `globalThis` or `window`, both of
     /// which are properties a pre-loaded page can point at a look-alike
     /// before rutter attaches.
-    async fn locked_scope_minter(&self) -> Result<RemoteObject, EngineError> {
+    pub(crate) async fn locked_scope_minter(&self) -> Result<RemoteObject, EngineError> {
         let global = with_deadline(
             "read_global",
             COMMAND_TIMEOUT,
