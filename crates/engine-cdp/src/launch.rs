@@ -688,6 +688,10 @@ mod tests {
 
     #[test]
     fn stderr_tail_keeps_only_the_end_of_a_chatty_log() {
+        // Same scratch-file discipline as the sibling: out of the
+        // restrictive-umask window, so the 0600 it is created with stays
+        // writable when the write below reopens it.
+        let _fixture = FILESYSTEM_FIXTURE.lock().unwrap_or_else(|p| p.into_inner());
         let log = tempfile::Builder::new()
             .prefix("rutter-tail-bounded-")
             .suffix(".log")
