@@ -108,8 +108,9 @@
 
   // `children` and `rows` are HTMLCollections: array-like and live, but
   // not iterable (only NodeList declares `iterable<Node>`), so a walker
-  // copies one before reading it. The copy also freezes the walk
-  // against a page that mutates the tree mid-readout.
+  // copies one before reading it. The copy also freezes every walk
+  // against a page whose own accessors mutate the tree mid-readout --
+  // the reason `childNodes`, which is iterable, is copied the same way.
   function arrayOf(collection) {
     return Array.prototype.slice.call(collection || []);
   }
@@ -140,7 +141,7 @@
 
   function inlineNodes(list, depth) {
     let out = '';
-    for (const node of list) {
+    for (const node of arrayOf(list)) {
       if (out.length >= MAX_INLINE_CHARS) {
         state.truncated = true;
         break;
@@ -274,7 +275,7 @@
   // emits separately with indentation.
   function inlinePartOfItem(li) {
     let out = '';
-    for (const node of li.childNodes || []) {
+    for (const node of arrayOf(li.childNodes)) {
       if (!node) continue;
       if (node.nodeType === 3) {
         out += String(node.nodeValue || '').replace(/\s+/g, ' ');
@@ -457,7 +458,7 @@
   }
 
   function emitChildren(el, depth) {
-    const nodes = childNodesOf(el);
+    const nodes = arrayOf(childNodesOf(el));
     // Consecutive inline children accumulate into ONE paragraph: a
     // `<div>Hello <b>world</b> again</div>` is one sentence, not three
     // (stray block text renders as plain, whitespace-collapsed
