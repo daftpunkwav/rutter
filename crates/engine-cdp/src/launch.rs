@@ -309,6 +309,13 @@ fn pick_debug_port() -> Result<u16, EngineError> {
 /// pre-create the path (a launch-killing squat) or plant a symlink at
 /// it; the directory is created here, exclusively, so nothing the
 /// browser later touches was ever a stranger-planted name.
+///
+/// The directory is owner-only on Unix. It holds the browser's cookies,
+/// history, and login state, and a directory made with the process
+/// umask would be readable — and, under a permissive umask, writable —
+/// by every other local user on the machine. Requesting the mode
+/// outright means the umask can only clear bits from it, never add
+/// them.
 fn profile_dir() -> Result<PathBuf, EngineError> {
     static LAUNCH: AtomicU64 = AtomicU64::new(0);
     let serial = LAUNCH.fetch_add(1, Ordering::Relaxed);
@@ -318,7 +325,17 @@ fn profile_dir() -> Result<PathBuf, EngineError> {
         serial,
         launch_secret()
     ));
-    match std::fs::create_dir(&dir) {
+    // Owner-only on Unix, where the mode is the whole point; elsewhere
+    // the per-user ACL of the temp directory is what bounds access, and
+    // this is the same exclusive create.
+    #[cfg(unix)]
+    let created = {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().mode(0o700).create(&dir)
+    };
+    #[cfg(not(unix))]
+    let created = std::fs::create_dir(&dir);
+    match created {
         Ok(()) => Ok(dir),
         // A collision on a freshly random name is not retried: it means
         // something on this machine is deliberately racing this launch,
@@ -539,6 +556,24 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(first);
         let _ = std::fs::remove_dir_all(second);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_profile_directory_is_owner_only() {
+        // The profile holds the browser's cookies, history, and login
+        // state, so another local user must not be able to read it --
+        // and must not be able to create files inside it, which is what
+        // makes planting a symlink at a path the browser writes to
+        // impossible.
+        use std::os::unix::fs::PermissionsExt;
+        let profile = profile_dir().expect("profile dir");
+        let mode = std::fs::metadata(&profile)
+            .expect("metadata")
+            .permissions()
+            .mode();
+        let _ = std::fs::remove_dir_all(&profile);
+        assert_eq!(mode & 0o777, 0o700, "the profile stays owner-only");
     }
 
     #[test]

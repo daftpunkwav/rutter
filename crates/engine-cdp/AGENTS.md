@@ -30,9 +30,11 @@ The module map lives in [README.md](README.md) and
 - Spawn sets `RUTTER_CDP_PORT` and `RUTTER_PROFILE`, nulls stdin and
   stdout, and sends stderr to a file. On Windows the child is created
   with `CREATE_NO_WINDOW`.
-- The profile directory is created exclusively under the temp dir.
-  `create_dir` failure, including a collision, is `LaunchFailed` and
-  is not retried.
+- The profile directory is created exclusively under the temp dir,
+  owner-only on Unix (`0700`): it holds the browser's cookies and login
+  state, and a directory made with the process umask would be readable
+  by every other local user. Creation failure, including a collision,
+  is `LaunchFailed` and is not retried.
 - `launch_secret` and the dashboard `generate_token` stay the same
   construction. A change to one updates the other.
 

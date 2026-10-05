@@ -192,6 +192,12 @@ and the project adheres to
   failure gets: a snapshot reported as truncated with no references,
   rather than one whose references cannot be told apart across
   documents.
+- The engine's per-launch profile directory is created owner-only on
+  Unix (`0700`). It holds the browser's cookies, history, and login
+  state, and a directory made with the process umask was readable — and
+  under a permissive umask writable — by every other local user on the
+  machine, which is also what would let one of them plant a symlink at
+  a path the browser writes to inside it.
 
 ### Changed
 
