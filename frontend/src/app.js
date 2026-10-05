@@ -5,41 +5,49 @@
  * arrives in the first visit's query and is exchanged for an HttpOnly
  * cookie by the server; this script never persists it.
  */
-(function () {
+(() => {
   'use strict';
-  var I18N = {};
+  // User-visible prose by key. A Map, not an object: the keys are read
+  // off the document (`data-i18n`), and an object literal would answer
+  // for `constructor` and the rest of `Object.prototype` too.
+  let I18N = new Map();
   // First visit carries the token in the query; the server exchanges it
   // for an HttpOnly session cookie, so page scripts
   // never store or read it. Requests below fall back to the cookie
   // when no query token is present (a refresh, a bookmarked path).
-  var token = new URLSearchParams(window.location.search).get('token');
-  try { window.localStorage.removeItem('rutterToken'); } catch (error) {}
+  const token = new URLSearchParams(window.location.search).get('token');
+  try { window.localStorage.removeItem('rutterToken'); } catch {}
 
   function withToken(path) {
     return token ? path + '?token=' + encodeURIComponent(token) : path;
   }
 
   fetch(withToken('/i18n/en.json'))
-    .then(function (response) { return response.json(); })
-    .then(function (catalog) {
-      I18N = catalog;
-      document.querySelectorAll('[data-i18n]').forEach(function (node) {
-        node.textContent = I18N[node.getAttribute('data-i18n')] || node.getAttribute('data-i18n');
+    .then((response) => response.json())
+    .then((catalog) => {
+      I18N = new Map(Object.entries(catalog));
+      document.querySelectorAll('[data-i18n]').forEach((node) => {
+        const key = node.getAttribute('data-i18n');
+        node.textContent = t(key);
       });
       connect();
     })
-    .catch(function () {
+    .catch(() => {
       // The catalog is cosmetic; without it the dashboard still works
       // with untranslated labels instead of never connecting.
       connect();
     });
 
-  function t(key) { return I18N[key] || key; }
+  function t(key) { return I18N.get(key) || key; }
 
-  var socket = null;
+  let socket = null;
+  // Sessions known from the event stream. connect() clears this on
+  // every (re)connect and the replay rebuilds it; the live events keep
+  // it current afterwards.
+  let knownSessions = new Set();
   // Milliseconds between reconnect attempts; reset on a successful open
   // and capped so a dead server cannot spin the loop forever.
-  var reconnectDelay = 1000;
+  let reconnectDelay = 1000;
 
   function connect() {
     // The server replays every session's history on connect, so a
@@ -47,26 +55,26 @@
     // a second copy of every event. The session set rebuilds the same
     // way — a session closed while the socket was down is absent from
     // the replay (its ring is dropped on close) and must not linger.
-    var timeline = document.getElementById('events');
+    const timeline = document.getElementById('events');
     if (timeline) { timeline.textContent = ''; }
-    knownSessions = {};
+    knownSessions = new Set();
     // The set is re-rendered, not just reset: a dashboard whose last
     // sessions all closed while the socket was down receives no
     // session event at all, so nothing would ever take the stale
     // chips (and the stale id options) off the screen.
     renderSessions();
-    var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     socket = new WebSocket(
       protocol + '//' + window.location.host + withToken('/ws'));
     socket.binaryType = 'arraybuffer';
 
-    socket.onmessage = function (message) {
+    socket.onmessage = (message) => {
       if (message.data instanceof ArrayBuffer) {
         showFrame(message.data);
         return;
       }
-      var envelope;
-      try { envelope = JSON.parse(message.data); } catch (error) { return; }
+      let envelope;
+      try { envelope = JSON.parse(message.data); } catch { return; }
       if (envelope.type === 'note') { append(envelope.text); return; }
       if (envelope.type === 'decision-ack') { return; }
       if (envelope.type === 'screencast-ack') {
@@ -80,7 +88,7 @@
         // engine restart); without this the last frame would sit
         // there posing as a live one. Resuming is the viewer's call,
         // not an automatic reconnect.
-        var frame = document.getElementById('live-frame');
+        const frame = document.getElementById('live-frame');
         if (frame) {
           if (frame.src.startsWith('blob:')) { URL.revokeObjectURL(frame.src); }
           frame.hidden = true;
@@ -90,8 +98,8 @@
       }
       render(envelope);
     };
-    socket.onopen = function () { reconnectDelay = 1000; };
-    socket.onclose = function () {
+    socket.onopen = () => { reconnectDelay = 1000; };
+    socket.onclose = () => {
       append(t('reconnecting'));
       setTimeout(connect, reconnectDelay);
       reconnectDelay = Math.min(reconnectDelay * 2, 30000);
@@ -99,29 +107,29 @@
   }
 
   function sendScreencast(on) {
-    if (!socket || socket.readyState !== 1) { return; }
-    var session = document.getElementById('live-session').value.trim();
+    if (socket?.readyState !== 1) { return; }
+    const session = document.getElementById('live-session').value.trim();
     if (on && !session) { return; }
     socket.send(JSON.stringify({ type: 'screencast', on: on, session: session }));
   }
 
   function showFrame(buffer) {
-    var image = document.getElementById('live-frame');
+    const image = document.getElementById('live-frame');
     image.hidden = false;
     if (image.src.startsWith('blob:')) { URL.revokeObjectURL(image.src); }
     image.src = URL.createObjectURL(new Blob([buffer], { type: 'image/jpeg' }));
   }
 
   // The script loads at the end of <body>, so the controls exist now.
-  document.getElementById('live-start').onclick = function () {
+  document.getElementById('live-start').onclick = () => {
     sendScreencast(true);
   };
-  document.getElementById('live-stop').onclick = function () {
+  document.getElementById('live-stop').onclick = () => {
     sendScreencast(false);
   };
 
   function render(envelope) {
-    var event = envelope.event || {};
+    const event = envelope.event || {};
     switch (event.type) {
       case 'session_started':
       case 'session_closed':
@@ -138,33 +146,28 @@
     }
   }
 
-  // Sessions known from the event stream. connect() clears this on
-  // every (re)connect and the replay rebuilds it; the live events keep
-  // it current afterwards.
-  var knownSessions = {};
-
   function trackSession(envelope, type) {
     if (type === 'session_started') {
-      knownSessions[envelope.session] = true;
+      knownSessions.add(envelope.session);
     } else {
-      delete knownSessions[envelope.session];
+      knownSessions.delete(envelope.session);
     }
     renderSessions();
   }
 
   function renderSessions() {
-    var list = document.getElementById('sessions');
-    var options = document.getElementById('session-ids');
+    const list = document.getElementById('sessions');
+    const options = document.getElementById('session-ids');
     if (!list) { return; }
     list.textContent = '';
     if (options) { options.textContent = ''; }
-    Object.keys(knownSessions).sort().forEach(function (id) {
-      var item = document.createElement('span');
+    Array.from(knownSessions).sort().forEach((id) => {
+      const item = document.createElement('span');
       item.className = 'session-chip';
       item.textContent = id + ' ';
       list.appendChild(item);
       if (options) {
-        var option = document.createElement('option');
+        const option = document.createElement('option');
         option.value = id;
         options.appendChild(option);
       }
@@ -172,10 +175,10 @@
   }
 
   function describe(envelope) {
-    var event = envelope.event || {};
-    var base = '#' + envelope.seq + ' ' + envelope.recorded_at + ' ' +
+    const event = envelope.event || {};
+    let base = '#' + envelope.seq + ' ' + envelope.recorded_at + ' ' +
       envelope.session + ' ' + event.type;
-    if (event.action && event.action.type) {
+    if (event.action?.type) {
       base += ' ' + event.action.type;
     }
     if (event.error) {
@@ -189,20 +192,20 @@
     // element; a cookie write shows the write, because the action
     // vocabulary has no variant for it and a stand-in action would put
     // a different promise in front of the human than the one they keep.
-    if (!effect || !effect.kind) { return t('effectUnknown'); }
+    if (!effect?.kind) { return t('effectUnknown'); }
     if (effect.kind === 'cookies') {
       return t('effectCookies').replace('{count}', String(effect.count));
     }
-    var action = effect.action || {};
+    const action = effect.action || {};
     if (action.type === 'navigate') { return t('effectNavigate') + ' ' + (action.url || ''); }
     if (action.reference) { return t('effectOn') + ' ' + action.type + ' ' + action.reference; }
     return t('effectRun') + ' ' + (action.type || t('effectUnknown'));
   }
 
   function basisText(basis) {
-    if (!basis || !basis.kind) { return ''; }
+    if (!basis?.kind) { return ''; }
     if (basis.kind === 'rule') {
-      var rule = t('basisRule').replace('{index}', String(basis.index));
+      const rule = t('basisRule').replace('{index}', String(basis.index));
       return basis.url_pattern ? rule + ' (' + basis.url_pattern + ')' : rule;
     }
     if (basis.kind === 'missing_url') { return t('basisMissingUrl'); }
@@ -210,7 +213,7 @@
   }
 
   function approvalLine(label, value) {
-    var node = document.createElement('div');
+    const node = document.createElement('div');
     // Text nodes only: the judged URL and the reference both come from
     // page-controlled data, so this must never parse as markup.
     node.textContent = label + ': ' + value;
@@ -221,12 +224,12 @@
     // Reconnect replays re-deliver requests already on screen; drop the
     // stale card first or duplicate ids pile up on the approval list.
     hideApproval(event.request_id);
-    var brief = event.brief || {};
-    var node = document.createElement('div');
+    const brief = event.brief || {};
+    const node = document.createElement('div');
     node.className = 'approval';
     node.id = event.request_id;
 
-    var heading = document.createElement('div');
+    const heading = document.createElement('div');
     heading.textContent = '[' + event.request_id + '] ' + session;
     node.appendChild(heading);
     node.appendChild(approvalLine(t('labelClass'), brief.class || '?'));
@@ -236,19 +239,19 @@
     );
     node.appendChild(approvalLine(t('labelBasis'), basisText(brief.basis)));
 
-    var grant = document.createElement('button');
+    const grant = document.createElement('button');
     grant.textContent = t('grant');
-    grant.onclick = function () { decide(event.request_id, true); };
-    var deny = document.createElement('button');
+    grant.onclick = () => { decide(event.request_id, true); };
+    const deny = document.createElement('button');
     deny.textContent = t('deny');
-    deny.onclick = function () { decide(event.request_id, false); };
+    deny.onclick = () => { decide(event.request_id, false); };
     node.appendChild(grant);
     node.appendChild(deny);
     document.getElementById('approval-list').appendChild(node);
   }
 
   function hideApproval(requestId) {
-    var node = document.getElementById(requestId);
+    const node = document.getElementById(requestId);
     if (node) { node.remove(); }
   }
 
@@ -256,27 +259,27 @@
   // server answers in milliseconds when it is alive; a post that hangs
   // this long is a wedged server, and the operator must see the failure
   // instead of a card that sits there looking undecided.
-  var DECIDE_TIMEOUT = 10000;
+  const DECIDE_TIMEOUT = 10000;
 
   function decide(requestId, grant) {
     // A decision that never lands leaves the agent parked until its
     // window closes, so a failed post is surfaced in the timeline
     // instead of looking like a grant that did nothing.
-    var controller = new AbortController();
-    var timer = setTimeout(function () { controller.abort(); }, DECIDE_TIMEOUT);
+    const controller = new AbortController();
+    const timer = setTimeout(() => { controller.abort(); }, DECIDE_TIMEOUT);
     fetch(withToken('/api/decisions'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ request_id: requestId, grant: grant }),
       signal: controller.signal
     })
-      .then(function (response) {
+      .then((response) => {
         clearTimeout(timer);
         if (!response.ok) {
           append(t('decisionRefused') + ' ' + requestId + ' (' + response.status + ')');
         }
       })
-      .catch(function () {
+      .catch(() => {
         clearTimeout(timer);
         append(t('decisionUnreachable') + ' ' + requestId);
       });
@@ -291,13 +294,13 @@
   // and network feed) would otherwise grow the document without bound
   // for as long as the dashboard stays open. Newest lines prepend, so
   // the ones trimmed off the end are the oldest.
-  var TIMELINE_MAX = 500;
+  const TIMELINE_MAX = 500;
 
   function append(text) {
-    var node = document.createElement('div');
+    const node = document.createElement('div');
     node.className = 'event';
     node.textContent = text;
-    var list = document.getElementById('events');
+    const list = document.getElementById('events');
     if (!list) { return; }
     list.prepend(node);
     while (list.children.length > TIMELINE_MAX) {
