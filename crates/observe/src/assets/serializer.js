@@ -22,10 +22,6 @@
   // the collected ones out. See pruneRefs.
   const REF_SWEEP_AT = 512;
 
-  // How many base36 characters a per-document ref scope carries. See
-  // mintScope.
-  const REF_SCOPE_CHARS = 4;
-
   // Mints the scope every ref of one document carries.
   //
   // Each document counts its refs from 1, so two pages that were both
@@ -39,33 +35,21 @@
   // scope to collide at once, while same-page refs keep the stability
   // the snapshot format promises.
   //
-  // The scope has to be random *to the page*, and every global a page
-  // can reach is one it can replace: `Math.random` and `crypto` alike,
-  // so a page could hand each document it opens the same scope. The
-  // engine therefore installs `entropy.js` at document start, before
-  // any page script runs, which binds the native generator and locks it
-  // onto the global (`__rutterGetRandomValues`); that is what this
-  // prefers. `crypto` is the fallback for a document that predates the
-  // installation -- rutter can attach to a browser whose page is
-  // already loaded -- where the page-replaceable source is all there
-  // is. A document with neither gets the degradation every other store
-  // failure gets: `ensureRefStore` reports the snapshot truncated and
-  // hands out no references, rather than a scope that does not separate
-  // documents.
+  // The scope has to be a value the page cannot choose, and this script
+  // runs after the page's own, so it cannot be minted here: `Math.random`,
+  // `crypto`, and the prototypes a conversion would go through are all
+  // replaceable. `__rutterRefScope` is that minter, installed and locked
+  // before the document ran anything -- at document start for a document
+  // the engine loads, and from an isolated world for one that was already
+  // loaded when rutter attached (see `entropy.js` and
+  // `crates/engine-cdp`). There is no in-page fallback on purpose: a
+  // scope drawn from a source the page can replace would hand two
+  // documents the same scope, which is the collision this exists to
+  // prevent. A document with no minter gets the degradation every other
+  // store failure gets -- `ensureRefStore` reports the snapshot truncated
+  // and hands out no references.
   function mintScope() {
-    const bytes = new Uint8Array(REF_SCOPE_CHARS);
-    const fill =
-      typeof window.__rutterGetRandomValues === 'function'
-        ? window.__rutterGetRandomValues
-        : (target) => crypto.getRandomValues(target);
-    fill(bytes);
-    let value = 0;
-    for (const byte of bytes) {
-      value = value * 256 + byte;
-    }
-    // The low base36 digits of the whole draw: four characters, as the
-    // snapshot format documents, with every random bit behind them.
-    return value.toString(36).padStart(REF_SCOPE_CHARS, '0').slice(-REF_SCOPE_CHARS);
+    return window.__rutterRefScope();
   }
 
   // The lookup tables below are a Set or a Map, never an object

@@ -110,6 +110,18 @@ impl CdpContext {
     }
 }
 
+/// Gives a page handle the ref-scope minter for both the document it
+/// already has and every document it loads afterwards.
+///
+/// The two halves are one step because a caller that got only the first
+/// would hand out scopes a page could choose after its next navigation,
+/// and one that got only the second would do the same for the document
+/// in front of it.
+async fn prepare_page(handle: &CdpPage) -> Result<(), EngineError> {
+    handle.install_entropy_capture().await?;
+    handle.install_current_scope().await
+}
+
 #[async_trait]
 impl ContextHandle for CdpContext {
     fn id(&self) -> ContextId {
@@ -195,12 +207,13 @@ impl ContextHandle for CdpContext {
             )
         };
         // Before the page loads anything: a document's ref scope must not
-        // be a value the document itself can choose. A page that already
-        // exists keeps working on the serializer's fallback until its
-        // next navigation, which the registration covers. A failure
-        // discards the target it created -- it is not in the page map,
-        // so nothing else can reach it.
-        if let Err(error) = handle.install_entropy_capture().await {
+        // be a value the document itself can choose. The registration
+        // covers every document this page loads from here on; the
+        // document that is already there -- `about:blank` for a page this
+        // context just created -- gets its scope minted out of reach of
+        // the page. A failure discards the target it created: it is not
+        // in the page map, so nothing else can reach it.
+        if let Err(error) = prepare_page(&handle).await {
             self.discard_unprepared(&handle).await;
             return Err(error);
         }
@@ -396,11 +409,12 @@ impl ContextHandle for CdpContext {
             Some(self.config.screenshot_min_interval),
             adopt_closable(&self.cdp_context_id, &info),
         );
-        // The adopted target already carries a document, so the capture
-        // applies to the documents it loads next. A failure discards the
-        // target only when it is this context's to close: an engine-owned
+        // The adopted target already carries a document, so both halves
+        // apply: the registration for the documents it loads next, and a
+        // scope minted for the one it has. A failure discards the target
+        // only when it is this context's to close: an engine-owned
         // surface belongs to the engine's UI.
-        if let Err(error) = handle.install_entropy_capture().await {
+        if let Err(error) = prepare_page(&handle).await {
             self.discard_unprepared(&handle).await;
             return Err(error);
         }

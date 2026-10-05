@@ -185,15 +185,16 @@ and the project adheres to
   exactly the roles that were put in them, and an implicit role
   lookup answers for the element's own tag name only.
 - The per-document ref scope is no longer a value the page can choose.
-  It is minted from the native `crypto.getRandomValues`, which the
-  engine now captures at document start — before any page script runs —
-  and locks onto the global as a non-configurable property. `Math.random`
-  and `crypto` are both plain globals a page can replace, and one that
-  fills every buffer with the same bytes handed each document it opened
-  the same scope, after which a stale reference from one page could
-  resolve to another page's own element. A page that removes `crypto`
-  gets the degradation every other store failure gets: a snapshot
-  reported as truncated with no references.
+  It was minted inside the page, where `Math.random`, `crypto`, and the
+  prototypes a base36 conversion would go through are all replaceable:
+  a page that replaced any of them handed every document it opened the
+  same scope, and a stale reference from one page then resolved to
+  another page's own element. The engine now gives each document a
+  minter the page cannot reach — registered at document start, before
+  the document's own scripts, and minted in an isolated world for a
+  document that was already loaded when rutter attached — and the
+  serializer hands out no references at all for a document that has no
+  minter.
 - The engine's per-launch profile directory is created owner-only on
   Unix (`0700`). It holds the browser's cookies, history, and login
   state, and a directory made with the process umask could be readable

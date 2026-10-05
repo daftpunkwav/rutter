@@ -21,12 +21,25 @@ import { ControllableWeakRef, createPage, el, loadScript, makeDocument } from '.
 const SERIALIZER_JS = loadScript('crates/observe/src/assets/serializer.js');
 const ENTROPY_JS = loadScript('crates/observe/src/assets/entropy.js');
 
-/** A page over `body`, sharing `window` with every later snapshot. */
-function pageOver(body, window = {}) {
-  const page = createPage({
+/** A page over `body` with no scope minter, sharing `window` with later snapshots. */
+function pageWithoutMinter(body, window = {}) {
+  return createPage({
     document: makeDocument({ body }).document,
     window: { innerWidth: 1024, innerHeight: 768, scrollX: 0, scrollY: 0, ...window },
   });
+}
+
+/**
+ * A page over `body` as the engine produces it.
+ *
+ * The engine installs the scope minter at document start, before any
+ * page script, so the fixture runs the same asset: a suite that skipped
+ * it would exercise a page the engine never hands out, and every
+ * reference assertion would be about the degradation path instead.
+ */
+function pageOver(body, window = {}) {
+  const page = pageWithoutMinter(body, window);
+  page.run(ENTROPY_JS);
   return page;
 }
 
@@ -162,19 +175,15 @@ test('the sweep spares the refs whose elements are still alive', () => {
   assert.equal(rendered[599].ref, first.root.children[599].ref, 'and so does the last');
 });
 
-test('the captured generator keeps documents apart when the page patches crypto', () => {
+test('the captured minter keeps documents apart when the page patches crypto', () => {
   // The attack the capture exists for: a page replaces
   // `crypto.getRandomValues` with one that fills a constant, so every
   // document it opens would mint the same scope and a stale reference
-  // from one page would resolve to another page's own `e1`. The engine
-  // installs the capture before any page script runs, so the scope
-  // comes from the generator bound then and the patch is irrelevant.
-  const pages = [
-    pageOver(el('body', {}, [el('button', {}, ['Save'])])),
-    pageOver(el('body', {}, [el('button', {}, ['Save'])])),
-  ];
-  const scopes = pages.map((page) => {
-    page.run(ENTROPY_JS);
+  // from one page would resolve to another page's own `e1`. The minter
+  // captured the generator before any page script ran, so the patch is
+  // irrelevant.
+  const scopes = [0, 1].map(() => {
+    const page = pageOver(el('body', {}, [el('button', {}, ['Save'])]));
     page.window.crypto = {
       getRandomValues(bytes) {
         bytes.fill(0);
@@ -190,11 +199,12 @@ test('the captured generator keeps documents apart when the page patches crypto'
   assert.notEqual(scopes[0], '0000', 'the constant fill never reached the scope');
 });
 
-test('the scope prefers the captured generator over crypto', () => {
-  // The contract read directly: the captured generator fills the bytes,
-  // so the scope is drawn from them and `crypto` is never consulted.
-  const page = pageOver(el('body', {}, [el('button', {}, ['Save'])]));
-  page.window.__rutterGetRandomValues = (bytes) => bytes.fill(35);
+test('the scope comes from the locked minter and nothing else', () => {
+  // The contract read directly: the minter decides the scope, and no
+  // replaceable global is consulted. `crypto` is patched to fill zeros,
+  // so a scope of `0000` would mean it had been reached.
+  const page = pageWithoutMinter(el('body', {}, [el('button', {}, ['Save'])]));
+  page.window.__rutterRefScope = () => 'wxyz';
   let consulted = false;
   page.window.crypto = {
     getRandomValues(bytes) {
@@ -206,9 +216,20 @@ test('the scope prefers the captured generator over crypto', () => {
   const envelope = page.run(SERIALIZER_JS);
   const scope = page.window.__rutterRefStore.scope;
   assert.equal(consulted, false, 'the replaceable source is not consulted');
-  assert.match(scope, /^[0-9a-z]{4}$/, 'the scope keeps the documented shape');
-  assert.notEqual(scope, '0000', 'the zero-filling crypto did not reach it');
-  assert.equal(envelope.root.children[0].ref, `e1-${scope}`);
+  assert.equal(scope, 'wxyz', 'the minter decided the scope');
+  assert.equal(envelope.root.children[0].ref, 'e1-wxyz');
+});
+
+test('a document with no minter degrades instead of minting in the page', () => {
+  // A scope the page could choose is worse than no references at all:
+  // two documents would share it and a stale reference from one page
+  // would resolve to the other page's element. There is no in-page
+  // fallback on purpose.
+  const page = pageWithoutMinter(el('body', {}, [el('button', {}, ['Save'])]));
+  const envelope = page.run(SERIALIZER_JS);
+  assert.equal(envelope.truncated, true, 'the missing minter is reported, not hidden');
+  assert.equal(envelope.root.children[0].role, 'button', 'the tree is still serialized');
+  assert.equal(envelope.root.children[0].ref, undefined, 'no reference is handed out');
 });
 
 test('a store with no usable shape is left alone instead of throwing', () => {
@@ -228,6 +249,10 @@ test('a document with no body still reports a root', () => {
     document: makeDocument({ noBody: true }).document,
     window: { innerWidth: 0, innerHeight: 0 },
   });
+  // The engine installs the scope minter at document start; without it
+  // the snapshot reports itself truncated, which is not what this test
+  // is about.
+  page.run(ENTROPY_JS);
   const envelope = page.run(SERIALIZER_JS);
   assert.equal(envelope.version, 1);
   assert.equal(envelope.truncated, false);

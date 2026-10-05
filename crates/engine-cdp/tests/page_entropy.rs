@@ -1,6 +1,8 @@
-//! The ref scope against a real Chrome for Testing engine: the entropy
-//! capture the engine installs at document start survives a page that
-//! replaces `crypto`, so two documents cannot be handed the same scope.
+//! The ref scope against a real Chrome for Testing engine: the engine
+//! gives every document a scope the document cannot choose — at document
+//! start for the documents it loads, and from an isolated world for the
+//! one that is already there — so two pages cannot be handed the same
+//! scope and a stale reference cannot cross between them.
 //!
 //! Boundary: the launcher -> engine -> context -> page path through the
 //! `rutter-engine` traits only. Needs the downloaded headless shell,
@@ -21,10 +23,15 @@ use rutter_observe::serializer_script;
 
 use common::resolve_executable;
 
-/// A page that replaces the generator before anything else runs, which
-/// is what a hostile document does at the top of its own script.
-const PATCH_CRYPTO: &str = "data:text/html,<body><button>Save</button><script>\
+/// A page that replaces everything a scope could be drawn from before
+/// anything else runs, which is what a hostile document does at the top
+/// of its own script: the generator, and the prototypes a conversion to
+/// base36 digits would go through.
+const PATCH_EVERYTHING: &str = "data:text/html,<body><button>Save</button><script>\
      crypto.getRandomValues = function (bytes) { bytes.fill(0); return bytes; }; \
+     Number.prototype.toString = function () { return '0000'; }; \
+     String.prototype.charAt = function () { return '0'; }; \
+     Uint8Array.prototype[Symbol.iterator] = function* () { yield 0; }; \
      </script></body>";
 
 /// The scope the page's reference store carries after one snapshot.
@@ -54,35 +61,33 @@ async fn a_page_cannot_choose_its_own_ref_scope() -> Result<(), Box<dyn std::err
     let context = engine.create_context(ContextConfig::default()).await?;
 
     let (_first_id, first) = context.open_page().await?;
-    first.navigate(PATCH_CRYPTO).await?;
+    first.navigate(PATCH_EVERYTHING).await?;
     let first_scope = scope_of(first.as_ref()).await;
 
-    // A second document, patched the same way: with the capture in place
+    // A second document, patched the same way: with the minter in place
     // the two scopes still differ, which is what keeps a stale reference
     // from one page off the other's elements.
     let (_second_id, second) = context.open_page().await?;
-    second.navigate(PATCH_CRYPTO).await?;
+    second.navigate(PATCH_EVERYTHING).await?;
     let second_scope = scope_of(second.as_ref()).await;
 
     assert_ne!(
         first_scope, second_scope,
-        "a patched crypto must not hand two documents one scope"
+        "a patched page must not hand two documents one scope"
     );
     assert_ne!(
         first_scope, "0000",
-        "the constant fill never reached the scope"
+        "neither the generator nor the conversion reached the scope"
     );
 
-    // The capture is what a page cannot undo: the property is locked and
-    // still draws from the native generator.
+    // The minter is what a page cannot undo: the property is locked, and
+    // it still draws from the platform.
     let probe = first
         .evaluate(
             "(function () { \
-               var descriptor = Object.getOwnPropertyDescriptor(window, '__rutterGetRandomValues'); \
-               var bytes = new Uint8Array(4); \
-               window.__rutterGetRandomValues(bytes); \
+               var descriptor = Object.getOwnPropertyDescriptor(window, '__rutterRefScope'); \
                return { locked: descriptor.writable === false && descriptor.configurable === false, \
-                        filled: Array.prototype.join.call(bytes, ',') }; \
+                        scope: window.__rutterRefScope() }; \
              })()",
         )
         .await?;
@@ -91,10 +96,38 @@ async fn a_page_cannot_choose_its_own_ref_scope() -> Result<(), Box<dyn std::err
         serde_json::json!(true),
         "the property is locked"
     );
-    assert_ne!(
-        probe["filled"],
-        serde_json::json!("0,0,0,0"),
-        "the captured generator is the native one, not the page's"
+    assert_ne!(probe["scope"], serde_json::json!("0000"));
+
+    engine.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a downloaded engine binary"]
+async fn the_document_that_is_already_there_gets_a_scope_too()
+-> Result<(), Box<dyn std::error::Error>> {
+    // The document-start registration only reaches documents loaded after
+    // it, so a page that is already there -- `about:blank` of a page this
+    // context just opened, or a target rutter attached to -- is covered by
+    // the engine minting its scope in an isolated world. Without that,
+    // this snapshot would come back truncated with no references.
+    let executable = resolve_executable().await?;
+    let launcher = CdpLauncher::new(executable, EngineBackend::ChromiumHeadlessShell);
+    let engine = launcher.launch(LaunchMode::Headless).await?;
+    let context = engine.create_context(ContextConfig::default()).await?;
+
+    let (_page_id, page) = context.open_page().await?;
+    // The same document, filled in without navigating: a navigation would
+    // hand the job to the document-start registration instead.
+    page.evaluate("document.body.innerHTML = '<button>Save</button>'")
+        .await?;
+    let scope = scope_of(page.as_ref()).await;
+    assert_ne!(scope, "0000");
+
+    let raw = page.evaluate(serializer_script()).await?;
+    assert!(
+        raw.to_string().contains(&format!("\"ref\":\"e1-{scope}\"")),
+        "the scope stays the one the document was given"
     );
 
     engine.shutdown().await?;

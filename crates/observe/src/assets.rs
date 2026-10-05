@@ -76,15 +76,19 @@ mod tests {
     #[test]
     fn entropy_capture_names_the_property_the_serializer_reads() {
         // The two assets meet at one name: the capture locks it onto the
-        // global, the serializer prefers it. A rename on either side
-        // would silently drop every document back to the page-replaceable
-        // generator, so it is asserted rather than assumed.
-        assert!(ENTROPY_JS.contains("__rutterGetRandomValues"));
-        assert!(SERIALIZER_JS.contains("__rutterGetRandomValues"));
+        // global, the serializer calls it. A rename on either side would
+        // silently drop every document back to a page-replaceable
+        // source, so it is asserted rather than assumed.
+        assert!(ENTROPY_JS.contains("__rutterRefScope"));
+        assert!(SERIALIZER_JS.contains("__rutterRefScope"));
         assert!(ENTROPY_JS.is_ascii(), "the capture must stay ASCII-only");
         assert!(
             ENTROPY_JS.contains("configurable: false") && ENTROPY_JS.contains("writable: false"),
             "the capture must lock the property it defines"
+        );
+        assert!(
+            !ENTROPY_JS.contains(".toString(") && !ENTROPY_JS.contains("for (const"),
+            "the conversion must not go through a prototype a page can replace"
         );
     }
 }

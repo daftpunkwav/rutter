@@ -18,10 +18,11 @@ The module map lives in [README.md](README.md) and
 - `src/assets/entropy.js` is the exception to how an asset runs: the
   engine installs it at document start
   (`Page.addScriptToEvaluateOnNewDocument`) instead of evaluating it at
-  snapshot time, so it binds the native `crypto.getRandomValues` before
-  a page can replace it. The serializer prefers the generator it locks
-  onto the global, and falls back to `crypto` for a document that
-  predates the installation.
+  snapshot time. It captures the generator, the constructor, and the
+  digit table before a page can replace them, and locks a scope minter
+  onto the global. The serializer calls that minter and has no in-page
+  fallback: a document without one hands out no references rather than a
+  scope the page could choose.
 - A script does not throw on hostile page input.
 - `storage_dump_script` returns `{ unavailable: true }` when
   `localStorage` is missing or throws. `storage_restore_script`

@@ -35,12 +35,12 @@ The module map lives in [README.md](README.md) and
   state, and a directory made with the process umask could be readable
   by every other local user. Creation failure, including a collision,
   is `LaunchFailed` and is not retried.
-- Opening or adopting a page registers
-  `rutter_observe::entropy_capture_script` with
-  `Page.addScriptToEvaluateOnNewDocument`, so it runs before the
-  document's own scripts. Failing to register fails the page: that
-  script is what stops a page from choosing the ref scope its documents
-  are given. The registration is per target and survives navigation.
+- Opening or adopting a page prepares its ref scope, both halves
+  together: `rutter_observe::entropy_capture_script` registered with
+  `Page.addScriptToEvaluateOnNewDocument` for the documents it loads
+  next, and `install_current_scope` minting one in an isolated world for
+  the document that is already there. Failing either fails the page, and
+  discards the target when it is this context's to close.
 - `launch_secret` and the dashboard `generate_token` stay the same
   construction. A change to one updates the other.
 

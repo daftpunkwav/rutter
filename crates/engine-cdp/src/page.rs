@@ -22,8 +22,9 @@ use chromiumoxide::cdp::browser_protocol::network::{
     EventLoadingFailed, EventRequestWillBeSent, EventResponseReceived, RequestId,
 };
 use chromiumoxide::cdp::browser_protocol::page::{
-    AddScriptToEvaluateOnNewDocumentParams, EventFrameNavigated, EventJavascriptDialogOpening,
-    EventScreencastFrame, GetNavigationHistoryParams, HandleJavaScriptDialogParams, NavigateParams,
+    AddScriptToEvaluateOnNewDocumentParams, CreateIsolatedWorldParams, EventFrameNavigated,
+    EventJavascriptDialogOpening, EventScreencastFrame, GetFrameTreeParams,
+    GetNavigationHistoryParams, HandleJavaScriptDialogParams, NavigateParams,
     NavigateToHistoryEntryParams, ScreencastFrameAckParams, StartScreencastFormat,
     StartScreencastParams, StopScreencastParams,
 };
@@ -68,6 +69,45 @@ fn screencast_params() -> StartScreencastParams {
 /// Cap on one observation's text: a hostile or chatty page must not be
 /// able to bloat the event ring or a console feed with one call.
 const OBSERVATION_TEXT_CAP: usize = 2_000;
+
+/// The world a scope is minted in when the document is already loaded.
+/// Named rather than anonymous so a repeated call reuses it.
+const ISOLATED_WORLD: &str = "rutter-ref-scope";
+
+/// The global the serializer reads its scope from; `entropy.js` locks the
+/// same name onto the global at document start.
+const REF_SCOPE_PROPERTY: &str = "__rutterRefScope";
+
+/// How many base36 characters a scope carries, as the snapshot format
+/// documents.
+const REF_SCOPE_CHARS: usize = 4;
+
+/// Mints one scope in an isolated world, where `crypto` is the
+/// platform's own and no page patch has reached it.
+const SCOPE_IN_ISOLATED_WORLD: &str = "(function () { \
+   var bytes = new Uint8Array(4); \
+   crypto.getRandomValues(bytes); \
+   var value = 0; \
+   for (var index = 0; index < bytes.length; index += 1) { value = value * 256 + bytes[index]; } \
+   var digits = '0123456789abcdefghijklmnopqrstuvwxyz'; \
+   var scope = ''; \
+   for (var index = 0; index < 4; index += 1) { \
+     var digit = value % 36; \
+     scope = digits[digit] + scope; \
+     value = (value - digit) / 36; \
+   } \
+   return scope; \
+ })()";
+
+/// Whether a value is a scope the snapshot format accepts: exactly
+/// [`REF_SCOPE_CHARS`] base36 characters. Checked before the value is
+/// spliced into a script, so a malformed one cannot become script text.
+fn is_scope(scope: &str) -> bool {
+    scope.len() == REF_SCOPE_CHARS
+        && scope
+            .chars()
+            .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit())
+}
 
 /// Bounds an observation text at [`OBSERVATION_TEXT_CAP`] characters.
 fn cap_text(text: String) -> String {
@@ -277,11 +317,11 @@ impl CdpPage {
     ///
     /// A document's ref scope keeps a stale reference captured on one
     /// page from resolving to another page's element after a tab switch,
-    /// and the serializer mints it from `crypto.getRandomValues` — a
-    /// global the page can replace, which would let a page hand every
-    /// document it opens the same scope. The capture script binds the
-    /// native generator before the document runs any script of its own
-    /// and locks it onto the global; see
+    /// and it has to be a value the document cannot choose: every global
+    /// a page can reach -- `Math.random`, `crypto`, the prototypes a
+    /// conversion would go through -- is one it can replace. The capture
+    /// script runs before the document's own scripts and holds
+    /// everything it needs from the platform; see
     /// [`rutter_observe::entropy_capture_script`].
     ///
     /// Registration is per target and survives navigation, so once is
@@ -297,6 +337,98 @@ impl CdpPage {
                 detail: format!("build the entropy capture registration: {error}"),
             })?;
         self.page.execute(params).await.map_err(fold)?;
+        Ok(())
+    }
+
+    /// Mints a scope for the document that is already loaded, which the
+    /// registration cannot reach.
+    ///
+    /// A target rutter attaches to carries a document whose own scripts
+    /// have already run, so nothing in the main world can be trusted to
+    /// draw a random value: `crypto` there is whatever the page left
+    /// behind. The isolated world is a separate realm with the platform's
+    /// own globals, which the page's patches do not reach, so the scope
+    /// is minted there and then defined in the main world, locked, for
+    /// the serializer to read.
+    pub async fn install_current_scope(&self) -> Result<(), EngineError> {
+        let tree = self
+            .page
+            .execute(GetFrameTreeParams::default())
+            .await
+            .map_err(fold)?;
+        let world = self
+            .page
+            .execute(
+                CreateIsolatedWorldParams::builder()
+                    .frame_id(tree.frame_tree.frame.id.clone())
+                    .world_name(ISOLATED_WORLD)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the isolated world request: {error}"),
+                    })?,
+            )
+            .await
+            .map_err(fold)?;
+        let minted = self
+            .page
+            .execute(
+                EvaluateParams::builder()
+                    .expression(SCOPE_IN_ISOLATED_WORLD)
+                    .context_id(world.execution_context_id)
+                    .return_by_value(true)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the scope evaluation: {error}"),
+                    })?,
+            )
+            .await
+            .map_err(fold)?;
+        if let Some(details) = minted.result.exception_details {
+            return Err(EngineError::Internal {
+                detail: format!("mint the document scope: {}", exception_text(&details)),
+            });
+        }
+        let scope = minted
+            .result
+            .result
+            .value
+            .as_ref()
+            .and_then(Value::as_str)
+            .filter(|scope| is_scope(scope))
+            .ok_or_else(|| EngineError::Internal {
+                detail: "the isolated world returned no usable scope".to_owned(),
+            })?
+            .to_owned();
+        // Wrapped so the evaluation returns nothing: `Object.defineProperty`
+        // answers with the object it was given, and asking CDP to serialize
+        // the window back is an error, not a result.
+        let install = format!(
+            "(function () {{ Object.defineProperty(window, '{REF_SCOPE_PROPERTY}', {{ \
+               value: function () {{ return '{scope}'; }}, \
+               writable: false, configurable: false, enumerable: false }}); }})()"
+        );
+        let installed = self
+            .page
+            .execute(
+                EvaluateParams::builder()
+                    .expression(install)
+                    .return_by_value(true)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the scope installation: {error}"),
+                    })?,
+            )
+            .await
+            .map_err(fold)?;
+        if let Some(details) = installed.result.exception_details {
+            // A page that already owns the property as a non-configurable
+            // one cannot be given a scope it does not control, and a
+            // snapshot minted from the page's own value is the collision
+            // this exists to prevent.
+            return Err(EngineError::Internal {
+                detail: format!("install the document scope: {}", exception_text(&details)),
+            });
+        }
         Ok(())
     }
 
