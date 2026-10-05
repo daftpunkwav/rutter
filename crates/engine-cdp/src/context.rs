@@ -156,9 +156,20 @@ impl CdpContext {
         }
         if let Some(scope) = recorded.as_ref()
             && handle.document_scope_claimed(scope).await?
-            && handle.verify_locked_scope(scope).await.is_ok()
         {
-            return Ok(());
+            match handle.verify_locked_scope(scope).await {
+                Ok(()) => return Ok(()),
+                // The claim proves this document is the one the define
+                // named, and the property it defined is locked, so a
+                // check that merely ran out of time says nothing about
+                // the install; minting afresh here would meet the very
+                // property the claim vouches for. A confirmed mismatch
+                // is a different answer: the document holds a minter
+                // this engine did not install, and the fresh mint below
+                // must fail against it.
+                Err(EngineError::Timeout { .. }) => return Ok(()),
+                Err(_) => {}
+            }
         }
         // No claim for the remembered scope: the document was replaced
         // (a claim dies with it, and a document-start one leaves none),
@@ -214,22 +225,35 @@ impl CdpContext {
     /// would sit in the shared engine process for its lifetime. The
     /// cleanup is bounded like every other call here, so a wedged
     /// browser cannot park the caller while holding the browser mutex.
+    ///
+    /// The preparation record goes only when the browser confirms the
+    /// target is gone. A close that failed leaves the target — and
+    /// whatever an ambiguous attempt defined and claimed on it — alive,
+    /// and the record is what a later adoption verifies instead of
+    /// redefining into a refusal.
     async fn discard_unprepared(&self, handle: &CdpPage) {
         if !handle.closable() {
             return;
         }
         let target_id = handle.target_id();
         let browser = self.browser.lock().await;
-        let _ = crate::error::with_deadline(
+        let closed = crate::error::with_deadline(
             "close_unprepared_page",
             crate::error::COMMAND_TIMEOUT,
             browser.execute(CloseTargetParams::new(target_id.clone())),
         )
         .await;
-        drop(browser);
-        // The target is gone, so its gate would only be a leak: nothing
-        // will prepare this id again.
-        self.forget_preparation(&target_id);
+        match closed {
+            Ok(_) => self.forget_preparation(&target_id),
+            // The probe defaults to "still there" when it cannot tell,
+            // which keeps the record — the conservative answer for a
+            // target that may carry an install of this engine's.
+            Err(_) => {
+                if !target_still_exists(&browser, target_id.clone()).await {
+                    self.forget_preparation(&target_id);
+                }
+            }
+        }
     }
 }
 
@@ -348,20 +372,28 @@ impl ContextHandle for CdpContext {
             // never closed; see [`CdpPage::attach`].
             if handle.closable() {
                 let target_id = handle.target_id();
-                // The target is gone either way; the gate would only be
-                // a leak the engine keeps for its lifetime.
-                self.forget_preparation(&target_id);
                 let browser = self.browser.lock().await;
                 // Same wedged-handler threat model as every call here:
                 // the cleanup must be bounded or a hung browser would
                 // park `open_page` forever while holding the browser
-                // mutex.
-                let _ = crate::error::with_deadline(
+                // mutex. The gate goes only when the close is confirmed:
+                // a target that outlives it keeps whatever preparation
+                // defined and claimed on it, which a later adoption
+                // verifies instead of redefining.
+                match crate::error::with_deadline(
                     "close_overflow_page",
                     crate::error::COMMAND_TIMEOUT,
-                    browser.execute(CloseTargetParams::new(target_id)),
+                    browser.execute(CloseTargetParams::new(target_id.clone())),
                 )
-                .await;
+                .await
+                {
+                    Ok(_) => self.forget_preparation(&target_id),
+                    Err(_) => {
+                        if !target_still_exists(&browser, target_id.clone()).await {
+                            self.forget_preparation(&target_id);
+                        }
+                    }
+                }
             }
             return Err(EngineError::Capacity {
                 detail: format!(

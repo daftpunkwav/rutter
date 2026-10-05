@@ -622,6 +622,14 @@ impl CdpPage {
     /// function in place returns its own value, and the comparison
     /// catches it. The same check against a remembered scope is how a
     /// retry recognizes an install of its own.
+    ///
+    /// The boundary this check cannot cross: a document that was already
+    /// loaded when rutter attached can have made `Object.defineProperty`
+    /// a spying no-op, so the define lands nowhere and the answer is the
+    /// page's echo of the scope it saw. That page owns its realm either
+    /// way — the labels it renders are equally its choice — and every
+    /// document the registration covers is immune, because the
+    /// document-start install runs before any page script.
     pub(crate) async fn verify_locked_scope(&self, scope: &str) -> Result<(), EngineError> {
         let minter = self.locked_scope_minter().await?;
         let object_id = minter
@@ -674,13 +682,19 @@ impl CdpPage {
     ///
     /// A property that is missing, writable, configurable, or not a
     /// function is not the one this engine installed.
+    ///
+    /// The global is read through `this` — a sloppy function's `this` is
+    /// the realm's global object itself, a binding the page cannot
+    /// reassign — and not through `globalThis` or `window`, both of
+    /// which are properties a pre-loaded page can point at a look-alike
+    /// before rutter attaches.
     async fn locked_scope_minter(&self) -> Result<RemoteObject, EngineError> {
         let global = with_deadline(
             "read_global",
             COMMAND_TIMEOUT,
             self.page.execute(
                 EvaluateParams::builder()
-                    .expression("globalThis")
+                    .expression("(function () { return this; })()")
                     .build()
                     .map_err(|error| EngineError::Internal {
                         detail: format!("build the global read: {error}"),
