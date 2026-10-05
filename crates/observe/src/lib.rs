@@ -63,9 +63,10 @@ pub fn reader_script() -> &'static str {
 /// from resolving to another page's element after a tab switch. The
 /// page's own `crypto` is replaceable, so the engine installs this
 /// script with `Page.addScriptToEvaluateOnNewDocument` — before the
-/// document runs any script of its own — and the serializer prefers the
-/// generator it locks onto the global. A document that predates the
-/// installation falls back to `crypto`.
+/// document runs any script of its own — and the serializer calls the
+/// scope minter it locks onto the global. A document that predates the
+/// installation gets its minter from the engine's isolated world; a
+/// document with no minter hands out no references.
 ///
 /// The script is a no-op on a document without `crypto`, where the
 /// serializer's store degrades instead.
