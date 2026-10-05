@@ -576,6 +576,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(second);
     }
 
+    /// Serializes the two profile-mode fixtures below. The restrictive
+    /// fixture flips a process-wide setting, so the ordinary one must
+    /// not create its directory inside that window.
+    #[cfg(unix)]
+    static PROFILE_FIXTURE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[cfg(unix)]
     #[test]
     fn a_profile_directory_is_owner_only() {
@@ -584,6 +590,61 @@ mod tests {
         // and must not be able to create files inside it, which is what
         // makes planting a symlink at a path the browser writes to
         // impossible.
+        let _fixture = PROFILE_FIXTURE.lock().unwrap_or_else(|p| p.into_inner());
+        assert_owner_only("an ordinary umask");
+    }
+
+    /// Pins the mode under a umask that would break it.
+    ///
+    /// The create's own mode is masked by the umask, so under a
+    /// restrictive one the directory comes out without the owner bits a
+    /// browser needs to read its own profile -- which is exactly the
+    /// regression the explicit permissions after the create exist to
+    /// prevent, and exactly what an ordinary umask cannot expose: there
+    /// the masked mode still lands on `0700` with the set removed. The
+    /// umask is process-wide, so the fixture holds
+    /// [`PROFILE_FIXTURE`] for its whole window and the guard puts the
+    /// old mask back even when the assertion fails.
+    #[cfg(unix)]
+    #[test]
+    fn a_profile_directory_survives_a_restrictive_umask() {
+        let _fixture = PROFILE_FIXTURE.lock().unwrap_or_else(|p| p.into_inner());
+        let _umask = UmaskGuard(set_umask(0o277));
+        assert_owner_only("a restrictive umask");
+    }
+
+    /// Restores the umask the fixture replaced, whatever happened
+    /// inside the window.
+    #[cfg(unix)]
+    struct UmaskGuard(u32);
+
+    #[cfg(unix)]
+    impl Drop for UmaskGuard {
+        fn drop(&mut self) {
+            set_umask(self.0);
+        }
+    }
+
+    /// Sets the process umask and returns the one it replaced.
+    ///
+    /// `umask` is a plain syscall with no failure mode; the only reason
+    /// for the escape hatch is that the workspace denies `unsafe_code`
+    /// outright, and the call is the one way a test can control what
+    /// the create's mode is masked by.
+    #[cfg(unix)]
+    #[allow(unsafe_code)]
+    fn set_umask(mask: u32) -> u32 {
+        // SAFETY: `umask` only sets the process file-mode creation mask
+        // and returns the previous one; it touches no memory and cannot
+        // fail.
+        let previous = unsafe { libc::umask(mask as libc::mode_t) }; // nosemgrep
+        previous as u32
+    }
+
+    /// Runs [`profile_dir`] under the caller's umask and asserts the
+    /// directory came out owner-only.
+    #[cfg(unix)]
+    fn assert_owner_only(under: &str) {
         use std::os::unix::fs::PermissionsExt;
         let profile = profile_dir().expect("profile dir");
         let mode = std::fs::metadata(&profile)
@@ -591,7 +652,11 @@ mod tests {
             .permissions()
             .mode();
         let _ = std::fs::remove_dir_all(&profile);
-        assert_eq!(mode & 0o777, 0o700, "the profile stays owner-only");
+        assert_eq!(
+            mode & 0o777,
+            0o700,
+            "the profile stays owner-only under {under}"
+        );
     }
 
     #[test]

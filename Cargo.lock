@@ -1785,6 +1785,7 @@ dependencies = [
  "base64 0.23.1",
  "chromiumoxide",
  "futures",
+ "libc",
  "rutter-core",
  "rutter-engine",
  "rutter-observe",

@@ -40,3 +40,7 @@ tokio = { workspace = true, features = ["net"] }
 # removes, rather than predictable paths in the shared temp dir that
 # another local user could have planted a symlink at.
 tempfile = { workspace = true }
+# The profile-mode regression test sets the process umask in a child
+# test process; std has no API for it and the shell would be one more
+# interpreter spawn on the tested path.
+libc = { workspace = true }
