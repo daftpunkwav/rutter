@@ -59,10 +59,18 @@ async fn fetched_and_failed_requests_are_visible() -> Result<(), Box<dyn std::er
     page.navigate("data:text/html,<title>net</title>").await?;
     let mut stream = page.observe().await?;
 
-    // A fetch of a data URL succeeds: the request reports a status.
+    // A fetch of a data URL succeeds: the request reports a status. The
+    // feed also carries requests that started before it attached — the
+    // page's own document load among them — and those degrade to a
+    // method-less entry (`or_unknown`), so the wait names the request it
+    // is asserting about instead of taking whichever outcome lands
+    // first.
     page.evaluate("fetch('data:text/plain,x').catch(() => {})")
         .await?;
-    let ok = wait_request(&mut stream, |entry| entry.status.is_some()).await;
+    let ok = wait_request(&mut stream, |entry| {
+        entry.status.is_some() && entry.url.starts_with("data:text/plain")
+    })
+    .await;
     assert_eq!(ok.status, Some(200));
     assert_eq!(ok.method, "GET");
 
