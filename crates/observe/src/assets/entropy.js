@@ -10,12 +10,17 @@
  * page script.
  *
  * The engine installs this script with
- * `Page.addScriptToEvaluateOnNewDocument`, so it runs before any script
- * the document itself carries. Everything the minter needs is captured
- * here, while the platform is still the platform: the generator is bound,
- * the constructor and the digit table are held as values, and the
- * conversion uses only operators and indexing, which no page can replace.
- * The minter itself is locked onto the global as a non-configurable,
+ * `Page.addScriptToEvaluateOnNewDocument`, twice: once for the main
+ * world, which defines the minter the serializer reads, and once for a
+ * named isolated world, where no page script can reach. The shadow copy
+ * never runs in the serializer; its presence in that world is the proof
+ * that the document-start registration covered the document that is
+ * current, so the main-world property was installed by the engine and
+ * not by the page. Everything the minter needs is captured here, while
+ * the platform is still the platform: the generator is bound, the
+ * constructor and the digit table are held as values, and the conversion
+ * uses only operators and indexing, which no page can replace. The
+ * minter itself is locked onto the global as a non-configurable,
  * non-writable property.
  *
  * A document that predates the installation -- a target that was already

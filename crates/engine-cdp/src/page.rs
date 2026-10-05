@@ -31,7 +31,7 @@ use chromiumoxide::cdp::browser_protocol::page::{
 use chromiumoxide::cdp::browser_protocol::target::TargetId;
 use chromiumoxide::cdp::js_protocol::runtime::{
     CallFunctionOnParams, EvaluateParams, EventConsoleApiCalled, EventExceptionThrown,
-    GetPropertiesParams, RemoteObject, RemoteObjectType,
+    ExecutionContextId, GetPropertiesParams, RemoteObject, RemoteObjectType,
 };
 use chromiumoxide::error::CdpError;
 use chromiumoxide::listeners::EventStream;
@@ -314,7 +314,7 @@ impl CdpPage {
     }
 
     /// Registers the entropy capture for every document this page loads
-    /// from now on.
+    /// from now on, in the main world and in the named isolated world.
     ///
     /// A document's ref scope keeps a stale reference captured on one
     /// page from resolving to another page's element after a tab switch,
@@ -325,16 +325,31 @@ impl CdpPage {
     /// everything it needs from the platform; see
     /// [`rutter_observe::entropy_capture_script`].
     ///
-    /// Registration is per target and survives navigation, so once is
-    /// enough for every document the page loads afterwards, including
-    /// ones the page starts itself. A failure is reported rather than
-    /// swallowed: a page whose scope the page itself can choose is a
-    /// weaker guarantee than the one callers are promised. Every call is
-    /// under a deadline like the rest of this file, so a browser that
-    /// stops answering cannot park a page open.
+    /// The shadow copy in the isolated world defines the same minter
+    /// where no page script can reach. It never runs in the serializer;
+    /// its presence is what [`CdpPage::document_start_ran`] reads as the
+    /// proof that the document-start registration covered the document
+    /// that is now current, so the locked property in the main world was
+    /// installed by the engine rather than by the page. Both worlds draw
+    /// from the same platform `crypto`, so the shadow succeeding while
+    /// the main-world capture failed is not a case: the two
+    /// registrations are installed back to back and run back to back
+    /// before any page script.
+    ///
+    /// Registration is per CDP session and per target and survives
+    /// navigation, so once per session is enough for every document the
+    /// page loads afterwards, including ones the page starts itself. A
+    /// handle re-prepared on its session adds the registrations again;
+    /// the script's own locked define turns the repeat into a swallowed
+    /// throw. A failure is reported rather than swallowed: a page whose
+    /// scope the page itself can choose is a weaker guarantee than the
+    /// one callers are promised. Every call is under a deadline like the
+    /// rest of this file, so a browser that stops answering cannot park
+    /// a page open.
     pub async fn install_entropy_capture(&self) -> Result<(), EngineError> {
+        let source = rutter_observe::entropy_capture_script();
         let params = AddScriptToEvaluateOnNewDocumentParams::builder()
-            .source(rutter_observe::entropy_capture_script())
+            .source(source)
             .build()
             .map_err(|error| EngineError::Internal {
                 detail: format!("build the entropy capture registration: {error}"),
@@ -345,32 +360,74 @@ impl CdpPage {
             self.page.execute(params),
         )
         .await?;
+        let shadow = AddScriptToEvaluateOnNewDocumentParams::builder()
+            .source(source)
+            .world_name(ISOLATED_WORLD.to_owned())
+            .build()
+            .map_err(|error| EngineError::Internal {
+                detail: format!("build the entropy shadow registration: {error}"),
+            })?;
+        with_deadline(
+            "install_entropy_capture_shadow",
+            COMMAND_TIMEOUT,
+            self.page.execute(shadow),
+        )
+        .await?;
         Ok(())
     }
 
-    /// Mints a scope for the document that is already loaded, which the
-    /// registration cannot reach.
+    /// Whether the document-start registration covered the document that
+    /// is current: the named isolated world carries the minter the
+    /// registration defines there.
     ///
-    /// A target rutter attaches to carries a document whose own scripts
-    /// have already run, so nothing in the main world can be trusted to
-    /// draw a random value: `crypto` there is whatever the page left
-    /// behind. The scope is minted in an isolated world, defined in the
-    /// main world, and then checked through CDP -- the page cannot forge
-    /// that answer, and a page-chosen scope is the collision this exists
-    /// to prevent.
+    /// The page cannot reach an isolated world, so this answer cannot be
+    /// forged from page script. A minter in the named world means the
+    /// engine's document-start script ran for this document before the
+    /// page's own, and the locked property the serializer reads in the
+    /// main world is therefore the engine's, however hostile the page --
+    /// which is what lets preparation accept an installed minter instead
+    /// of defining over it, a define that would throw.
     ///
     /// Every call is under a deadline like the rest of this file: this
     /// runs while a page is being opened or adopted, so a browser that
     /// stops answering must not park that.
-    pub async fn install_current_scope(&self) -> Result<(), EngineError> {
-        let scope = self.mint_scope_in_isolated_world().await?;
-        self.define_locked_scope(&scope).await?;
-        self.verify_locked_scope(&scope).await
+    pub(crate) async fn document_start_ran(&self) -> Result<bool, EngineError> {
+        let context_id = self.isolated_world().await?;
+        let probe = with_deadline(
+            "probe_document_start",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                EvaluateParams::builder()
+                    .expression(format!("typeof {REF_SCOPE_PROPERTY} === 'function'"))
+                    .context_id(context_id)
+                    .return_by_value(true)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the document-start probe: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        if let Some(details) = probe.result.exception_details {
+            return Err(EngineError::Internal {
+                detail: format!(
+                    "probe the document-start registration: {}",
+                    exception_text(&details)
+                ),
+            });
+        }
+        Ok(probe
+            .result
+            .result
+            .value
+            .as_ref()
+            .and_then(Value::as_bool)
+            .unwrap_or(false))
     }
 
-    /// Draws one scope in an isolated world: a separate realm with the
-    /// platform's own `crypto`, which the page's patches do not reach.
-    async fn mint_scope_in_isolated_world(&self) -> Result<String, EngineError> {
+    /// The execution context of the named isolated world, creating the
+    /// world for the frame when absent; a repeated call reuses it.
+    async fn isolated_world(&self) -> Result<ExecutionContextId, EngineError> {
         let tree = with_deadline(
             "get_frame_tree",
             COMMAND_TIMEOUT,
@@ -391,13 +448,20 @@ impl CdpPage {
             ),
         )
         .await?;
+        Ok(world.execution_context_id)
+    }
+
+    /// Draws one scope in an isolated world: a separate realm with the
+    /// platform's own `crypto`, which the page's patches do not reach.
+    pub(crate) async fn mint_scope_in_isolated_world(&self) -> Result<String, EngineError> {
+        let context_id = self.isolated_world().await?;
         let minted = with_deadline(
             "mint_ref_scope",
             COMMAND_TIMEOUT,
             self.page.execute(
                 EvaluateParams::builder()
                     .expression(SCOPE_IN_ISOLATED_WORLD)
-                    .context_id(world.execution_context_id)
+                    .context_id(context_id)
                     .return_by_value(true)
                     .build()
                     .map_err(|error| EngineError::Internal {
@@ -429,10 +493,11 @@ impl CdpPage {
     /// The expression is wrapped so the evaluation returns nothing:
     /// `Object.defineProperty` answers with the object it was given, and
     /// asking CDP to serialize the window back is an error, not a result.
-    /// An exception here means the page already owns the property as a
-    /// non-configurable one, which is a page that can choose its own
-    /// scope.
-    async fn define_locked_scope(&self, scope: &str) -> Result<(), EngineError> {
+    /// An exception here means the property already exists as a
+    /// non-configurable one the caller has not verified as its own --
+    /// the page planted it, or an earlier install of this engine did and
+    /// the recorded scope must be checked against it instead.
+    pub(crate) async fn define_locked_scope(&self, scope: &str) -> Result<(), EngineError> {
         let install = format!(
             "(function () {{ Object.defineProperty(window, '{REF_SCOPE_PROPERTY}', {{ \
                value: function () {{ return '{scope}'; }}, \
@@ -472,8 +537,9 @@ impl CdpPage {
     /// non-configurable function *and* that function has to answer with
     /// the scope that was minted: a page that kept its own locked
     /// function in place returns its own value, and the comparison
-    /// catches it.
-    async fn verify_locked_scope(&self, scope: &str) -> Result<(), EngineError> {
+    /// catches it. The same check against a remembered scope is how a
+    /// retry recognizes an install of its own.
+    pub(crate) async fn verify_locked_scope(&self, scope: &str) -> Result<(), EngineError> {
         let minter = self.locked_scope_minter().await?;
         let object_id = minter
             .object_id

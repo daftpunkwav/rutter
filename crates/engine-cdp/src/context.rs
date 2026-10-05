@@ -33,6 +33,22 @@ use crate::page::CdpPage;
 /// Pages of one CDP browser context, keyed by rutter page id.
 type PageMap = HashMap<PageId, Arc<CdpPage>>;
 
+/// Per-target preparation state, shared by every context of one
+/// launcher: the gate that serializes preparation of a target, holding
+/// the scope an engine install locked onto the document that was current
+/// when it ran. `None` means no install of the engine's is known for the
+/// current document -- nothing prepared it yet, or the document was
+/// replaced after the recorded install failed to verify.
+///
+/// Shared rather than per context because the locked property belongs to
+/// the document, not to the context that installed it: a second context
+/// adopting a target a first one prepared must recognize the install
+/// instead of defining over it, which the first define made impossible.
+/// The outer mutex is the sync one -- a guard over it is held only long
+/// enough to clone a gate.
+pub(crate) type PreparationRegistry =
+    Arc<Mutex<HashMap<TargetId, Arc<AsyncMutex<Option<String>>>>>>;
+
 /// One isolated CDP browser context.
 pub struct CdpContext {
     id: ContextId,
@@ -48,13 +64,9 @@ pub struct CdpContext {
     /// are synchronous per trait, and guards are never held across an
     /// await.
     pages: Mutex<PageMap>,
-    /// One gate per target being prepared, holding whether its ref scope
-    /// is installed. Preparation defines a locked property, so a second
-    /// attempt would meet the first and throw; adoptions of the same
-    /// target take turns here instead, and the later one finds the work
-    /// done. The outer mutex is the sync one — a guard over it is held
-    /// only long enough to clone a gate.
-    preparing: Mutex<HashMap<TargetId, Arc<AsyncMutex<bool>>>>,
+    /// The launcher-wide preparation registry; see
+    /// [`PreparationRegistry`] for why it is shared.
+    preparing: PreparationRegistry,
     page_counter: AtomicU64,
 }
 
@@ -65,6 +77,7 @@ impl CdpContext {
         browser: Arc<AsyncMutex<chromiumoxide::Browser>>,
         cdp_context_id: Option<BrowserContextId>,
         config: ContextConfig,
+        preparing: PreparationRegistry,
     ) -> Self {
         Self {
             id,
@@ -72,7 +85,7 @@ impl CdpContext {
             cdp_context_id,
             config,
             pages: Mutex::new(HashMap::new()),
-            preparing: Mutex::new(HashMap::new()),
+            preparing,
             page_counter: AtomicU64::new(0),
         }
     }
@@ -87,7 +100,7 @@ impl CdpContext {
 
     /// The gate that serializes preparation for one target, creating it
     /// on first use.
-    fn preparation_gate(&self, target_id: &TargetId) -> Arc<AsyncMutex<bool>> {
+    fn preparation_gate(&self, target_id: &TargetId) -> Arc<AsyncMutex<Option<String>>> {
         let mut preparing = self
             .preparing
             .lock()
@@ -95,23 +108,65 @@ impl CdpContext {
         Arc::clone(preparing.entry(target_id.clone()).or_default())
     }
 
-    /// Prepares one page's ref scope, once per target.
+    /// Prepares one page's ref scope, once per document.
     ///
     /// Two adoptions of the same target must not both define the locked
     /// scope minter: the second define meets the first and throws, which
-    /// would turn an otherwise idempotent adoption into a failure — and a
-    /// failure that closed the shared target would take the winner's page
-    /// with it. The gate makes the second caller wait for the first and
-    /// then find the work done.
+    /// would turn an otherwise idempotent adoption into a failure -- and
+    /// a failure that closed the shared target would take the winner's
+    /// page with it. The gate makes the second caller wait for the first
+    /// and then recognize the work done, and because the gate lives in
+    /// the launcher-wide registry, "the first" spans every context of
+    /// the engine, not only this one.
+    ///
+    /// Three ways to find the document already covered, in order of
+    /// strength:
+    ///
+    /// 1. The document-start registration ran for it -- proved by the
+    ///    minter in the isolated world no page can reach. The locked
+    ///    property the serializer reads is the document-start one,
+    ///    whatever the page tried.
+    /// 2. The registry remembers a scope this engine defined and
+    ///    verified on this document, and the live minter still answers
+    ///    it through CDP. This is the second adopter's path and the
+    ///    retry's: the property is locked, so a same-document retry
+    ///    finds exactly what the earlier attempt left.
+    /// 3. Neither holds, so the document has no minter the engine put
+    ///    there: mint one in the isolated world and define it. The scope
+    ///    is recorded *before* the define, so a verification that times
+    ///    out after a successful define leaves the scope remembered and
+    ///    a retry takes path 2 instead of defining a second time; a
+    ///    define that threw restores the previous record, because the
+    ///    property the throw met is not the one this attempt minted.
     async fn prepare_once(&self, handle: &CdpPage) -> Result<(), EngineError> {
         let gate = self.preparation_gate(&handle.target_id());
-        let mut prepared = gate.lock().await;
-        if *prepared {
+        let mut recorded = gate.lock().await;
+        // The registrations live per CDP session, so this handle installs
+        // its own before anything is checked: a document this page loads
+        // from here on must be covered by *this* session's registration,
+        // not only by the one a previous adopter's session installed.
+        handle.install_entropy_capture().await?;
+        if handle.document_start_ran().await? {
             return Ok(());
         }
-        prepare_page(handle).await?;
-        *prepared = true;
-        Ok(())
+        if let Some(scope) = recorded.as_ref()
+            && handle.verify_locked_scope(scope).await.is_ok()
+        {
+            return Ok(());
+        }
+        // The live minter did not answer the remembered scope: the
+        // document was replaced (the registration of whichever
+        // session covered its start leaves no recorded scope), or
+        // the check itself failed transiently. Either way the
+        // document gets a fresh mint below; the remembered scope
+        // stays until the define decides what replaces it.
+        let scope = handle.mint_scope_in_isolated_world().await?;
+        let previous = recorded.replace(scope.clone());
+        if let Err(error) = handle.define_locked_scope(&scope).await {
+            *recorded = previous;
+            return Err(error);
+        }
+        handle.verify_locked_scope(&scope).await
     }
 
     /// Forgets a target's preparation gate, so a target that comes back
@@ -158,18 +213,6 @@ impl CdpContext {
         // will prepare this id again.
         self.forget_preparation(&target_id);
     }
-}
-
-/// Gives a page handle the ref-scope minter for both the document it
-/// already has and every document it loads afterwards.
-///
-/// The two halves are one step because a caller that got only the first
-/// would hand out scopes a page could choose after its next navigation,
-/// and one that got only the second would do the same for the document
-/// in front of it.
-async fn prepare_page(handle: &CdpPage) -> Result<(), EngineError> {
-    handle.install_entropy_capture().await?;
-    handle.install_current_scope().await
 }
 
 #[async_trait]

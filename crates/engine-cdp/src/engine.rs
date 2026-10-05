@@ -4,6 +4,7 @@
 //! CDP details (browser contexts, targets) are confined here and in the
 //! sibling modules; callers see only `rutter-engine` types.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -20,7 +21,7 @@ use rutter_engine::engine::Engine;
 use rutter_engine::error::EngineError;
 use rutter_engine::health::HealthReport;
 
-use crate::context::CdpContext;
+use crate::context::{CdpContext, PreparationRegistry};
 
 /// Shared browser connection; `Browser` is not `Clone`, so all handles
 /// funnel through this mutex. Crate-internal: the module is private and
@@ -60,6 +61,11 @@ pub struct CdpEngine {
     /// off the first time a context creation is refused (Electron).
     isolation: AtomicBool,
     context_counter: AtomicU64,
+    /// Per-target ref-scope preparation state, shared by every context
+    /// this engine hands out: the locked scope minter belongs to the
+    /// document, so a second context adopting a target a first one
+    /// prepared must recognize the install instead of defining over it.
+    preparations: PreparationRegistry,
 }
 
 impl CdpEngine {
@@ -91,6 +97,7 @@ impl CdpEngine {
             descriptor,
             isolation: AtomicBool::new(true),
             context_counter: AtomicU64::new(0),
+            preparations: Arc::new(StdMutex::new(HashMap::new())),
         }
     }
 }
@@ -144,6 +151,7 @@ impl Engine for CdpEngine {
             Arc::clone(&self.browser),
             cdp_context_id,
             config,
+            Arc::clone(&self.preparations),
         )))
     }
 
