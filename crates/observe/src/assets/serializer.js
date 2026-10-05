@@ -38,10 +38,21 @@
   // the document's) makes a cross-page hit need the counter and the
   // scope to collide at once, while same-page refs keep the stability
   // the snapshot format promises.
+  //
+  // The scope comes from `crypto`, not `Math.random`: `Math.random` is
+  // a plain page function, so a page can pin it to a constant and hand
+  // every document it opens the same scope -- which is the collision
+  // this exists to prevent. There is no fallback on purpose. A page
+  // that removes `crypto` gets the degradation every other failure
+  // here gets: `ensureRefStore` reports the snapshot truncated and
+  // hands out no references, rather than a scope that does not
+  // separate documents.
   function mintScope() {
+    const bytes = new Uint8Array(REF_SCOPE_CHARS);
+    crypto.getRandomValues(bytes);
     let scope = '';
-    while (scope.length < REF_SCOPE_CHARS) {
-      scope += Math.random().toString(36).slice(2);
+    for (const byte of bytes) {
+      scope += byte.toString(36).padStart(2, '0');
     }
     return scope.slice(0, REF_SCOPE_CHARS);
   }

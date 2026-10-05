@@ -184,6 +184,14 @@ and the project adheres to
   site chrome and dropped from a `read` readout. The tables now hold
   exactly the roles that were put in them, and an implicit role
   lookup answers for the element's own tag name only.
+- The per-document ref scope is minted from `crypto.getRandomValues`
+  instead of `Math.random`. `Math.random` is a plain page function, so
+  a page could pin it to a constant and hand every document it opened
+  the same scope — the collision the scope exists to prevent. A page
+  that removes `crypto` now gets the degradation every other store
+  failure gets: a snapshot reported as truncated with no references,
+  rather than one whose references cannot be told apart across
+  documents.
 
 ### Changed
 

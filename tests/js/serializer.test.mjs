@@ -74,6 +74,24 @@ test('two documents mint disjoint refs even at the same counter', () => {
   assert.equal(pageA.run(SERIALIZER_JS).root.children[0].ref, refA, 'scope is stable per document');
 });
 
+test('a page without a working crypto degrades to no references', () => {
+  // The scope separates documents, so it comes from `crypto` rather
+  // than from `Math.random`, which is a plain page function a page can
+  // pin to a constant -- handing every document it opens the same
+  // scope, which is the collision the scope exists to prevent. There
+  // is no weaker fallback on purpose: a page that removes `crypto`
+  // gets the answer every other store failure gets, a snapshot that
+  // says it is truncated and hands out no references, instead of one
+  // whose references cannot be told apart across documents.
+  const page = pageOver(el('body', {}, [el('button', {}, ['Save'])]), {
+    crypto: undefined,
+  });
+  const envelope = page.run(SERIALIZER_JS);
+  assert.equal(envelope.truncated, true, 'the missing store is reported, not hidden');
+  assert.equal(envelope.root.children[0].role, 'button', 'the tree is still serialized');
+  assert.equal(envelope.root.children[0].ref, undefined, 'no reference is handed out');
+});
+
 test('a snapshot below the sweep threshold leaves the store alone', () => {
   // The sweep is budgeted: running it on every snapshot would make
   // every snapshot O(store), which is the cost the threshold avoids.

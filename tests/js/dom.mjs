@@ -14,6 +14,7 @@
  */
 
 import vm from 'node:vm';
+import { webcrypto } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -372,6 +373,10 @@ export function createPage({ document, window: windowExtras = {}, extra = {} } =
     WeakRef: ControllableWeakRef,
     ArrayBuffer,
     Uint8Array,
+    // The serializer mints its per-document ref scope from `crypto`;
+    // Node's WebCrypto stands in, and a test that wants the no-crypto
+    // degradation overrides it through `window`.
+    crypto: webcrypto,
     URL,
     URLSearchParams,
     Blob,
