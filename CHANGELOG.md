@@ -176,6 +176,14 @@ and the project adheres to
   `Enter`, arrows, function keys, …) plus the text that makes
   printable keys land in focused inputs. Sites that ignored the
   previous name-only events respond correctly now.
+- A `role` a page declares that names a member of `Object.prototype`
+  (`constructor`, `toString`) is no longer read as a known role. The
+  role tables were object literals, so such a role reported as
+  inherited rather than as absent: an element could be judged
+  actionable (a snapshot reference nothing can reach) or taken for
+  site chrome and dropped from a `read` readout. The tables now hold
+  exactly the roles that were put in them, and an implicit role
+  lookup answers for the element's own tag name only.
 
 ### Changed
 

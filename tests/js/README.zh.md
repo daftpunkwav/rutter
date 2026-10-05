@@ -14,11 +14,14 @@ CI 跑的是同一个脚本。
 | 文件 | 跑什么 |
 |---|---|
 | `dom.mjs` | 夹具：小到能读完的 DOM，外加 `ControllableWeakRef`——让测试自己决定某个元素何时被回收 |
-| `serializer.test.mjs` | `crates/observe/src/assets/serializer.js`——ref 清扫及其阈值、只有可操作元素带 ref、shadow DOM 遍历、"永不抛异常"的守卫 |
+| `serializer.test.mjs` | `crates/observe/src/assets/serializer.js`——ref 清扫及其阈值、只有可操作元素带 ref、shadow DOM 遍历、以 `Object.prototype` 成员命名的 role、"永不抛异常"的守卫 |
 | `reader.test.mjs` | `crates/observe/src/assets/reader.js`——colspan 表头、无单元格的首行、嵌套表格、竖线转义、字符预算、站点框架、链接、列表、引用、代码围栏 |
-| `app.test.mjs` | `frontend/src/app.js`——静默的 decision ack、指名原因的 screencast 拒绝、重连对时间线与会话集的重置、重连退避、审批卡片去重、决策提交失败 |
+| `app.test.mjs` | `frontend/src/app.js`——静默的 decision ack、指名原因的 screencast 拒绝、重连对时间线与会话集的重置、重连退避、审批卡片去重、决策提交失败、词条缺失时回退为键名 |
 | `scheme-gate.test.mjs` | `browser/scheme-gate.js`——两个导航入口共用的 scheme 门：web URL 与 `about:blank` 通过，特权 scheme（`file:`、`javascript:`、`devtools:`、形近写法）被拒 |
 
-夹具只建模页面脚本与看板客户端真正触碰到的平台接口。它们开始用到而
-`dom.mjs` 没有建模的成员，会在需要它的那条测试里抛 `TypeError`——这是刻意
-的：静默缺失的成员会让行为测试变成空断言。
+夹具只建模页面脚本与看板客户端真正触碰到的平台接口，包括平台的能力
+**边界**。它们开始用到而 `dom.mjs` 没有建模的成员，会在需要它的那条测试
+里抛 `TypeError`——这是刻意的：静默缺失的成员会让行为测试变成空断言。
+反过来也一样：`children`、`rows`、`cells` 与平台的 `HTMLCollection` 一致，
+是类数组但**不可迭代**，因此直接迭代而不先复制的遍历器会在这里失败，而不是
+在浏览器里失败。

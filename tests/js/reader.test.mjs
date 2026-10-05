@@ -162,6 +162,18 @@ test('site chrome and interaction surfaces are omitted', () => {
   assert.deepEqual(blocks(envelope.markdown), ['the content']);
 });
 
+test('a role borrowed from Object.prototype is not site chrome', () => {
+  // Chrome is matched by tag or landmark role, and the role string is
+  // the page's own. An object-literal table also answers for
+  // `constructor` and the rest of `Object.prototype`, so a page naming
+  // one of those would have its content taken for chrome and dropped
+  // from the readout.
+  const envelope = read(
+    el('body', {}, [el('div', { attrs: { role: 'constructor' } }, ['the content'])])
+  );
+  assert.deepEqual(blocks(envelope.markdown), ['the content']);
+});
+
 test('a relative link is resolved against the document', () => {
   const markdown = read(
     el('body', {}, [el('p', {}, ['see ', el('a', { attrs: { href: '../docs' } }, ['the docs'])])])
