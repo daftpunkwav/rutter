@@ -30,8 +30,8 @@ use chromiumoxide::cdp::browser_protocol::page::{
 };
 use chromiumoxide::cdp::browser_protocol::target::TargetId;
 use chromiumoxide::cdp::js_protocol::runtime::{
-    EvaluateParams, EventConsoleApiCalled, EventExceptionThrown, GetPropertiesParams, RemoteObject,
-    RemoteObjectType,
+    CallFunctionOnParams, EvaluateParams, EventConsoleApiCalled, EventExceptionThrown,
+    GetPropertiesParams, RemoteObject, RemoteObjectType,
 };
 use chromiumoxide::error::CdpError;
 use chromiumoxide::listeners::EventStream;
@@ -365,7 +365,7 @@ impl CdpPage {
     pub async fn install_current_scope(&self) -> Result<(), EngineError> {
         let scope = self.mint_scope_in_isolated_world().await?;
         self.define_locked_scope(&scope).await?;
-        self.verify_locked_scope().await
+        self.verify_locked_scope(&scope).await
     }
 
     /// Draws one scope in an isolated world: a separate realm with the
@@ -468,8 +468,64 @@ impl CdpPage {
     /// `Object.getOwnPropertyDescriptor` with something that lies -- and
     /// either would leave the snapshot minting from a scope the page
     /// chose. The browser's own view of the global cannot be forged from
-    /// inside the page.
-    async fn verify_locked_scope(&self) -> Result<(), EngineError> {
+    /// inside the page, so the property has to be an own, non-writable,
+    /// non-configurable function *and* that function has to answer with
+    /// the scope that was minted: a page that kept its own locked
+    /// function in place returns its own value, and the comparison
+    /// catches it.
+    async fn verify_locked_scope(&self, scope: &str) -> Result<(), EngineError> {
+        let minter = self.locked_scope_minter().await?;
+        let object_id = minter
+            .object_id
+            .clone()
+            .ok_or_else(|| EngineError::Internal {
+                detail: format!("the browser returned no handle for {REF_SCOPE_PROPERTY}"),
+            })?;
+        // Called on the function object the browser itself reported, so
+        // the call cannot land on anything the page swapped in after the
+        // check.
+        let answered = with_deadline(
+            "call_ref_scope",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                CallFunctionOnParams::builder()
+                    .object_id(object_id)
+                    .function_declaration("function () { return this(); }")
+                    .return_by_value(true)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the minter call: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        if let Some(details) = answered.result.exception_details {
+            return Err(EngineError::Internal {
+                detail: format!("call the document scope: {}", exception_text(&details)),
+            });
+        }
+        let answered = answered
+            .result
+            .result
+            .value
+            .as_ref()
+            .and_then(Value::as_str);
+        if answered != Some(scope) {
+            return Err(EngineError::Internal {
+                detail: format!(
+                    "the document's {REF_SCOPE_PROPERTY} did not answer with the minted scope: \
+                     a page that keeps its own minter can choose its own scope"
+                ),
+            });
+        }
+        Ok(())
+    }
+
+    /// The locked scope minter the document holds, as the browser sees it.
+    ///
+    /// A property that is missing, writable, configurable, or not a
+    /// function is not the one this engine installed.
+    async fn locked_scope_minter(&self) -> Result<RemoteObject, EngineError> {
         let global = with_deadline(
             "read_global",
             COMMAND_TIMEOUT,
@@ -506,28 +562,26 @@ impl CdpPage {
             ),
         )
         .await?;
-        let locked = properties
+        properties
             .result
             .result
             .iter()
             .find(|property| property.name == REF_SCOPE_PROPERTY)
-            .is_some_and(|property| {
+            .filter(|property| {
                 property.writable == Some(false)
                     && !property.configurable
                     && property
                         .value
                         .as_ref()
                         .is_some_and(|value| value.r#type == RemoteObjectType::Function)
-            });
-        if !locked {
-            return Err(EngineError::Internal {
+            })
+            .and_then(|property| property.value.clone())
+            .ok_or_else(|| EngineError::Internal {
                 detail: format!(
                     "the document did not take a locked {REF_SCOPE_PROPERTY}: \
                      a page that can replace it can choose its own scope"
                 ),
-            });
-        }
-        Ok(())
+            })
     }
 
     /// Target id for closing the tab through the browser connection
