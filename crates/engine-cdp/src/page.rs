@@ -30,7 +30,8 @@ use chromiumoxide::cdp::browser_protocol::page::{
 };
 use chromiumoxide::cdp::browser_protocol::target::TargetId;
 use chromiumoxide::cdp::js_protocol::runtime::{
-    EvaluateParams, EventConsoleApiCalled, EventExceptionThrown, RemoteObject,
+    EvaluateParams, EventConsoleApiCalled, EventExceptionThrown, GetPropertiesParams, RemoteObject,
+    RemoteObjectType,
 };
 use chromiumoxide::error::CdpError;
 use chromiumoxide::listeners::EventStream;
@@ -442,6 +443,70 @@ impl CdpPage {
             // this exists to prevent.
             return Err(EngineError::Internal {
                 detail: format!("install the document scope: {}", exception_text(&details)),
+            });
+        }
+        // The install is checked through CDP rather than by reading the
+        // property back in the page. The expression above runs in the
+        // main world, where a page can replace `Object.defineProperty`
+        // with a no-op -- or `Object.getOwnPropertyDescriptor` with
+        // something that lies -- and either would leave the snapshot
+        // minting from a scope the page chose. The browser's own view of
+        // the global cannot be forged from inside the page.
+        let global = with_deadline(
+            "read_global",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                EvaluateParams::builder()
+                    .expression("globalThis")
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the global read: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        let object_id =
+            global
+                .result
+                .result
+                .object_id
+                .clone()
+                .ok_or_else(|| EngineError::Internal {
+                    detail: "the browser returned no handle for the global object".to_owned(),
+                })?;
+        let properties = with_deadline(
+            "read_global_properties",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                GetPropertiesParams::builder()
+                    .object_id(object_id)
+                    .own_properties(true)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the property read: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        let locked = properties
+            .result
+            .result
+            .iter()
+            .find(|property| property.name == REF_SCOPE_PROPERTY)
+            .is_some_and(|property| {
+                property.writable == Some(false)
+                    && !property.configurable
+                    && property
+                        .value
+                        .as_ref()
+                        .is_some_and(|value| value.r#type == RemoteObjectType::Function)
+            });
+        if !locked {
+            return Err(EngineError::Internal {
+                detail: format!(
+                    "the document did not take a locked {REF_SCOPE_PROPERTY}: \
+                     a page that can replace it can choose its own scope"
+                ),
             });
         }
         Ok(())
