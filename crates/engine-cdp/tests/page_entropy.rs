@@ -67,6 +67,11 @@ async fn a_page_cannot_choose_its_own_ref_scope() -> Result<(), Box<dyn std::err
     // A second document, patched the same way: with the minter in place
     // the two scopes still differ, which is what keeps a stale reference
     // from one page off the other's elements.
+    //
+    // Two draws from the same generator can land on one scope, at about
+    // one in 36^4 per pair. That is the property the design promises --
+    // independent draws -- and the assertion states it; the failure it
+    // would report is a real collision, not a broken minter.
     let (_second_id, second) = context.open_page().await?;
     second.navigate(PATCH_EVERYTHING).await?;
     let second_scope = scope_of(second.as_ref()).await;
