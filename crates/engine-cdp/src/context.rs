@@ -411,17 +411,24 @@ impl ContextHandle for CdpContext {
                 }
             }
         }
-        // The disposal closed every target the context owned, so their
-        // gates would only be leaks; context churn must not grow the
-        // launcher-wide registry. The registry is shared beyond this
-        // context, but dropping a stranger's entry is only a redundant
-        // re-preparation — every path of `prepare_once` recognizes what
-        // a previous one left — so the clear stays safe as well as
-        // bounded.
-        self.preparing
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clear();
+        // The disposal closes every target inside this context's own
+        // isolation, so their gates would only be leaks; context churn
+        // must not grow the launcher-wide registry. A default-context
+        // target an adoption brought in is not the disposal's to close
+        // and keeps living, so its gate stays too: another context
+        // adopting it later must recognize what the first install left,
+        // or it would meet the locked property and fail.
+        let owned: Vec<TargetId> = {
+            let pages = self.lock_pages();
+            pages
+                .values()
+                .filter(|page| page.closable())
+                .map(|page| page.target_id())
+                .collect()
+        };
+        for target_id in owned {
+            self.forget_preparation(&target_id);
+        }
         self.lock_pages().drain();
         Ok(())
     }
