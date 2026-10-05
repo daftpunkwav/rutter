@@ -42,22 +42,27 @@
   try {
     const fill = crypto.getRandomValues.bind(crypto);
     const Bytes = Uint8Array;
-    const DIGITS = '0123456789abcdefghijklmnopqrstuvwxyz';
+    const fromCharCode = String.fromCharCode;
     const WIDTH = 4;
 
     Object.defineProperty(window, '__rutterRefScope', {
       value: () => {
         const bytes = new Bytes(WIDTH);
         fill(bytes);
-        let value = 0;
-        for (let index = 0; index < bytes.length; index += 1) {
-          value = value * 256 + bytes[index];
-        }
+        // Read and converted without a computed property access and
+        // without a prototype method: the four bytes are read by their
+        // literal positions, and the digits come from arithmetic on
+        // character codes through a `fromCharCode` captured above. A page
+        // can replace neither.
+        const value =
+          bytes[0] * 16777216 + bytes[1] * 65536 + bytes[2] * 256 + bytes[3];
         let scope = '';
+        let rest = value;
         for (let index = 0; index < WIDTH; index += 1) {
-          const digit = value % 36;
-          scope = DIGITS[digit] + scope;
-          value = (value - digit) / 36;
+          const digit = rest % 36;
+          // 0-9 are 48-57 and a-z are 97-122, so 10-35 land on a-z.
+          scope = fromCharCode(digit < 10 ? 48 + digit : 87 + digit) + scope;
+          rest = (rest - digit) / 36;
         }
         return scope;
       },
