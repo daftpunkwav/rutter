@@ -57,8 +57,11 @@ fn string_envelopes_are_parsed_like_objects() {
 
 #[test]
 fn embedded_scripts_carry_the_contract_markers() {
-    // The page doubles in session tests dispatch on these markers, and
-    // the serializer envelope contract starts at MAX_NODES.
-    assert!(serializer_script().contains("var MAX_NODES = "));
+    // The page doubles in the session and MCP suites dispatch on these
+    // markers, and nothing else pins them: a marker that moves fails
+    // here. The serializer's is its `MAX_NODES` identifier rather than
+    // the declaration around it, so the dispatch survives whatever
+    // keyword the script declares it with.
+    assert!(serializer_script().contains("MAX_NODES"));
     assert!(resolver_script("e17").contains("var REF = "));
 }

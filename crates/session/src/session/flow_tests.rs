@@ -77,7 +77,7 @@ impl PageHandle for StorageLens {
         if expression.contains("location.href") {
             return Ok(json!(poisoned(&self.url).clone()));
         }
-        if expression.contains("var MAX_NODES = ") {
+        if expression.contains("MAX_NODES") {
             return Ok(json!({
                 "version": 1,
                 "truncated": false,

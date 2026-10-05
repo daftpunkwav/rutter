@@ -555,7 +555,7 @@ impl PageHandle for ScriptedPage {
                 "disabled": false,
                 "hidden": false,
             }))
-        } else if expression.contains("var MAX_NODES = ") {
+        } else if expression.contains("MAX_NODES") {
             let url = self.url.lock().unwrap().clone();
             Ok(json!({
                 "version": 1,
