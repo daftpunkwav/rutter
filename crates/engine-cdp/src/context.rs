@@ -48,6 +48,13 @@ pub struct CdpContext {
     /// are synchronous per trait, and guards are never held across an
     /// await.
     pages: Mutex<PageMap>,
+    /// One gate per target being prepared, holding whether its ref scope
+    /// is installed. Preparation defines a locked property, so a second
+    /// attempt would meet the first and throw; adoptions of the same
+    /// target take turns here instead, and the later one finds the work
+    /// done. The outer mutex is the sync one — a guard over it is held
+    /// only long enough to clone a gate.
+    preparing: Mutex<HashMap<TargetId, Arc<AsyncMutex<bool>>>>,
     page_counter: AtomicU64,
 }
 
@@ -65,6 +72,7 @@ impl CdpContext {
             cdp_context_id,
             config,
             pages: Mutex::new(HashMap::new()),
+            preparing: Mutex::new(HashMap::new()),
             page_counter: AtomicU64::new(0),
         }
     }
@@ -75,6 +83,44 @@ impl CdpContext {
         self.pages
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The gate that serializes preparation for one target, creating it
+    /// on first use.
+    fn preparation_gate(&self, target_id: &TargetId) -> Arc<AsyncMutex<bool>> {
+        let mut preparing = self
+            .preparing
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Arc::clone(preparing.entry(target_id.clone()).or_default())
+    }
+
+    /// Prepares one page's ref scope, once per target.
+    ///
+    /// Two adoptions of the same target must not both define the locked
+    /// scope minter: the second define meets the first and throws, which
+    /// would turn an otherwise idempotent adoption into a failure — and a
+    /// failure that closed the shared target would take the winner's page
+    /// with it. The gate makes the second caller wait for the first and
+    /// then find the work done.
+    async fn prepare_once(&self, handle: &CdpPage) -> Result<(), EngineError> {
+        let gate = self.preparation_gate(&handle.target_id());
+        let mut prepared = gate.lock().await;
+        if *prepared {
+            return Ok(());
+        }
+        prepare_page(handle).await?;
+        *prepared = true;
+        Ok(())
+    }
+
+    /// Forgets a target's preparation gate, so a target that comes back
+    /// under the same id is prepared again.
+    fn forget_preparation(&self, target_id: &TargetId) {
+        self.preparing
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(target_id);
     }
 
     /// Targets a registered handle already drives. Shared by the
@@ -210,10 +256,11 @@ impl ContextHandle for CdpContext {
         // be a value the document itself can choose. The registration
         // covers every document this page loads from here on; the
         // document that is already there -- `about:blank` for a page this
-        // context just created -- gets its scope minted out of reach of
-        // the page. A failure discards the target it created: it is not
-        // in the page map, so nothing else can reach it.
-        if let Err(error) = prepare_page(&handle).await {
+        // context just created, or the page of a target it attached to --
+        // gets its scope minted out of reach of the page. A failure
+        // discards a target this call created: it is not in the page map,
+        // so nothing else can reach it.
+        if let Err(error) = self.prepare_once(&handle).await {
             self.discard_unprepared(&handle).await;
             return Err(error);
         }
@@ -309,11 +356,11 @@ impl ContextHandle for CdpContext {
         let Some(handle) = handle else {
             return Ok(());
         };
+        let target_id = handle.target_id();
         // An attached surface is the engine's own window content and
         // outlives the handle: closing its target would blank the
         // browser's UI, so the registration alone goes.
         if handle.closable() {
-            let target_id = handle.target_id();
             {
                 let browser = self.browser.lock().await;
                 let closed = crate::error::with_deadline(
@@ -327,13 +374,14 @@ impl ContextHandle for CdpContext {
                     // the tab, or the renderer crashed) answers CloseTarget
                     // with an error; the registration must still go, or the
                     // page cap counts a page that no longer exists.
-                    if target_still_exists(&browser, target_id).await {
+                    if target_still_exists(&browser, target_id.clone()).await {
                         return Err(error);
                     }
                 }
             }
         }
         self.lock_pages().remove(&id);
+        self.forget_preparation(&target_id);
         Ok(())
     }
 
@@ -410,14 +458,13 @@ impl ContextHandle for CdpContext {
             adopt_closable(&self.cdp_context_id, &info),
         );
         // The adopted target already carries a document, so both halves
-        // apply: the registration for the documents it loads next, and a
-        // scope minted for the one it has. A failure discards the target
-        // only when it is this context's to close: an engine-owned
-        // surface belongs to the engine's UI.
-        if let Err(error) = prepare_page(&handle).await {
-            self.discard_unprepared(&handle).await;
-            return Err(error);
-        }
+        // of the preparation apply: the registration for the documents it
+        // loads next, and a scope minted for the one it has.
+        //
+        // A failure is reported without closing the target. It is not
+        // this context's to destroy: another context may already drive it,
+        // and an engine-owned surface is the browser's own window content.
+        self.prepare_once(&handle).await?;
         let handle = Arc::new(handle);
         let previous = self.lock_pages().insert(id.clone(), Arc::clone(&handle));
         if let Some(existing) = previous {

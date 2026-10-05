@@ -333,7 +333,9 @@ fn profile_dir() -> Result<PathBuf, EngineError> {
     // clear the owner bits too: a launcher running under a umask of 0777
     // would otherwise hand the browser a profile it cannot read. The mode
     // is therefore set outright once the directory exists, and failing to
-    // set it is the same refusal as failing to create it.
+    // set it is the same refusal as failing to create it -- with the
+    // directory removed first, since the caller gets no path back and a
+    // refusal that repeated would otherwise leave one behind each time.
     #[cfg(unix)]
     let created = {
         use std::os::unix::fs::DirBuilderExt;
@@ -341,7 +343,14 @@ fn profile_dir() -> Result<PathBuf, EngineError> {
         std::fs::DirBuilder::new()
             .mode(0o700)
             .create(&dir)
-            .and_then(|()| std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)))
+            .and_then(|()| {
+                std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).map_err(
+                    |error| {
+                        let _ = std::fs::remove_dir(&dir);
+                        error
+                    },
+                )
+            })
     };
     #[cfg(not(unix))]
     let created = std::fs::create_dir(&dir);

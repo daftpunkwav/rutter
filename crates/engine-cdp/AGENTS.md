@@ -41,8 +41,11 @@ The module map lives in [README.md](README.md) and
   together: `rutter_observe::entropy_capture_script` registered with
   `Page.addScriptToEvaluateOnNewDocument` for the documents it loads
   next, and `install_current_scope` minting one in an isolated world for
-  the document that is already there. Failing either fails the page, and
-  discards the target when it is this context's to close.
+  the document that is already there. Preparation is once per target
+  behind a gate, because it defines a locked property and a second
+  attempt would meet the first and throw. A failure fails the page;
+  only a target this call created is closed, since an adopted one may
+  belong to another context or to the engine's own UI.
 - `launch_secret` and the dashboard `generate_token` stay the same
   construction. A change to one updates the other.
 

@@ -202,7 +202,14 @@ and the project adheres to
   on the machine, which is also what would let one of them plant a
   symlink at a path the browser writes to inside it. The mode is set
   outright after the create, since the create's own mode is masked by
-  the umask and a restrictive one can clear the owner bits.
+  the umask and a restrictive one can clear the owner bits; a directory
+  whose mode could not be set is removed rather than left behind.
+- Two adoptions of the same foreign page that overlap no longer fight
+  over its ref scope. Preparing a page defines a locked property, so the
+  second attempt met the first and threw — and the failing one closed
+  the target, taking the other caller's page with it. Preparation now
+  runs once per target, and a failure closes only a target the call
+  itself created.
 
 ### Changed
 
