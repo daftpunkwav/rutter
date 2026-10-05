@@ -169,31 +169,25 @@ test('the captured generator keeps documents apart when the page patches crypto'
   // from one page would resolve to another page's own `e1`. The engine
   // installs the capture before any page script runs, so the scope
   // comes from the generator bound then and the patch is irrelevant.
-  const patch = (page) => {
+  const pages = [
+    pageOver(el('body', {}, [el('button', {}, ['Save'])])),
+    pageOver(el('body', {}, [el('button', {}, ['Save'])])),
+  ];
+  const scopes = pages.map((page) => {
+    page.run(ENTROPY_JS);
     page.window.crypto = {
       getRandomValues(bytes) {
         bytes.fill(0);
         return bytes;
       },
     };
-  };
-  const page = pageOver(el('body', {}, [el('button', {}, ['Save'])]));
-  page.run(ENTROPY_JS);
-  patch(page);
-  const refA = page.run(SERIALIZER_JS).root.children[0].ref;
+    const ref = page.run(SERIALIZER_JS).root.children[0].ref;
+    assert.match(ref, /^e1-/);
+    return page.window.__rutterRefStore.scope;
+  });
 
-  const other = pageOver(el('body', {}, [el('button', {}, ['Save'])]));
-  other.run(ENTROPY_JS);
-  patch(other);
-  const refB = other.run(SERIALIZER_JS).root.children[0].ref;
-
-  assert.match(refA, /^e1-/);
-  assert.notEqual(refA, refB, 'a patched crypto cannot hand two documents one scope');
-  assert.notEqual(
-    page.window.__rutterRefStore.scope,
-    '0000',
-    'the constant fill never reached the scope'
-  );
+  assert.notEqual(scopes[0], scopes[1], 'a patched crypto cannot hand two documents one scope');
+  assert.notEqual(scopes[0], '0000', 'the constant fill never reached the scope');
 });
 
 test('the scope prefers the captured generator over crypto', () => {

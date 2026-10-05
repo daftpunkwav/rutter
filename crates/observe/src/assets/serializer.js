@@ -55,8 +55,8 @@
   function mintScope() {
     const bytes = new Uint8Array(REF_SCOPE_CHARS);
     const fill =
-      typeof __rutterGetRandomValues === 'function'
-        ? __rutterGetRandomValues
+      typeof window.__rutterGetRandomValues === 'function'
+        ? window.__rutterGetRandomValues
         : (target) => crypto.getRandomValues(target);
     fill(bytes);
     let value = 0;

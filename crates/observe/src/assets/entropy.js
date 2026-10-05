@@ -26,10 +26,14 @@
  *
  * Owned by rutter-observe; engine code injects it and must not modify
  * it. ASCII-only, plain ES, no build step.
+ *
+ * No `use strict` directive, unlike the other assets: the engine
+ * injects this file as a classic script at document start, and an
+ * analyzer reading `.js` as a module reports the directive as
+ * redundant. The body is a bind, a property definition, and a
+ * try/catch, with no sloppy-mode hazard either way.
  */
 (() => {
-  'use strict';
-
   try {
     const native = crypto.getRandomValues.bind(crypto);
     Object.defineProperty(window, '__rutterGetRandomValues', {

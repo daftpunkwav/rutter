@@ -86,6 +86,28 @@ impl CdpContext {
             .map(|page| page.target_id())
             .collect()
     }
+
+    /// Closes a page whose preparation failed, when the target is this
+    /// context's to close.
+    ///
+    /// The handle was never registered in the page map, so `close_page`
+    /// cannot reach it and nothing else will: without this the target
+    /// would sit in the shared engine process for its lifetime. The
+    /// cleanup is bounded like every other call here, so a wedged
+    /// browser cannot park the caller while holding the browser mutex.
+    async fn discard_unprepared(&self, handle: &CdpPage) {
+        if !handle.closable() {
+            return;
+        }
+        let target_id = handle.target_id();
+        let browser = self.browser.lock().await;
+        let _ = crate::error::with_deadline(
+            "close_unprepared_page",
+            crate::error::COMMAND_TIMEOUT,
+            browser.execute(CloseTargetParams::new(target_id)),
+        )
+        .await;
+    }
 }
 
 #[async_trait]
@@ -175,8 +197,13 @@ impl ContextHandle for CdpContext {
         // Before the page loads anything: a document's ref scope must not
         // be a value the document itself can choose. A page that already
         // exists keeps working on the serializer's fallback until its
-        // next navigation, which the registration covers.
-        handle.install_entropy_capture().await?;
+        // next navigation, which the registration covers. A failure
+        // discards the target it created -- it is not in the page map,
+        // so nothing else can reach it.
+        if let Err(error) = handle.install_entropy_capture().await {
+            self.discard_unprepared(&handle).await;
+            return Err(error);
+        }
         let handle = Arc::new(handle);
 
         // The cap protects the shared engine process, so it is re-checked
@@ -370,8 +397,13 @@ impl ContextHandle for CdpContext {
             adopt_closable(&self.cdp_context_id, &info),
         );
         // The adopted target already carries a document, so the capture
-        // applies to the documents it loads next.
-        handle.install_entropy_capture().await?;
+        // applies to the documents it loads next. A failure discards the
+        // target only when it is this context's to close: an engine-owned
+        // surface belongs to the engine's UI.
+        if let Err(error) = handle.install_entropy_capture().await {
+            self.discard_unprepared(&handle).await;
+            return Err(error);
+        }
         let handle = Arc::new(handle);
         let previous = self.lock_pages().insert(id.clone(), Arc::clone(&handle));
         if let Some(existing) = previous {
