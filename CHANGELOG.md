@@ -17,7 +17,7 @@ and the project adheres to
   hides the picture and notes the end in the timeline. A stop the
   viewer asked for still sends nothing.
 - Snapshot references are now scoped to the document that minted them
-  (`e17` → `e17-9x2f`). Every document counts its references from 1,
+  (`e17` → `e17-9x2fqk`). Every document counts its references from 1,
   so after `tabs_select` a reference taken on page A could silently
   resolve to page B's own `e17` and act on the wrong element with no
   error; a cross-page hit now also needs the per-document scope to

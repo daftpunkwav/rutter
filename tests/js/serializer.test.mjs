@@ -196,13 +196,13 @@ test('the captured minter keeps documents apart when the page patches crypto', (
   });
 
   assert.notEqual(scopes[0], scopes[1], 'a patched crypto cannot hand two documents one scope');
-  assert.notEqual(scopes[0], '0000', 'the constant fill never reached the scope');
+  assert.notEqual(scopes[0], '000000', 'the constant fill never reached the scope');
 });
 
 test('the scope comes from the locked minter and nothing else', () => {
   // The contract read directly: the minter decides the scope, and no
   // replaceable global is consulted. `crypto` is patched to fill zeros,
-  // so a scope of `0000` would mean it had been reached.
+  // so a scope of `000000` would mean it had been reached.
   const page = pageWithoutMinter(el('body', {}, [el('button', {}, ['Save'])]));
   page.window.__rutterRefScope = () => 'wxyz';
   let consulted = false;

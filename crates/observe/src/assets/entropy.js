@@ -48,19 +48,25 @@
     const fill = crypto.getRandomValues.bind(crypto);
     const Bytes = Uint8Array;
     const fromCharCode = String.fromCharCode;
-    const WIDTH = 4;
+    const WIDTH = 6;
 
     Object.defineProperty(window, '__rutterRefScope', {
       value: () => {
         const bytes = new Bytes(WIDTH);
         fill(bytes);
         // Read and converted without a computed property access and
-        // without a prototype method: the four bytes are read by their
+        // without a prototype method: the six bytes are read by their
         // literal positions, and the digits come from arithmetic on
         // character codes through a `fromCharCode` captured above. A page
-        // can replace neither.
+        // can replace neither. Six bytes are 48 bits, inside the integer
+        // range a Number carries exactly.
         const value =
-          bytes[0] * 16777216 + bytes[1] * 65536 + bytes[2] * 256 + bytes[3];
+          bytes[0] * 1099511627776 +
+          bytes[1] * 4294967296 +
+          bytes[2] * 16777216 +
+          bytes[3] * 65536 +
+          bytes[4] * 256 +
+          bytes[5];
         let scope = '';
         let rest = value;
         for (let index = 0; index < WIDTH; index += 1) {

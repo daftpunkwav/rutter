@@ -48,9 +48,9 @@ test('the minter draws from the generator that was in place when it ran', () => 
   };
 
   const scope = page.window.__rutterRefScope();
-  assert.deepEqual(calls, [4], 'the bound generator is the one that was captured');
-  assert.notEqual(scope, '0000', 'the replacement did not reach the minter');
-  assert.match(scope, /^[0-9a-z]{4}$/, 'the documented scope shape');
+  assert.deepEqual(calls, [6], 'the bound generator is the one that was captured');
+  assert.notEqual(scope, '000000', 'the replacement did not reach the minter');
+  assert.match(scope, /^[0-9a-z]{6}$/, 'the documented scope shape');
 });
 
 test('a page cannot force a scope through the prototypes a conversion uses', () => {
@@ -65,15 +65,15 @@ test('a page cannot force a scope through the prototypes a conversion uses', () 
 
   // Patched from inside the page, which is where a page's own script
   // runs: the minter captured all of these before it.
-  page.run("Number.prototype.toString = function () { return '0000'; };");
+  page.run("Number.prototype.toString = function () { return '000000'; };");
   page.run("String.prototype.charAt = function () { return '0'; };");
-  page.run("String.prototype.padStart = function () { return '0000'; };");
+  page.run("String.prototype.padStart = function () { return '000000'; };");
   page.run("String.fromCharCode = function () { return '0'; };");
   page.run('Uint8Array.prototype[Symbol.iterator] = function* () { yield 0; };');
 
   const scope = page.window.__rutterRefScope();
-  assert.match(scope, /^[0-9a-z]{4}$/, 'the scope keeps its shape');
-  assert.notEqual(scope, '0000', 'the patched conversion did not reach it');
+  assert.match(scope, /^[0-9a-z]{6}$/, 'the scope keeps its shape');
+  assert.notEqual(scope, '000000', 'the patched conversion did not reach it');
   assert.equal(
     page.window.__rutterRefScope(),
     scope,

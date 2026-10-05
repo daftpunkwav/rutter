@@ -34,7 +34,7 @@ use common::resolve_executable;
 /// base36 digits would go through.
 const PATCH_EVERYTHING: &str = "data:text/html,<body><button>Save</button><script>\
      crypto.getRandomValues = function (bytes) { bytes.fill(0); return bytes; }; \
-     Number.prototype.toString = function () { return '0000'; }; \
+     Number.prototype.toString = function () { return '000000'; }; \
      String.prototype.charAt = function () { return '0'; }; \
      Uint8Array.prototype[Symbol.iterator] = function* () { yield 0; }; \
      </script></body>";
@@ -107,9 +107,10 @@ async fn a_page_cannot_choose_its_own_ref_scope() -> Result<(), Box<dyn std::err
     // from one page off the other's elements.
     //
     // Two draws from the same generator can land on one scope, at about
-    // one in 36^4 per pair. That is the property the design promises --
-    // independent draws -- and the assertion states it; the failure it
-    // would report is a real collision, not a broken minter.
+    // one in 36^6 per pair -- past two billion to one. That is the
+    // property the design promises -- independent draws -- and the
+    // assertion states it; the failure it would report is a real
+    // collision, not a broken minter.
     let (_second_id, second) = context.open_page().await?;
     second.navigate(PATCH_EVERYTHING).await?;
     let second_scope = scope_of(second.as_ref()).await;
@@ -119,7 +120,7 @@ async fn a_page_cannot_choose_its_own_ref_scope() -> Result<(), Box<dyn std::err
         "a patched page must not hand two documents one scope"
     );
     assert_ne!(
-        first_scope, "0000",
+        first_scope, "000000",
         "neither the generator nor the conversion reached the scope"
     );
 
@@ -139,7 +140,7 @@ async fn a_page_cannot_choose_its_own_ref_scope() -> Result<(), Box<dyn std::err
         serde_json::json!(true),
         "the property is locked"
     );
-    assert_ne!(probe["scope"], serde_json::json!("0000"));
+    assert_ne!(probe["scope"], serde_json::json!("000000"));
 
     engine.shutdown().await?;
     Ok(())
@@ -165,7 +166,7 @@ async fn the_document_that_is_already_there_gets_a_scope_too()
     page.evaluate("document.body.innerHTML = '<button>Save</button>'")
         .await?;
     let scope = scope_of(page.as_ref()).await;
-    assert_ne!(scope, "0000");
+    assert_ne!(scope, "000000");
 
     let raw = page.evaluate(serializer_script()).await?;
     assert!(
@@ -225,7 +226,7 @@ async fn poll_foreign_url(
 /// A document that replaced its main-world entropy before rutter ever
 /// attached: adopting it must mint its scope in the isolated world,
 /// which the page's replacement cannot reach. An implementation that
-/// minted in the page's main world answers `0000` here, and one that
+/// minted in the page's main world answers `000000` here, and one that
 /// trusted the document's own state hands out no reference at all.
 #[tokio::test]
 #[ignore = "requires a downloaded engine binary"]
@@ -246,7 +247,7 @@ async fn an_already_loaded_page_gets_a_trusted_scope() -> Result<(), Box<dyn std
 
     let scope = scope_of(page.as_ref()).await;
     assert_ne!(
-        scope, "0000",
+        scope, "000000",
         "the replaced entropy must not reach the scope"
     );
 

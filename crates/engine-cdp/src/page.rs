@@ -96,19 +96,21 @@ const CLAIM_PROPERTY: &str = "__rutterEngineClaim";
 pub(crate) const DEFINE_REFUSED_PREFIX: &str = "install the document scope:";
 
 /// How many base36 characters a scope carries, as the snapshot format
-/// documents.
-const REF_SCOPE_CHARS: usize = 4;
+/// documents: 36^6 puts a two-document collision past two billion to
+/// one, far outside any session's reach.
+const REF_SCOPE_CHARS: usize = 6;
 
 /// Mints one scope in an isolated world, where `crypto` is the
-/// platform's own and no page patch has reached it.
+/// platform's own and no page patch has reached it. Six bytes are 48
+/// bits, inside the integer range a Number carries exactly.
 const SCOPE_IN_ISOLATED_WORLD: &str = "(function () { \
-   var bytes = new Uint8Array(4); \
+   var bytes = new Uint8Array(6); \
    crypto.getRandomValues(bytes); \
    var value = 0; \
    for (var index = 0; index < bytes.length; index += 1) { value = value * 256 + bytes[index]; } \
    var digits = '0123456789abcdefghijklmnopqrstuvwxyz'; \
    var scope = ''; \
-   for (var index = 0; index < 4; index += 1) { \
+   for (var index = 0; index < 6; index += 1) { \
      var digit = value % 36; \
      scope = digits[digit] + scope; \
      value = (value - digit) / 36; \

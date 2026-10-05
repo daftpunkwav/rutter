@@ -532,7 +532,7 @@ impl ServerHandler for RutterMcp {
         let capabilities = ServerCapabilities::builder().enable_tools().build();
         let mut info = ServerConfig::new(capabilities).with_instructions(
             "rutter exposes a supervised browser. Start with navigate, \
-             read snapshots, and act through snapshot references (e17-9x2f).",
+             read snapshots, and act through snapshot references (e17-9x2fqk).",
         );
         let mut implementation = Implementation::default();
         implementation.name = "rutter".to_owned();

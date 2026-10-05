@@ -77,7 +77,7 @@ injected serializer (page)       rutter-observe
   ref 的 `WeakMap<Element, string>`、解析 ref 的反向
   `Map<string, WeakRef<Element>>`、整数计数器，以及每文档随机的
   `scope`）。可操作元素第一次被观察到时获得 `e<N>-<scope>`（例如
-  `e17-9x2f`，4 字符 base36 随机 scope），并在同一页面的后续快照中
+  `e17-9x2fqk`，6 字符 base36 随机 scope），并在同一页面的后续快照中
   保持不变。scope 为每文档的 ref 划定命名空间：每份文档都从 1 计数，
   若无 scope，两份被快照过的页面可能同时持有 `e17`，切换标签页后
   旧引用会静默解析到另一页面自己的元素上。
@@ -103,7 +103,7 @@ injected serializer (page)       rutter-observe
 每行一个节点，子节点每层缩进两格：
 
 ```
-- button "Sign in" [checked] [ref=e17-9x2f]
+- button "Sign in" [checked] [ref=e17-9x2fqk]
 ```
 
 后缀按此顺序渲染：`"name"`（名称中的双引号转义为 `\"`）、

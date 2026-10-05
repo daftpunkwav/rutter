@@ -85,7 +85,7 @@ Skipped elements: `script`, `style`, `noscript`, `template`, `head`,
   (`__rutterRefStore`: a `WeakMap<Element, string>` that mints refs,
   a reverse `Map<string, WeakRef<Element>>` that resolves them, an
   integer counter, and a per-document random `scope`). An actionable
-  element receives `e<N>-<scope>` (for example `e17-9x2f`, a 4-character
+  element receives `e<N>-<scope>` (for example `e17-9x2fqk`, a 6-character
   base36 scope) the first time it is observed and keeps it for later
   snapshots of the same page. The scope namespaces each document's
   refs: every document counts from 1, so without it two snapshotted
@@ -119,7 +119,7 @@ Skipped elements: `script`, `style`, `noscript`, `template`, `head`,
 One node per line, children indented two spaces per level:
 
 ```
-- button "Sign in" [checked] [ref=e17-9x2f]
+- button "Sign in" [checked] [ref=e17-9x2fqk]
 ```
 
 Suffixes render in this order: `"name"` (double quotes inside names
