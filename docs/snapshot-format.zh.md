@@ -90,6 +90,10 @@ injected serializer (page)       rutter-observe
   `tab`、`slider`、`spinbutton`、`switch`、`treeitem`。
 - 导航之后计数器与 scope 一并重新铸造；旧引用不再匹配任何元素，
   解析为 `ActionError::ReferenceExpired`。
+- scope 是文档无法自行选择的值。引擎为每份文档提供一个页面够不到的
+  铸造器，由序列化器调用；若引擎无法提供——即铸造只能退回页面可替换
+  的来源——该快照报告 `truncated: true` 且不发放任何 ref，而不是发放
+  两份文档可能共用同一 scope 的 ref。
 
 ## 5. 文本渲染（YAML 风格）
 

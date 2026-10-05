@@ -103,6 +103,12 @@ Skipped elements: `script`, `style`, `noscript`, `template`, `head`,
 - After a navigation the counter and the scope are minted anew; old
   references no longer match any element and resolve to
   `ActionError::ReferenceExpired`.
+- The scope is a value the document cannot choose. The engine gives each
+  document a minter the page cannot reach and the serializer calls it;
+  a document the engine cannot give one — where minting would have to
+  fall back to something the page could have replaced — reports
+  `truncated: true` and hands out no references, rather than refs whose
+  scopes two documents could share.
 
 ## 5. Text rendering (YAML style)
 
