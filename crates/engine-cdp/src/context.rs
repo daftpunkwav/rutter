@@ -126,18 +126,23 @@ impl CdpContext {
     ///    minter in the isolated world no page can reach. The locked
     ///    property the serializer reads is the document-start one,
     ///    whatever the page tried.
-    /// 2. The registry remembers a scope this engine defined and
-    ///    verified on this document, and the live minter still answers
-    ///    it through CDP. This is the second adopter's path and the
-    ///    retry's: the property is locked, so a same-document retry
-    ///    finds exactly what the earlier attempt left.
+    /// 2. The document carries this engine's claim for the remembered
+    ///    scope -- written in the isolated world next to the define it
+    ///    names, so it dies with the document -- and the live minter
+    ///    answers that scope through CDP. The claim is what binds the
+    ///    remembered scope to *this* document: a minter's answer alone
+    ///    proves nothing, because a page can call its own minter, learn
+    ///    the scope, navigate, and plant a locked one answering the same
+    ///    value in a document nothing covers.
     /// 3. Neither holds, so the document has no minter the engine put
-    ///    there: mint one in the isolated world and define it. The scope
-    ///    is recorded *before* the define, so a verification that times
-    ///    out after a successful define leaves the scope remembered and
-    ///    a retry takes path 2 instead of defining a second time; a
-    ///    define that threw restores the previous record, because the
-    ///    property the throw met is not the one this attempt minted.
+    ///    there: mint one in the isolated world, claim it, and define
+    ///    it. The claim and the record are written *before* the define,
+    ///    so a define or a verification whose answer was lost to a
+    ///    timeout leaves the candidate remembered and a retry takes path
+    ///    2 instead of defining a second time; a define that threw is
+    ///    not ambiguous -- the browser ran it and the property beat this
+    ///    attempt -- so the previous record is restored and the failure
+    ///    surfaces.
     async fn prepare_once(&self, handle: &CdpPage) -> Result<(), EngineError> {
         let gate = self.preparation_gate(&handle.target_id());
         let mut recorded = gate.lock().await;
@@ -150,23 +155,36 @@ impl CdpContext {
             return Ok(());
         }
         if let Some(scope) = recorded.as_ref()
+            && handle.document_scope_claimed(scope).await?
             && handle.verify_locked_scope(scope).await.is_ok()
         {
             return Ok(());
         }
-        // The live minter did not answer the remembered scope: the
-        // document was replaced (the registration of whichever
-        // session covered its start leaves no recorded scope), or
-        // the check itself failed transiently. Either way the
-        // document gets a fresh mint below; the remembered scope
-        // stays until the define decides what replaces it.
+        // No claim for the remembered scope: the document was replaced
+        // (a claim dies with it, and a document-start one leaves none),
+        // or an attempt before this one never got as far as a define.
+        // Either way the document gets a fresh mint below; the
+        // remembered scope stays until the define decides what replaces
+        // it.
         let scope = handle.mint_scope_in_isolated_world().await?;
+        handle.claim_document_scope(&scope).await?;
         let previous = recorded.replace(scope.clone());
-        if let Err(error) = handle.define_locked_scope(&scope).await {
-            *recorded = previous;
-            return Err(error);
+        match handle.define_locked_scope(&scope).await {
+            Err(error) => {
+                // A timeout is ambiguous: the browser may have executed
+                // the define even though its answer was lost, so the
+                // candidate stays remembered and the retry verifies it
+                // (path 2) instead of meeting the property a second
+                // time. Every other failure is the browser answering
+                // that the property beat this attempt, which is not
+                // this attempt's to record.
+                if !matches!(error, EngineError::Timeout { .. }) {
+                    *recorded = previous;
+                }
+                Err(error)
+            }
+            Ok(()) => handle.verify_locked_scope(&scope).await,
         }
-        handle.verify_locked_scope(&scope).await
     }
 
     /// Forgets a target's preparation gate, so a target that comes back
@@ -330,6 +348,9 @@ impl ContextHandle for CdpContext {
             // never closed; see [`CdpPage::attach`].
             if handle.closable() {
                 let target_id = handle.target_id();
+                // The target is gone either way; the gate would only be
+                // a leak the engine keeps for its lifetime.
+                self.forget_preparation(&target_id);
                 let browser = self.browser.lock().await;
                 // Same wedged-handler threat model as every call here:
                 // the cleanup must be bounded or a hung browser would
@@ -390,6 +411,17 @@ impl ContextHandle for CdpContext {
                 }
             }
         }
+        // The disposal closed every target the context owned, so their
+        // gates would only be leaks; context churn must not grow the
+        // launcher-wide registry. The registry is shared beyond this
+        // context, but dropping a stranger's entry is only a redundant
+        // re-preparation — every path of `prepare_once` recognizes what
+        // a previous one left — so the clear stays safe as well as
+        // bounded.
+        self.preparing
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
         self.lock_pages().drain();
         Ok(())
     }
@@ -406,11 +438,10 @@ impl ContextHandle for CdpContext {
         let target_id = handle.target_id();
         // An attached surface is the engine's own window content and
         // outlives the handle: closing its target would blank the
-        // browser's UI, so the registration alone goes -- and the
-        // preparation gate stays with the target, which is still open
-        // with its locked scope in place. Forgetting it here would make
-        // the next adoption define that property a second time, which
-        // the document refuses.
+        // browser's UI, so the registration alone goes. The preparation
+        // gate stays with the still-open target: the next adoption then
+        // recognizes what this one installed instead of preparing the
+        // document again.
         if handle.closable() {
             {
                 let browser = self.browser.lock().await;

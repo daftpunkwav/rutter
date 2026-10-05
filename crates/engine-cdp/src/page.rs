@@ -79,6 +79,15 @@ const ISOLATED_WORLD: &str = "rutter-ref-scope";
 /// same name onto the global at document start.
 const REF_SCOPE_PROPERTY: &str = "__rutterRefScope";
 
+/// The isolated-world marker that binds a defined scope to the document
+/// it was defined on. The page cannot reach the isolated world, and a
+/// navigation replaces the world's global, so a claim read back from it
+/// proves the locked minter answering that scope is the one this engine
+/// defined on *this* document — not one a later document planted after
+/// learning the scope from its own minter, which is callable from page
+/// script by design.
+const CLAIM_PROPERTY: &str = "__rutterEngineClaim";
+
 /// How many base36 characters a scope carries, as the snapshot format
 /// documents.
 const REF_SCOPE_CHARS: usize = 4;
@@ -449,6 +458,80 @@ impl CdpPage {
         )
         .await?;
         Ok(world.execution_context_id)
+    }
+
+    /// Records `scope` as this document's engine claim in the isolated
+    /// world, overwriting any claim an earlier attempt left.
+    ///
+    /// A plain binding, not a locked define: the world is unreachable
+    /// from page script, so there is nothing to lock against, and the
+    /// overwrite is what keeps a retry consistent — a define that timed
+    /// out ambiguously leaves the claim answering the candidate, which
+    /// the retry then verifies against the live minter. The claim dies
+    /// with the document: a navigation replaces the world's global, so
+    /// a remembered scope can never verify against a later document,
+    /// however the page acquired it.
+    pub(crate) async fn claim_document_scope(&self, scope: &str) -> Result<(), EngineError> {
+        let context_id = self.isolated_world().await?;
+        let claim = with_deadline(
+            "claim_document_scope",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                EvaluateParams::builder()
+                    .expression(format!("{CLAIM_PROPERTY} = '{scope}'"))
+                    .context_id(context_id)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the scope claim: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        if let Some(details) = claim.result.exception_details {
+            return Err(EngineError::Internal {
+                detail: format!("claim the document scope: {}", exception_text(&details)),
+            });
+        }
+        Ok(())
+    }
+
+    /// Whether this document carries the engine claim for `scope`.
+    ///
+    /// The marker was written by [`Self::claim_document_scope`] right
+    /// before the define it names, so a match proves the locked minter
+    /// answering `scope` was installed by this engine *on this
+    /// document* — the proof a same-document retry needs, and the
+    /// reason a page that replants a learned scope on a fresh document
+    /// fails instead.
+    pub(crate) async fn document_scope_claimed(&self, scope: &str) -> Result<bool, EngineError> {
+        let context_id = self.isolated_world().await?;
+        let probe = with_deadline(
+            "probe_scope_claim",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                EvaluateParams::builder()
+                    .expression(format!("{CLAIM_PROPERTY} === '{scope}'"))
+                    .context_id(context_id)
+                    .return_by_value(true)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the claim probe: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        if let Some(details) = probe.result.exception_details {
+            return Err(EngineError::Internal {
+                detail: format!("probe the scope claim: {}", exception_text(&details)),
+            });
+        }
+        Ok(probe
+            .result
+            .result
+            .value
+            .as_ref()
+            .and_then(Value::as_bool)
+            .unwrap_or(false))
     }
 
     /// Draws one scope in an isolated world: a separate realm with the

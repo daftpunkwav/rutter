@@ -57,16 +57,18 @@ test('a page cannot force a scope through the prototypes a conversion uses', () 
   // The scope is converted to base36 digits, and a page can replace the
   // methods that conversion would normally go through. Everything the
   // minter needs was captured before the page ran, so patching
-  // `Number.prototype.toString`, `String.prototype.charAt`, or the
-  // typed-array iterator changes nothing.
+  // `Number.prototype.toString`, `String.prototype.charAt`, the typed-array
+  // iterator, or the `String.fromCharCode` the digit table goes through
+  // changes nothing.
   const { page } = pageWithRecordingCrypto();
   page.run(ENTROPY_JS);
 
   // Patched from inside the page, which is where a page's own script
-  // runs: the minter captured all three before it.
+  // runs: the minter captured all of these before it.
   page.run("Number.prototype.toString = function () { return '0000'; };");
   page.run("String.prototype.charAt = function () { return '0'; };");
   page.run("String.prototype.padStart = function () { return '0000'; };");
+  page.run("String.fromCharCode = function () { return '0'; };");
   page.run('Uint8Array.prototype[Symbol.iterator] = function* () { yield 0; };');
 
   const scope = page.window.__rutterRefScope();
