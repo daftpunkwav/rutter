@@ -72,7 +72,16 @@ async fn fetched_and_failed_requests_are_visible() -> Result<(), Box<dyn std::er
     })
     .await;
     assert_eq!(ok.status, Some(200));
-    assert_eq!(ok.method, "GET");
+    // The outcome is what this feed promises. A method is only reported
+    // when the request's own event was processed before its outcome, and
+    // the feed selects over six streams, so the order between the two is
+    // not promised and the method is best-effort by design — that rule
+    // belongs to `unknown_requests_degrade_to_a_methodless_entry` in
+    // `page.rs`, which pins it without a browser.
+    assert!(
+        ok.method == "GET" || ok.method == "<unknown>",
+        "a method is the one the feed saw or its placeholder: {ok:?}"
+    );
 
     // A request to an unresolvable host reports its failure.
     page.evaluate("fetch('https://rutter-invalid.invalid/x').catch(() => {})")
