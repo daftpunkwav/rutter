@@ -42,6 +42,14 @@ pub use response::snapshot_from_response;
 /// element references, and returns the snapshot envelope. Evaluate it
 /// with a page's `evaluate` and
 /// pass the result to [`snapshot_from_response`].
+///
+/// It reads the ref scope from the minter
+/// [`entropy_capture_script`] installs, and has no fallback: a page
+/// evaluated without that capture reports itself truncated and hands out
+/// no references. That is deliberate — a scope drawn from a source the
+/// page could replace would let two documents mint the same one — so an
+/// embedder that evaluates this script directly has to install the
+/// capture first.
 pub fn serializer_script() -> &'static str {
     assets::SERIALIZER_JS
 }
