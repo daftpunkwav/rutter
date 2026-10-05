@@ -86,7 +86,7 @@ impl PageHandle for FlowPage {
                 "disabled": false,
                 "hidden": false,
             }))
-        } else if expression.contains("var MAX_NODES = ") {
+        } else if expression.contains("MAX_NODES") {
             let url = lock(&self.inner.url, |url| url.clone());
             Ok(json!({
                 "version": 1,

@@ -153,8 +153,13 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      # The action code is pinned to a full commit SHA; the toolchain it
+      # installs is named by the `toolchain` input instead of by the ref,
+      # which is the pairing dtolnay/rust-toolchain's README prescribes
+      # for a SHA pin. `stable` still tracks rustup's stable channel.
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
+          toolchain: stable
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Format
@@ -180,7 +185,9 @@ jobs:
       RUTTER_CACHE_DIR: ${{ github.workspace }}/.rutter-engine-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - uses: ./.github/actions/engine-setup
       - name: Integration tests
@@ -200,7 +207,9 @@ jobs:
       RUTTER_CACHE_DIR: ${{ github.workspace }}/.rutter-engine-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - uses: ./.github/actions/engine-setup
       - name: Build the binary the suites drive
@@ -218,10 +227,17 @@ jobs:
       RUTTER_CACHE_DIR: ${{ github.workspace }}/.rutter-engine-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
+          toolchain: stable
           components: llvm-tools-preview
-      - uses: taiki-e/install-action@cargo-llvm-cov
+      # Pinned to a release tag's commit and handed the tool by name:
+      # hash-pinning the `@cargo-llvm-cov` ref is the one form the
+      # action's security note warns against (that ref is regenerated
+      # per release, so its commit leaves the repository).
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-llvm-cov
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - uses: ./.github/actions/engine-setup
       - name: Measure (engine suites and e2e included)
@@ -241,7 +257,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@1.88.0
+      # The MSRV is a `toolchain` input, not a ref: the action commit
+      # stays pinned while the version checked stays 1.88.0.
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: 1.88.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Check
         run: cargo check --locked --workspace --all-targets

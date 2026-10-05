@@ -90,7 +90,7 @@ function dashboardDom() {
   return ids;
 }
 
-function clientDocument(ids) {
+function clientDocument(ids, labels = []) {
   const registry = new Map(Object.entries(ids));
   return {
     title: 'rutter dashboard',
@@ -109,8 +109,16 @@ function clientDocument(ids) {
     getElementById(id) {
       return registry.get(id) || null;
     },
-    querySelectorAll() {
-      return { forEach() {}, length: 0 };
+    querySelectorAll(selector) {
+      if (selector !== '[data-i18n]') return { forEach() {}, length: 0 };
+      return {
+        forEach(callback) {
+          labels.forEach(callback);
+        },
+        get length() {
+          return labels.length;
+        },
+      };
     },
   };
 }
@@ -119,15 +127,21 @@ function clientDocument(ids) {
  * Boots the client over a fresh document.
  *
  * `post` decides what a decision POST answers with; `socketFor` picks
- * the socket implementation a dial gets.
+ * the socket implementation a dial gets; `labels` are the
+ * `data-i18n` elements the client fills from the catalog.
  */
-async function boot({ search = '', post = () => ({ ok: true, status: 200 }), socketFor } = {}) {
+async function boot({
+  search = '',
+  post = () => ({ ok: true, status: 200 }),
+  socketFor,
+  labels = [],
+} = {}) {
   sockets = [];
   const ids = dashboardDom();
   const posts = [];
   const timers = [];
   const page = createPage({
-    document: clientDocument(ids),
+    document: clientDocument(ids, labels),
     window: {
       location: { search, protocol: 'http:', host: '127.0.0.1:7700' },
       localStorage: {
@@ -179,6 +193,19 @@ const APPROVAL = {
   },
 };
 
+test('the catalog fills the labels and falls back to the key', async () => {
+  // The catalog is a Map: an object literal would also answer for
+  // `constructor` and the rest of `Object.prototype`, so a label named
+  // after one of them would render a function instead of the key.
+  const labels = ['subtitle', 'constructor', 'toString'].map((key) =>
+    el('span', { attrs: { 'data-i18n': key } })
+  );
+  await boot({ labels });
+  assert.equal(labels[0].textContent, 'supervision dashboard', 'a known key is translated');
+  assert.equal(labels[1].textContent, 'constructor', 'an unknown key renders as itself');
+  assert.equal(labels[2].textContent, 'toString');
+});
+
 test('a decision ack puts nothing on the timeline', async () => {
   // The ack is the server confirming a decision the card already
   // reflects; repeating it on the timeline would bury the event log
@@ -189,7 +216,6 @@ test('a decision ack puts nothing on the timeline', async () => {
   socket.deliver({ type: 'decision-ack', request_id: 'apr-1', accepted: true });
   assert.equal(timeline(ids), 'engine started', 'the ack is silent');
 });
-
 test('a refused screencast names its reason on the timeline', async () => {
   // Silence would leave the operator looking at a blank live view
   // with no idea that anything went wrong.

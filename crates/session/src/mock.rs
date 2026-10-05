@@ -237,7 +237,9 @@ impl PageHandle for MockPage {
         // Scripts share substrings (the select script carries both
         // `var REF = ` and `var VALUES = `, the serializer carries
         // `innerWidth`), so the most specific markers are matched
-        // first.
+        // first. The serializer's marker is the `MAX_NODES` identifier
+        // rather than its declaration, which keeps the dispatch working
+        // whichever keyword the script declares it with.
         if expression.contains("var VALUES = ") {
             Ok(json!({ "missing": false, "not_select": false, "matched": 1 }))
         } else if expression.contains("not_file") {
@@ -250,7 +252,7 @@ impl PageHandle for MockPage {
             Ok(self.next_resolve_answer())
         } else if expression.contains("var NEEDLE = ") {
             Ok(json!({ "found": self.inner.found.load(Ordering::SeqCst) }))
-        } else if expression.contains("var MAX_NODES = ") {
+        } else if expression.contains("MAX_NODES") {
             Ok(json!({
                 "version": 1,
                 "truncated": false,

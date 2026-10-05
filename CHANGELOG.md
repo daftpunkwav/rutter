@@ -176,6 +176,14 @@ and the project adheres to
   `Enter`, arrows, function keys, …) plus the text that makes
   printable keys land in focused inputs. Sites that ignored the
   previous name-only events respond correctly now.
+- A `role` a page declares that names a member of `Object.prototype`
+  (`constructor`, `toString`) is no longer read as a known role. The
+  role tables were object literals, so such a role reported as
+  inherited rather than as absent: an element could be judged
+  actionable (a snapshot reference nothing can reach) or taken for
+  site chrome and dropped from a `read` readout. The tables now hold
+  exactly the roles that were put in them, and an implicit role
+  lookup answers for the element's own tag name only.
 
 ### Changed
 
@@ -221,6 +229,12 @@ and the project adheres to
   out together, so persisting a state costs roughly one round trip
   instead of one per origin on the critical path of every action. The
   captured state, its comparison, and its write are unchanged.
+- Every `uses:` in the workflows is pinned to a full commit SHA,
+  including the two whose ref used to name a toolchain
+  (`dtolnay/rust-toolchain`) or a tool (`taiki-e/install-action`):
+  both now take that name from an input, so the pin freezes the action
+  code while the toolchain, the MSRV, and the installed tool stay the
+  versions the inputs name.
 
 ### Added
 

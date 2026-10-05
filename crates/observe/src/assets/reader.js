@@ -13,45 +13,52 @@
  * returned envelope with rutter-observe. Owned by rutter-observe;
  * engine and orchestration code must not modify it.
  */
-(function () {
+(() => {
   'use strict';
 
-  var VERSION = 1;
-  var MAX_NODES = 50000;
-  var MAX_DEPTH = 200;
+  const VERSION = 1;
+  const MAX_NODES = 50000;
+  const MAX_DEPTH = 200;
   // Counted in UTF-16 code units (String.prototype.length): astral-plane
   // characters (emoji, CJK extensions) cost two units, so this guard
   // stops somewhat earlier than 100 000 characters on such pages. The
   // converter's own clamp is character-counted and authoritative.
-  var MAX_CHARS = 100000;
-  var MAX_INLINE_CHARS = 20000;
-  var TITLE_LIMIT = 200;
+  const MAX_CHARS = 100000;
+  const MAX_INLINE_CHARS = 20000;
+  const TITLE_LIMIT = 200;
+
+  // The lookup tables below are Sets, never object literals. Their keys
+  // come from the page -- a tag name, an author-supplied `role` -- and
+  // an object literal also answers for `constructor`, `toString`, and
+  // the rest of `Object.prototype`: a page naming one of those as its
+  // role would have its content taken for site chrome. A Set holds
+  // exactly what was put in it.
 
   // Non-content elements: never rendered. Form controls and dialogs
   // are interaction surfaces the accessibility snapshot already
   // covers; the readout is for readable content.
-  var SKIPPED_TAGS = {
-    SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, HEAD: 1,
-    META: 1, LINK: 1, TITLE: 1, BASE: 1, DATALIST: 1,
-    SVG: 1, IFRAME: 1, CANVAS: 1, DIALOG: 1,
-    INPUT: 1, TEXTAREA: 1, SELECT: 1, OPTION: 1, BUTTON: 1
-  };
+  const SKIPPED_TAGS = new Set([
+    'SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'HEAD',
+    'META', 'LINK', 'TITLE', 'BASE', 'DATALIST',
+    'SVG', 'IFRAME', 'CANVAS', 'DIALOG',
+    'INPUT', 'TEXTAREA', 'SELECT', 'OPTION', 'BUTTON'
+  ]);
 
   // Site chrome: content that frames the page rather than belonging
   // to it, by tag or landmark role.
-  var CHROME_TAGS = { NAV: 1, ASIDE: 1, FOOTER: 1 };
-  var CHROME_ROLES = {
-    navigation: 1, complementary: 1, banner: 1, contentinfo: 1
-  };
+  const CHROME_TAGS = new Set(['NAV', 'ASIDE', 'FOOTER']);
+  const CHROME_ROLES = new Set([
+    'navigation', 'complementary', 'banner', 'contentinfo'
+  ]);
 
-  var state = { nodes: 0, size: 0, truncated: false, blocks: [] };
+  const state = { nodes: 0, size: 0, truncated: false, blocks: [] };
 
   function clip(text, limit) {
     if (text.length <= limit) return text;
-    var sliced = text.slice(0, limit - 3);
+    let sliced = text.slice(0, limit - 3);
     // Never cut between a surrogate pair: a lone surrogate breaks
     // JSON consumers. Drop the orphaned high surrogate if present.
-    var last = sliced.charCodeAt(sliced.length - 1);
+    const last = sliced.charCodeAt(sliced.length - 1);
     if (last >= 0xd800 && last <= 0xdbff) sliced = sliced.slice(0, -1);
     return sliced + '...';
   }
@@ -62,11 +69,11 @@
 
   function isVisible(el) {
     try {
-      var rects = el.getClientRects();
+      const rects = el.getClientRects();
       if (!rects || rects.length === 0) return false;
-      var style = window.getComputedStyle(el);
+      const style = window.getComputedStyle(el);
       return style.visibility !== 'hidden' && style.visibility !== 'collapse';
-    } catch (err) {
+    } catch {
       return false;
     }
   }
@@ -78,7 +85,7 @@
   function attribute(el, name) {
     try {
       return el.getAttribute(name);
-    } catch (err) {
+    } catch {
       return null;
     }
   }
@@ -86,7 +93,7 @@
   function absoluteUrl(url) {
     try {
       return new URL(url, document.baseURI).href;
-    } catch (err) {
+    } catch {
       return null;
     }
   }
@@ -94,23 +101,32 @@
   function tagName(el) {
     try {
       return el.tagName;
-    } catch (err) {
+    } catch {
       return '';
     }
   }
 
+  // `children` and `rows` are HTMLCollections: array-like and live, but
+  // not iterable (only NodeList declares `iterable<Node>`), so a walker
+  // copies one before reading it. The copy also freezes every walk
+  // against a page whose own accessors mutate the tree mid-readout --
+  // the reason `childNodes`, which is iterable, is copied the same way.
+  function arrayOf(collection) {
+    return Array.prototype.slice.call(collection || []);
+  }
+
   function isChrome(el) {
-    if (CHROME_TAGS[tagName(el)]) return true;
-    var role = attribute(el, 'role');
+    if (CHROME_TAGS.has(tagName(el))) return true;
+    const role = attribute(el, 'role');
     if (role) {
-      var first = String(role).trim().split(/\s+/)[0];
-      if (CHROME_ROLES[first]) return true;
+      const first = String(role).trim().split(/\s+/)[0];
+      if (CHROME_ROLES.has(first)) return true;
     }
     return attribute(el, 'aria-hidden') === 'true';
   }
 
   function shouldSkip(el) {
-    if (SKIPPED_TAGS[tagName(el)]) return true;
+    if (SKIPPED_TAGS.has(tagName(el))) return true;
     if (isChrome(el)) return true;
     return !isVisible(el);
   }
@@ -119,48 +135,51 @@
   // lightweight emphasis. Capped per call so one huge paragraph
   // cannot balloon the output; the cap sets `truncated`.
   function inlineOf(el) {
-    var out = inlineNodes(el.childNodes, 0);
+    const out = inlineNodes(el.childNodes, 0);
     return collapse(out);
   }
 
   function inlineNodes(list, depth) {
-    var out = '';
-    for (var i = 0; i < list.length; i += 1) {
+    let out = '';
+    for (const node of arrayOf(list)) {
       if (out.length >= MAX_INLINE_CHARS) {
         state.truncated = true;
         break;
       }
-      var node = list[i];
       if (!node) continue;
       if (node.nodeType === 3) {
         out += String(node.nodeValue || '').replace(/\s+/g, ' ');
         continue;
       }
       if (node.nodeType !== 1 || depth >= MAX_DEPTH) continue;
-      var tag = tagName(node);
-      if (SKIPPED_TAGS[tag] || isChrome(node) || !isVisible(node)) continue;
+      const tag = tagName(node);
+      if (SKIPPED_TAGS.has(tag) || isChrome(node) || !isVisible(node)) continue;
       if (tag === 'BR') {
         out += ' ';
         continue;
       }
       if (tag === 'A' && attribute(node, 'href')) {
-        var inner = collapse(inlineNodes(node.childNodes, depth + 1));
+        const inner = collapse(inlineNodes(node.childNodes, depth + 1));
         if (!inner) continue;
-        var href = absoluteUrl(attribute(node, 'href'));
-        var label = inner.replace(/\[/g, '\\[').replace(/\]/g, '\\]');
+        const href = absoluteUrl(attribute(node, 'href'));
+        // The brackets end the label, and the backslash is in the class
+        // with them: escaping only the brackets would let a page's own
+        // `\` consume the escape added here, re-exposing the bracket it
+        // was meant to hide.
+        const label = inner.replace(/[\\[\]]/g, '\\$&');
         out += href ? '[' + label + '](' + href + ')' : label;
         continue;
       }
       if (tag === 'IMG') {
-        var src = absoluteUrl(attribute(node, 'src') || '');
+        const src = absoluteUrl(attribute(node, 'src') || '');
         if (src) {
-          var alt = collapse(attribute(node, 'alt') || '');
-          out += '![' + alt.replace(/\]/g, '\\]') + '](' + src + ')';
+          const alt = collapse(attribute(node, 'alt') || '');
+          out += '![' + alt.replace(/[\]\\]/g, '\\$&') + '](' + src + ')';
         }
         continue;
       }
       if (tag === 'CODE' || tag === 'KBD' || tag === 'SAMP') {
-        var code = collapse(node.textContent);
+        const code = collapse(node.textContent);
         out += code.indexOf('`') === -1 ? '`' + code + '`' : code;
         continue;
       }
@@ -185,62 +204,68 @@
   }
 
   function pushParagraph(text) {
-    var collapsed = collapse(text);
+    const collapsed = collapse(text);
     if (collapsed) push(collapsed);
   }
 
   // Renders `render` and prefixes every line it produced, so
   // blockquotes can wrap any inner shape (paragraphs, pre, tables).
   function prefixed(prefix, render) {
-    var start = state.blocks.length;
+    const start = state.blocks.length;
     render();
-    for (var i = start; i < state.blocks.length; i += 1) {
-      var lines = state.blocks[i].split('\n');
-      for (var l = 0; l < lines.length; l += 1) {
-        lines[l] = lines[l] ? prefix + lines[l] : prefix.trimEnd();
-      }
-      state.blocks[i] = lines.join('\n');
-    }
+    const rendered = state.blocks.slice(start).map((block) =>
+      block
+        .split('\n')
+        .map((line) => (line ? prefix + line : prefix.trimEnd()))
+        .join('\n'));
+    state.blocks = state.blocks.slice(0, start).concat(rendered);
   }
 
+  // A pipe in a cell would end the column, so it is escaped -- and the
+  // backslash with it, for the same reason as a link label: a page's own
+  // `\` would otherwise consume the escape and re-expose the pipe.
   function escapeCell(text) {
-    return collapse(text).replace(/\|/g, '\\|');
+    return collapse(text).replace(/[|\\]/g, '\\$&');
   }
 
   function headingLevel(el) {
-    var tag = tagName(el);
-    var level = parseInt(tag.charAt(1), 10);
+    const tag = tagName(el);
+    const level = parseInt(tag.charAt(1), 10);
     if (!(level >= 1 && level <= 6)) return 2;
     return level;
   }
 
+  // The fence has to outrun the longest run of backticks in the text,
+  // so one scan counts them. Scanned rather than matched with a regex
+  // literal carrying a backtick: that construct derails the JavaScript
+  // lexer of the complexity analyzer this repository runs, which then
+  // attributes the rest of the file to this one function.
   function fenceFor(text) {
-    var longest = 0;
-    var runs = text.match(/`+/g) || [];
-    for (var i = 0; i < runs.length; i += 1) {
-      if (runs[i].length > longest) longest = runs[i].length;
+    let longest = 0;
+    let run = 0;
+    for (const ch of text) {
+      run = ch === '`' ? run + 1 : 0;
+      if (run > longest) longest = run;
     }
     return '`'.repeat(Math.max(3, longest + 1));
   }
 
   function emitCode(el) {
-    var text = String(el.textContent || '').replace(/\n{3,}/g, '\n\n');
-    var fence = fenceFor(text);
+    const text = String(el.textContent || '').replace(/\n{3,}/g, '\n\n');
+    const fence = fenceFor(text);
     push(fence + '\n' + text.replace(/\n+$/, '') + '\n' + fence);
   }
 
   function emitList(el, indent, depth) {
-    var ordered = tagName(el) === 'OL';
-    var index = 1;
-    var items = el.children || [];
-    for (var i = 0; i < items.length; i += 1) {
+    const ordered = tagName(el) === 'OL';
+    let index = 1;
+    for (const li of arrayOf(el.children)) {
       if (state.truncated || outOfBudget()) return;
-      var li = items[i];
       if (!li || tagName(li) !== 'LI') continue;
       if (!isVisible(li)) continue;
-      var marker = ordered ? index + '. ' : '- ';
+      const marker = ordered ? index + '. ' : '- ';
       index += 1;
-      push(indent + marker + inlinePartOfItem(li, depth));
+      push(indent + marker + inlinePartOfItem(li));
       emitNestedLists(li, indent + '  ', depth);
     }
   }
@@ -248,18 +273,16 @@
   // Inline content of one list item: its inline children plus any
   // nested block shapes except the nested lists, which the caller
   // emits separately with indentation.
-  function inlinePartOfItem(li, depth) {
-    var out = '';
-    var parts = li.childNodes || [];
-    for (var i = 0; i < parts.length; i += 1) {
-      var node = parts[i];
+  function inlinePartOfItem(li) {
+    let out = '';
+    for (const node of arrayOf(li.childNodes)) {
       if (!node) continue;
       if (node.nodeType === 3) {
         out += String(node.nodeValue || '').replace(/\s+/g, ' ');
         continue;
       }
       if (node.nodeType !== 1) continue;
-      var tag = tagName(node);
+      const tag = tagName(node);
       if (tag === 'UL' || tag === 'OL') continue;
       out += ' ' + inlineOf(node);
     }
@@ -267,55 +290,55 @@
   }
 
   function emitNestedLists(li, indent, depth) {
-    var lists = li.children || [];
-    for (var i = 0; i < lists.length; i += 1) {
-      var tag = tagName(lists[i]);
+    for (const list of arrayOf(li.children)) {
+      const tag = tagName(list);
       if (tag === 'UL' || tag === 'OL') {
-        emitList(lists[i], indent, depth + 1);
+        emitList(list, indent, depth + 1);
       }
     }
   }
 
   function emitTable(el) {
-    var rows = [];
+    let rows = [];
     try {
       // `el.rows` and not `querySelectorAll('tr')`: the collection
       // holds this table's own rows, so a table nested inside a cell
       // contributes its rows to itself instead of interleaving them
       // into the outer table's.
-      rows = Array.prototype.slice.call(el.rows || []);
-    } catch (err) {
+      rows = arrayOf(el.rows);
+    } catch {
       return;
     }
     if (rows.length === 0) return;
 
     // The header is the first row that carries cells: an empty leading
     // row (a spacer, a template row) must not swallow the whole table,
-    // which is what treating rows[0] as the header unconditionally did.
-    var headerIndex = -1;
+    // which is what treating the first row as the header
+    // unconditionally did.
+    let headerRow = null;
     // Markdown tables need one column count for every row, and it has
     // to fit the widest row. A colspan header spans fewer cells than the
     // data rows under it, and clipping those rows to the header's cell
     // count silently dropped their trailing cells without marking the
     // readout truncated.
-    var width = 0;
-    for (var r = 0; r < rows.length; r += 1) {
-      var count = cellCount(rows[r]);
+    let width = 0;
+    for (const row of rows) {
+      const count = cellCount(row);
       if (count === 0) continue;
-      if (headerIndex === -1) headerIndex = r;
+      if (!headerRow) headerRow = row;
       if (count > width) width = count;
     }
-    if (headerIndex === -1) return;
+    if (!headerRow) return;
 
-    var header = rowCells(rows[headerIndex]);
+    const header = rowCells(headerRow);
     while (header.length < width) header.push('');
     push('| ' + header.join(' | ') + ' |');
-    var separator = [];
-    for (var c = 0; c < width; c += 1) separator.push('---');
+    const separator = [];
+    for (let c = 0; c < width; c += 1) separator.push('---');
     push('| ' + separator.join(' | ') + ' |');
-    for (var b = 0; b < rows.length; b += 1) {
-      if (b === headerIndex) continue;
-      var cells = rowCells(rows[b]);
+    for (const row of rows) {
+      if (row === headerRow) continue;
+      const cells = rowCells(row);
       while (cells.length < width) cells.push('');
       push('| ' + cells.join(' | ') + ' |');
     }
@@ -323,27 +346,26 @@
 
   function cellCount(row) {
     try {
-      var parts = row.cells;
+      const parts = row.cells;
       return parts ? parts.length : 0;
-    } catch (err) {
+    } catch {
       return 0;
     }
   }
 
   function rowCells(row) {
-    var cells = [];
+    const cells = [];
     try {
-      var parts = row.cells || [];
-      for (var i = 0; i < parts.length; i += 1) {
-        cells.push(escapeCell(inlineOf(parts[i])));
+      for (const part of arrayOf(row.cells)) {
+        cells.push(escapeCell(inlineOf(part)));
       }
-    } catch (err) {}
+    } catch {}
     return cells;
   }
 
   function childNodesOf(el) {
     try {
-      var shadow = el.shadowRoot;
+      const shadow = el.shadowRoot;
       // A host with an open shadow root contributes only its shadow
       // tree, mirroring the serializer's traversal.
       if (shadow) return shadow.childNodes || [];
@@ -351,7 +373,7 @@
         return el.assignedNodes({ flatten: true }) || [];
       }
       return el.childNodes || [];
-    } catch (err) {
+    } catch {
       state.truncated = true;
       return [];
     }
@@ -365,10 +387,10 @@
     state.nodes += 1;
     if (shouldSkip(el)) return;
 
-    var tag = tagName(el);
+    const tag = tagName(el);
     if (/^H[1-6]$/.test(tag)) {
-      var level = headingLevel(el);
-      var text = inlineOf(el);
+      const level = headingLevel(el);
+      const text = inlineOf(el);
       if (text) push('#'.repeat(level) + ' ' + text);
       return;
     }
@@ -389,7 +411,7 @@
       return;
     }
     if (tag === 'BLOCKQUOTE') {
-      prefixed('> ', function () { emitChildren(el, depth); });
+      prefixed('> ', () => { emitChildren(el, depth); });
       return;
     }
     if (tag === 'HR') {
@@ -397,10 +419,10 @@
       return;
     }
     if (tag === 'IMG') {
-      var src = absoluteUrl(attribute(el, 'src') || '');
+      const src = absoluteUrl(attribute(el, 'src') || '');
       if (src) {
-        var alt = collapse(attribute(el, 'alt') || '');
-        push('![' + alt.replace(/\]/g, '\\]') + '](' + src + ')');
+        const alt = collapse(attribute(el, 'alt') || '');
+        push('![' + alt.replace(/[\]\\]/g, '\\$&') + '](' + src + ')');
       }
       return;
     }
@@ -418,34 +440,33 @@
   // Inline elements that belong to the paragraph around them instead of
   // forming a block of their own. Anything unlisted that does not
   // compute to an inline display starts a new block, like before.
-  var INLINE_TAGS = {
-    A: 1, ABBR: 1, B: 1, BDI: 1, BDO: 1, BR: 1, CITE: 1, CODE: 1,
-    DATA: 1, DFN: 1, EM: 1, I: 1, IMG: 1, KBD: 1, MARK: 1, PICTURE: 1,
-    Q: 1, RP: 1, RT: 1, RUBY: 1, S: 1, SAMP: 1, SMALL: 1, SPAN: 1,
-    STRONG: 1, SUB: 1, SUP: 1, TIME: 1, U: 1, VAR: 1, WBR: 1
-  };
+  const INLINE_TAGS = new Set([
+    'A', 'ABBR', 'B', 'BDI', 'BDO', 'BR', 'CITE', 'CODE',
+    'DATA', 'DFN', 'EM', 'I', 'IMG', 'KBD', 'MARK', 'PICTURE',
+    'Q', 'RP', 'RT', 'RUBY', 'S', 'SAMP', 'SMALL', 'SPAN',
+    'STRONG', 'SUB', 'SUP', 'TIME', 'U', 'VAR', 'WBR'
+  ]);
 
   function isInlineLevel(el) {
-    if (INLINE_TAGS[tagName(el)]) return true;
+    if (INLINE_TAGS.has(tagName(el))) return true;
     try {
-      var display = window.getComputedStyle(el).display;
+      const display = window.getComputedStyle(el).display;
       return typeof display === 'string' && display.indexOf('inline') === 0;
-    } catch (err) {
+    } catch {
       return false;
     }
   }
 
   function emitChildren(el, depth) {
-    var nodes = childNodesOf(el);
+    const nodes = arrayOf(childNodesOf(el));
     // Consecutive inline children accumulate into ONE paragraph: a
     // `<div>Hello <b>world</b> again</div>` is one sentence, not three
     // (stray block text renders as plain, whitespace-collapsed
     // paragraphs). Only a block-level child breaks
     // the run.
-    var pending = '';
-    for (var i = 0; i < nodes.length; i += 1) {
+    let pending = '';
+    for (const node of nodes) {
       if (state.truncated) break;
-      var node = nodes[i];
       if (!node) continue;
       if (node.nodeType === 3) {
         pending += ' ' + String(node.nodeValue || '');
@@ -467,8 +488,8 @@
   }
 
   function joinBlocks() {
-    var body = state.blocks.join('\n\n');
-    var cleaned = body.replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '');
+    const body = state.blocks.join('\n\n');
+    const cleaned = body.replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '');
     if (cleaned.length > MAX_CHARS) {
       // The '\n\n' join separators can push the total past the cap even
       // when no single push did; a clip without the flag would present
@@ -479,14 +500,14 @@
     return cleaned;
   }
 
-  var title = '';
+  let title = '';
   try {
     title = clip(collapse(document.title), TITLE_LIMIT);
-  } catch (err) {
+  } catch {
     state.truncated = true;
   }
 
-  var envelope = {
+  const envelope = {
     version: VERSION,
     truncated: state.truncated,
     title: title,
@@ -494,10 +515,10 @@
   };
 
   try {
-    var root = document.body || document.documentElement;
+    const root = document.body || document.documentElement;
     if (root) emitBlock(root, 0);
     envelope.markdown = joinBlocks();
-  } catch (err) {
+  } catch {
     state.truncated = true;
     envelope.markdown = joinBlocks();
   }

@@ -209,6 +209,40 @@ test('a role with no text name stays unnamed', () => {
   assert.equal(envelope.root.children[0].name, undefined);
 });
 
+test('a role borrowed from Object.prototype is neither actionable nor named', () => {
+  // `role` is the page's own string, and the tables are keyed by it. An
+  // object-literal table also answers for `constructor`, `toString`,
+  // and the rest of `Object.prototype`: a page could hand itself a ref
+  // nothing can act on, or a name folded out of its own text.
+  const page = pageOver(
+    el('body', {}, [
+      el('div', { attrs: { role: 'constructor' } }, ['first']),
+      el('div', { attrs: { role: 'toString' } }, ['second']),
+    ])
+  );
+  const [first, second] = page.run(SERIALIZER_JS).root.children;
+  assert.equal(first.role, 'constructor', 'the page keeps the role it declared');
+  assert.equal(second.role, 'toString');
+  assert.equal(first.ref, undefined, 'an invented role is not actionable');
+  assert.equal(second.ref, undefined);
+  assert.equal(first.name, undefined, 'and it takes no text as its name');
+  assert.equal(second.name, undefined);
+});
+
+test('a tag named after an Object.prototype member is not a role', () => {
+  // Only HTML-namespace tag names are upper-cased, so a page can mint
+  // an element whose tagName is `constructor`
+  // (`createElementNS(svg, 'constructor')`). Looked up in an object
+  // literal the implicit role came back as an inherited function
+  // instead of a role string, which is not what the snapshot format
+  // promises.
+  const node = el('constructor', {}, ['text']);
+  node.tagName = 'constructor';
+  const page = pageOver(el('body', {}, [node]));
+  const envelope = page.run(SERIALIZER_JS);
+  assert.equal(envelope.root.children[0].role, 'generic');
+});
+
 test('a text name folds a growing window, not the whole subtree', () => {
   // The name may fold the subtree's textContent; a text-dense
   // container must not pay a whole-subtree fold on every snapshot for

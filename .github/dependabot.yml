@@ -2,9 +2,10 @@
 #
 # The github-actions entry is the important one: every "uses:" in the workflows is
 # pinned to a full commit SHA, and this is what keeps those pins current without
-# anyone hand-editing them. Tag-based refs (dtolnay/rust-toolchain@<version>,
-# taiki-e/install-action@<branch>) are intentionally left unpinned - pinning those
-# would freeze the toolchain and break the msrv/stable gates.
+# anyone hand-editing them.
+#
+# The npm group keeps the Electron shell's pin fresh; the cargo groups keep the
+# workspace's lock-driven dependency set fresh.
 #
 # Updates are grouped so the required-approval flow stays reviewable.
 version: 2
@@ -22,10 +23,14 @@ updates:
       actions:
         patterns: ["*"]
     ignore:
-      # Their "version" is a toolchain or binary name, not an action release
-      # (rust-toolchain@1.88.0 pins the MSRV). Dependabot still bumps
-      # version-looking refs and produces PRs that cannot pass CI, e.g. it
-      # tried to install the nonexistent rust 1.120.0 in PR #6.
+      # Both are pinned to a commit SHA like every other action, but the
+      # SHA's "version" is not a release dependabot can reason about:
+      # dtolnay/rust-toolchain publishes a moving `v1`, and
+      # taiki-e/install-action's tool-name refs are regenerated per
+      # release (its security note warns against hash-pinning those).
+      # What each action actually installs comes from its `toolchain:` /
+      # `tool:` input, so these two pins are reviewed and refreshed by
+      # hand rather than by an automated bump.
       - dependency-name: "dtolnay/rust-toolchain"
       - dependency-name: "taiki-e/install-action"
   - package-ecosystem: "cargo"

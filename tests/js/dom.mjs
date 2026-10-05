@@ -27,6 +27,24 @@ export function loadScript(relativePath) {
 
 let nextNodeId = 1;
 
+/**
+ * Marks `nodes` array-like but not iterable, as the platform's
+ * `HTMLCollection` is: readable by index and `.length`, while
+ * `for...of` and spread throw. Only `NodeList` declares
+ * `iterable<Node>`, so a walker over `children`, `rows`, or `cells`
+ * has to copy first -- and one that forgets fails here instead of
+ * passing on a capability the platform does not have.
+ */
+function htmlCollection(nodes) {
+  Object.defineProperty(nodes, Symbol.iterator, { value: undefined });
+  return nodes;
+}
+
+/** The element children as a plain array, for the harness's own walks. */
+function childElements(node) {
+  return node.childNodes.filter((child) => child.nodeType === 1);
+}
+
 class TextNode {
   constructor(value) {
     this.nodeType = 3;
@@ -57,7 +75,7 @@ class Element {
   // --- tree -----------------------------------------------------------
 
   get children() {
-    return this.childNodes.filter((node) => node.nodeType === 1);
+    return htmlCollection(childElements(this));
   }
 
   get textContent() {
@@ -87,7 +105,9 @@ class Element {
   }
 
   append(...nodes) {
-    nodes.forEach((node) => this.appendChild(node));
+    nodes.forEach((node) => {
+      this.appendChild(node);
+    });
     return this;
   }
 
@@ -187,18 +207,20 @@ class Element {
   get rows() {
     const out = [];
     const walk = (node) => {
-      for (const child of node.children) {
+      for (const child of childElements(node)) {
         if (child.tagName === 'TABLE') continue;
         if (child.tagName === 'TR') out.push(child);
         else walk(child);
       }
     };
     walk(this);
-    return out;
+    return htmlCollection(out);
   }
 
   get cells() {
-    return this.children.filter((cell) => cell.tagName === 'TD' || cell.tagName === 'TH');
+    return htmlCollection(
+      childElements(this).filter((cell) => cell.tagName === 'TD' || cell.tagName === 'TH')
+    );
   }
 
   /** A slot's flattened assignment, or nothing when it has none. */
@@ -219,7 +241,9 @@ class Element {
  */
 export function el(tag, opts = {}, children = []) {
   const node = new Element(tag);
-  Object.entries(opts.attrs || {}).forEach(([name, value]) => node.setAttribute(name, value));
+  Object.entries(opts.attrs || {}).forEach(([name, value]) => {
+    node.setAttribute(name, value);
+  });
   if (opts.hidden) node.hidden = true;
   if (opts.value !== undefined) node.value = opts.value;
   if (opts.checked) node._checked = true;
@@ -290,7 +314,7 @@ export function makeDocument({
       if (selector !== '[data-i18n]') return [];
       const found = [];
       const walk = (node) => {
-        for (const child of node.children) {
+        for (const child of childElements(node)) {
           if (child.hasAttribute('data-i18n')) found.push(child);
           walk(child);
         }
@@ -311,7 +335,7 @@ export function makeDocument({
 
 /** `getComputedStyle` over the fixture's per-element layout record. */
 function getComputedStyle(node) {
-  const style = node && node.layout ? node.layout : { visibility: 'visible', display: '' };
+  const style = node?.layout ? node.layout : { visibility: 'visible', display: '' };
   return {
     visibility: style.visibility,
     display: style.display,

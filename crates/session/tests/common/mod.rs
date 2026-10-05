@@ -82,10 +82,11 @@ impl PageHandle for FlowPage {
 
     async fn evaluate(&self, expression: &str) -> Result<Value, EngineError> {
         // The observe scripts share substrings, so match the most
-        // specific markers first.
+        // specific markers first. The serializer's marker is its
+        // `MAX_NODES` identifier, not the declaration it sits in.
         if expression.contains("var NEEDLE = ") {
             Ok(json!({ "found": self.inner.found.load(Ordering::SeqCst) }))
-        } else if expression.contains("var MAX_NODES = ") {
+        } else if expression.contains("MAX_NODES") {
             let url = lock(&self.inner.url, |url| url.clone());
             Ok(json!({
                 "version": 1,
