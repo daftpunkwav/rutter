@@ -110,7 +110,7 @@ pub struct NavigateParams {
 #[derive(Debug, Serialize, Deserialize, rmcp::schemars::JsonSchema)]
 /// Parameters for element-targeted tools.
 pub struct ReferenceParams {
-    /// Snapshot reference of the element, for example `e17-9x2f`. The
+    /// Snapshot reference of the element, for example `e17-9x2fqk`. The
     /// `-<scope>` suffix is per-document: a reference only matches the
     /// page that minted it, so take a fresh snapshot after switching
     /// tabs.

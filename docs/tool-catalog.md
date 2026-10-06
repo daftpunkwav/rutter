@@ -136,7 +136,7 @@ timeline.
 ## 4. Tools
 
 Twenty-five tools. Parameter types: `reference` is a snapshot handle
-(`e17-9x2f`; the `-<scope>` suffix is per-document, so a reference only
+(`e17-9x2fqk`; the `-<scope>` suffix is per-document, so a reference only
 matches the page that minted it); `direction` is one of
 `up|down|left|right`; durations are milliseconds.
 

@@ -85,7 +85,7 @@ Skipped elements: `script`, `style`, `noscript`, `template`, `head`,
   (`__rutterRefStore`: a `WeakMap<Element, string>` that mints refs,
   a reverse `Map<string, WeakRef<Element>>` that resolves them, an
   integer counter, and a per-document random `scope`). An actionable
-  element receives `e<N>-<scope>` (for example `e17-9x2f`, a 4-character
+  element receives `e<N>-<scope>` (for example `e17-9x2fqk`, a 6-character
   base36 scope) the first time it is observed and keeps it for later
   snapshots of the same page. The scope namespaces each document's
   refs: every document counts from 1, so without it two snapshotted
@@ -103,13 +103,23 @@ Skipped elements: `script`, `style`, `noscript`, `template`, `head`,
 - After a navigation the counter and the scope are minted anew; old
   references no longer match any element and resolve to
   `ActionError::ReferenceExpired`.
+- The scope is a value the document cannot choose. The engine gives each
+  document a minter the page cannot reach and the serializer calls it.
+  The minter is readable and callable from page script — that reveals the
+  document's own scope, which is harmless, and the property is neither
+  writable nor configurable, so a page can replace neither it nor the
+  scope it returns, and cannot collide with another document's. A
+  document the engine cannot give a minter — where minting would have to
+  fall back to something the page could have replaced — reports
+  `truncated: true` and hands out no references, rather than refs whose
+  scopes two documents could share.
 
 ## 5. Text rendering (YAML style)
 
 One node per line, children indented two spaces per level:
 
 ```
-- button "Sign in" [checked] [ref=e17-9x2f]
+- button "Sign in" [checked] [ref=e17-9x2fqk]
 ```
 
 Suffixes render in this order: `"name"` (double quotes inside names

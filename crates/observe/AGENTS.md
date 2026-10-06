@@ -15,6 +15,14 @@ The module map lives in [README.md](README.md) and
 
 - `src/assets/serializer.js` and `src/assets/reader.js` are plain ES.
   There is no build step. `assets.rs` embeds them with `include_str!`.
+- `src/assets/entropy.js` is the exception to how an asset runs: the
+  engine installs it at document start
+  (`Page.addScriptToEvaluateOnNewDocument`) instead of evaluating it at
+  snapshot time. It captures the generator, the constructor, and the
+  digit table before a page can replace them, and locks a scope minter
+  onto the global. The serializer calls that minter and has no in-page
+  fallback: a document without one hands out no references rather than a
+  scope the page could choose.
 - A script does not throw on hostile page input.
 - `storage_dump_script` returns `{ unavailable: true }` when
   `localStorage` is missing or throws. `storage_restore_script`

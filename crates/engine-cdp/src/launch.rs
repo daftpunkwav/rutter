@@ -309,6 +309,13 @@ fn pick_debug_port() -> Result<u16, EngineError> {
 /// pre-create the path (a launch-killing squat) or plant a symlink at
 /// it; the directory is created here, exclusively, so nothing the
 /// browser later touches was ever a stranger-planted name.
+///
+/// The directory is owner-only on Unix. It holds the browser's cookies,
+/// history, and login state, and a directory made with the process
+/// umask would be readable — and, under a permissive umask, writable —
+/// by every other local user on the machine. Requesting the mode
+/// outright means the umask can only clear bits from it, never add
+/// them.
 fn profile_dir() -> Result<PathBuf, EngineError> {
     static LAUNCH: AtomicU64 = AtomicU64::new(0);
     let serial = LAUNCH.fetch_add(1, Ordering::Relaxed);
@@ -318,7 +325,35 @@ fn profile_dir() -> Result<PathBuf, EngineError> {
         serial,
         launch_secret()
     ));
-    match std::fs::create_dir(&dir) {
+    // Owner-only on Unix, where the mode is the whole point; elsewhere
+    // the per-user ACL of the temp directory is what bounds access, and
+    // this is the same exclusive create.
+    //
+    // The create's mode is masked by the process umask, and the umask can
+    // clear the owner bits too: a launcher running under a umask of 0777
+    // would otherwise hand the browser a profile it cannot read. The mode
+    // is therefore set outright once the directory exists, and failing to
+    // set it is the same refusal as failing to create it -- with the
+    // directory removed first, since the caller gets no path back and a
+    // refusal that repeated would otherwise leave one behind each time.
+    #[cfg(unix)]
+    let created = {
+        use std::os::unix::fs::DirBuilderExt;
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&dir)
+            .and_then(|()| {
+                std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).inspect_err(
+                    |_| {
+                        let _ = std::fs::remove_dir(&dir);
+                    },
+                )
+            })
+    };
+    #[cfg(not(unix))]
+    let created = std::fs::create_dir(&dir);
+    match created {
         Ok(()) => Ok(dir),
         // A collision on a freshly random name is not retried: it means
         // something on this machine is deliberately racing this launch,
@@ -541,30 +576,130 @@ mod tests {
         let _ = std::fs::remove_dir_all(second);
     }
 
+    /// Serializes every fixture in this binary that touches the
+    /// filesystem against the restrictive-umask one: the umask is
+    /// process-wide, and a file or directory created inside its window
+    /// comes out with the owner bits masked away -- a tempfile drops
+    /// from `0600` to `0400`, which its later `fs::write` cannot reopen.
+    /// The umask half is Unix-only; the lock exists everywhere so the
+    /// fixtures that take it need no gate of their own.
+    static FILESYSTEM_FIXTURE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[cfg(unix)]
+    #[test]
+    fn a_profile_directory_is_owner_only() {
+        // The profile holds the browser's cookies, history, and login
+        // state, so another local user must not be able to read it --
+        // and must not be able to create files inside it, which is what
+        // makes planting a symlink at a path the browser writes to
+        // impossible.
+        let _fixture = FILESYSTEM_FIXTURE.lock().unwrap_or_else(|p| p.into_inner());
+        assert_owner_only("an ordinary umask");
+    }
+
+    /// Pins the mode under a umask that would break it.
+    ///
+    /// The create's own mode is masked by the umask, so under a
+    /// restrictive one the directory comes out without the owner bits a
+    /// browser needs to read its own profile -- which is exactly the
+    /// regression the explicit permissions after the create exist to
+    /// prevent, and exactly what an ordinary umask cannot expose: there
+    /// the masked mode still lands on `0700` with the set removed. The
+    /// umask is process-wide, so the fixture holds
+    /// [`FILESYSTEM_FIXTURE`] for its whole window and the guard puts
+    /// the old mask back even when the assertion fails.
+    #[cfg(unix)]
+    #[test]
+    fn a_profile_directory_survives_a_restrictive_umask() {
+        let _fixture = FILESYSTEM_FIXTURE.lock().unwrap_or_else(|p| p.into_inner());
+        let _umask = UmaskGuard(set_umask(0o277));
+        assert_owner_only("a restrictive umask");
+    }
+
+    /// Restores the umask the fixture replaced, whatever happened
+    /// inside the window.
+    #[cfg(unix)]
+    struct UmaskGuard(u32);
+
+    #[cfg(unix)]
+    impl Drop for UmaskGuard {
+        fn drop(&mut self) {
+            set_umask(self.0);
+        }
+    }
+
+    /// Sets the process umask and returns the one it replaced.
+    ///
+    /// `umask` is a plain syscall with no failure mode; the only reason
+    /// for the escape hatch is that the workspace denies `unsafe_code`
+    /// outright, and the call is the one way a test can control what
+    /// the create's mode is masked by.
+    #[cfg(unix)]
+    #[allow(unsafe_code)]
+    fn set_umask(mask: u32) -> u32 {
+        // SAFETY: `umask` only sets the process file-mode creation mask
+        // and returns the previous one; it touches no memory and cannot
+        // fail.
+        let previous = unsafe { libc::umask(mask as libc::mode_t) }; // nosemgrep
+        previous as u32
+    }
+
+    /// Runs [`profile_dir`] under the caller's umask and asserts the
+    /// directory came out owner-only.
+    #[cfg(unix)]
+    fn assert_owner_only(under: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let profile = profile_dir().expect("profile dir");
+        let mode = std::fs::metadata(&profile)
+            .expect("metadata")
+            .permissions()
+            .mode();
+        let _ = std::fs::remove_dir_all(&profile);
+        assert_eq!(
+            mode & 0o777,
+            0o700,
+            "the profile stays owner-only under {under}"
+        );
+    }
+
     #[test]
     fn stderr_tail_collapses_the_log_into_one_line() {
-        let mut log = std::env::temp_dir();
-        // A name of this test's own: the sibling tail test would
-        // overwrite a shared path while running concurrently.
-        log.push(format!("rutter-tail-collapse-{}.log", std::process::id()));
+        // A scratch file of the harness's own name: a fixed path under
+        // the shared temp dir is one another local user could have
+        // planted a symlink at, and the sibling tail test would collide
+        // with it while running concurrently. The shared fixture lock
+        // keeps the scratch file out of the restrictive-umask window:
+        // created there, its 0600 comes out 0400 and the write below
+        // could not reopen it.
+        let _fixture = FILESYSTEM_FIXTURE.lock().unwrap_or_else(|p| p.into_inner());
+        let log = tempfile::Builder::new()
+            .prefix("rutter-tail-collapse-")
+            .suffix(".log")
+            .tempfile()
+            .expect("scratch log");
         std::fs::write(
-            &log,
+            log.path(),
             "first line\n\nerror while loading\n  shared  libraries\n",
         )
         .unwrap();
-        let tail = stderr_tail(&log);
-        let _ = std::fs::remove_file(&log);
+        let tail = stderr_tail(log.path());
         assert_eq!(tail, "first line error while loading shared libraries");
     }
 
     #[test]
     fn stderr_tail_keeps_only_the_end_of_a_chatty_log() {
-        let mut log = std::env::temp_dir();
-        log.push(format!("rutter-tail-bounded-{}.log", std::process::id()));
+        // Same scratch-file discipline as the sibling: out of the
+        // restrictive-umask window, so the 0600 it is created with stays
+        // writable when the write below reopens it.
+        let _fixture = FILESYSTEM_FIXTURE.lock().unwrap_or_else(|p| p.into_inner());
+        let log = tempfile::Builder::new()
+            .prefix("rutter-tail-bounded-")
+            .suffix(".log")
+            .tempfile()
+            .expect("scratch log");
         let noise = "x".repeat(100_000);
-        std::fs::write(&log, format!("{noise}\nTHE ACTUAL CAUSE")).unwrap();
-        let tail = stderr_tail(&log);
-        let _ = std::fs::remove_file(&log);
+        std::fs::write(log.path(), format!("{noise}\nTHE ACTUAL CAUSE")).unwrap();
+        let tail = stderr_tail(log.path());
         assert!(tail.ends_with("THE ACTUAL CAUSE"));
         assert!(tail.len() < 5_000, "the tail must stay bounded");
     }

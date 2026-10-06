@@ -89,6 +89,9 @@ serde = { version = "1", features = ["derive"] }
 schemars = "1.0"
 serde_json = "1"
 tempfile = "3"
+# Unix-only test support: the profile-mode regression test sets the
+# process umask in a child test process, which std has no API for.
+libc = "0.2"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }

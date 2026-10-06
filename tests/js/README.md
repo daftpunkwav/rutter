@@ -15,7 +15,7 @@ the DOM is a fixture in [`dom.mjs`](dom.mjs). Node 18 or newer.
 | File | Runs |
 |---|---|
 | `dom.mjs` | The fixture: a DOM small enough to read, plus a `ControllableWeakRef` so a test can decide when an element is collected |
-| `serializer.test.mjs` | `crates/observe/src/assets/serializer.js` — the ref sweep and its threshold, refs on actionable elements only, shadow-DOM traversal, roles that name an `Object.prototype` member, the "never throws" guards |
+| `serializer.test.mjs` | `crates/observe/src/assets/serializer.js` — the ref sweep and its threshold, refs on actionable elements only, shadow-DOM traversal, roles that name an `Object.prototype` member, the per-document ref scope and the no-`crypto` degradation, the "never throws" guards |
 | `reader.test.mjs` | `crates/observe/src/assets/reader.js` — colspan headers, cell-less leading rows, nested tables, pipe escaping, the character budget, site chrome, links, lists, quotes, fences |
 | `app.test.mjs` | `frontend/src/app.js` — the silent decision ack, a screencast refusal that names its reason, the reconnect reset of the timeline and the session set, the reconnect backoff, approval de-duplication, decision-post failures, the catalog's fallback to the key |
 | `scheme-gate.test.mjs` | `browser/scheme-gate.js` — the scheme gate both navigation entry points test: web URLs and `about:blank` pass, privileged schemes (`file:`, `javascript:`, `devtools:`, lookalike spellings) are refused |

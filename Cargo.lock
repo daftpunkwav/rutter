@@ -1728,6 +1728,7 @@ dependencies = [
  "rutter-policy",
  "rutter-session",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
 ]
@@ -1784,10 +1785,12 @@ dependencies = [
  "base64 0.23.1",
  "chromiumoxide",
  "futures",
+ "libc",
  "rutter-core",
  "rutter-engine",
  "rutter-observe",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 

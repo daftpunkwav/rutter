@@ -17,7 +17,7 @@ and the project adheres to
   hides the picture and notes the end in the timeline. A stop the
   viewer asked for still sends nothing.
 - Snapshot references are now scoped to the document that minted them
-  (`e17` → `e17-9x2f`). Every document counts its references from 1,
+  (`e17` → `e17-9x2fqk`). Every document counts its references from 1,
   so after `tabs_select` a reference taken on page A could silently
   resolve to page B's own `e17` and act on the wrong element with no
   error; a cross-page hit now also needs the per-document scope to
@@ -184,6 +184,32 @@ and the project adheres to
   site chrome and dropped from a `read` readout. The tables now hold
   exactly the roles that were put in them, and an implicit role
   lookup answers for the element's own tag name only.
+- The per-document ref scope is no longer a value the page can choose.
+  It was minted inside the page, where `Math.random`, `crypto`, and the
+  prototypes a base36 conversion would go through are all replaceable:
+  a page that replaced any of them handed every document it opened the
+  same scope, and a stale reference from one page then resolved to
+  another page's own element. The engine now gives each document a
+  minter the page cannot reach — registered at document start, before
+  the document's own scripts, and minted in an isolated world for a
+  document that was already loaded when rutter attached — and the
+  serializer hands out no references at all for a document that has no
+  minter.
+- The engine's per-launch profile directory is created owner-only on
+  Unix (`0700`). It holds the browser's cookies, history, and login
+  state, and a directory made with the process umask could be readable
+  — and, under a permissive umask, writable — by every other local user
+  on the machine, which is also what would let one of them plant a
+  symlink at a path the browser writes to inside it. The mode is set
+  outright after the create, since the create's own mode is masked by
+  the umask and a restrictive one can clear the owner bits; a directory
+  whose mode could not be set is removed rather than left behind.
+- Two adoptions of the same foreign page that overlap no longer fight
+  over its ref scope. Preparing a page defines a locked property, so the
+  second attempt met the first and threw — and the failing one closed
+  the target, taking the other caller's page with it. Preparation now
+  runs once per target, and a failure closes only a target the call
+  itself created.
 
 ### Changed
 
@@ -210,6 +236,11 @@ and the project adheres to
   could pre-create or plant a symlink at the path. The
   `rutter-engine-<pid>-` prefix is unchanged, so cleanup tooling that
   matched it still does.
+- Test scratch files and directories come from `tempfile`: the harness
+  names them and removes them on drop, where the upload, policy, and
+  launch-log fixtures used to write fixed names into the shared temp
+  dir — paths another local user could have planted a symlink at, and
+  that two concurrent runs could collide on.
 - The select-script builder in `rutter-observe` takes the option
   values as `&[String]` and serializes them itself; callers can no
   longer hand raw text through that would embed into the page as

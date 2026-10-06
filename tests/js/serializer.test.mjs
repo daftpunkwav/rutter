@@ -19,13 +19,27 @@ import test from 'node:test';
 import { ControllableWeakRef, createPage, el, loadScript, makeDocument } from './dom.mjs';
 
 const SERIALIZER_JS = loadScript('crates/observe/src/assets/serializer.js');
+const ENTROPY_JS = loadScript('crates/observe/src/assets/entropy.js');
 
-/** A page over `body`, sharing `window` with every later snapshot. */
-function pageOver(body, window = {}) {
-  const page = createPage({
+/** A page over `body` with no scope minter, sharing `window` with later snapshots. */
+function pageWithoutMinter(body, window = {}) {
+  return createPage({
     document: makeDocument({ body }).document,
     window: { innerWidth: 1024, innerHeight: 768, scrollX: 0, scrollY: 0, ...window },
   });
+}
+
+/**
+ * A page over `body` as the engine produces it.
+ *
+ * The engine installs the scope minter at document start, before any
+ * page script, so the fixture runs the same asset: a suite that skipped
+ * it would exercise a page the engine never hands out, and every
+ * reference assertion would be about the degradation path instead.
+ */
+function pageOver(body, window = {}) {
+  const page = pageWithoutMinter(body, window);
+  page.run(ENTROPY_JS);
   return page;
 }
 
@@ -72,6 +86,24 @@ test('two documents mint disjoint refs even at the same counter', () => {
   assert.match(refB, /^e1-/);
   assert.notEqual(refA, refB, 'the scopes keep one page stale ref from hitting the other');
   assert.equal(pageA.run(SERIALIZER_JS).root.children[0].ref, refA, 'scope is stable per document');
+});
+
+test('a page without a working crypto degrades to no references', () => {
+  // The scope separates documents, so it comes from `crypto` rather
+  // than from `Math.random`, which is a plain page function a page can
+  // pin to a constant -- handing every document it opens the same
+  // scope, which is the collision the scope exists to prevent. There
+  // is no weaker fallback on purpose: a page that removes `crypto`
+  // gets the answer every other store failure gets, a snapshot that
+  // says it is truncated and hands out no references, instead of one
+  // whose references cannot be told apart across documents.
+  const page = pageOver(el('body', {}, [el('button', {}, ['Save'])]), {
+    crypto: undefined,
+  });
+  const envelope = page.run(SERIALIZER_JS);
+  assert.equal(envelope.truncated, true, 'the missing store is reported, not hidden');
+  assert.equal(envelope.root.children[0].role, 'button', 'the tree is still serialized');
+  assert.equal(envelope.root.children[0].ref, undefined, 'no reference is handed out');
 });
 
 test('a snapshot below the sweep threshold leaves the store alone', () => {
@@ -143,6 +175,63 @@ test('the sweep spares the refs whose elements are still alive', () => {
   assert.equal(rendered[599].ref, first.root.children[599].ref, 'and so does the last');
 });
 
+test('the captured minter keeps documents apart when the page patches crypto', () => {
+  // The attack the capture exists for: a page replaces
+  // `crypto.getRandomValues` with one that fills a constant, so every
+  // document it opens would mint the same scope and a stale reference
+  // from one page would resolve to another page's own `e1`. The minter
+  // captured the generator before any page script ran, so the patch is
+  // irrelevant.
+  const scopes = [0, 1].map(() => {
+    const page = pageOver(el('body', {}, [el('button', {}, ['Save'])]));
+    page.window.crypto = {
+      getRandomValues(bytes) {
+        bytes.fill(0);
+        return bytes;
+      },
+    };
+    const ref = page.run(SERIALIZER_JS).root.children[0].ref;
+    assert.match(ref, /^e1-/);
+    return page.window.__rutterRefStore.scope;
+  });
+
+  assert.notEqual(scopes[0], scopes[1], 'a patched crypto cannot hand two documents one scope');
+  assert.notEqual(scopes[0], '000000', 'the constant fill never reached the scope');
+});
+
+test('the scope comes from the locked minter and nothing else', () => {
+  // The contract read directly: the minter decides the scope, and no
+  // replaceable global is consulted. `crypto` is patched to fill zeros,
+  // so a scope of `000000` would mean it had been reached.
+  const page = pageWithoutMinter(el('body', {}, [el('button', {}, ['Save'])]));
+  page.window.__rutterRefScope = () => 'wxyz';
+  let consulted = false;
+  page.window.crypto = {
+    getRandomValues(bytes) {
+      consulted = true;
+      bytes.fill(0);
+      return bytes;
+    },
+  };
+  const envelope = page.run(SERIALIZER_JS);
+  const scope = page.window.__rutterRefStore.scope;
+  assert.equal(consulted, false, 'the replaceable source is not consulted');
+  assert.equal(scope, 'wxyz', 'the minter decided the scope');
+  assert.equal(envelope.root.children[0].ref, 'e1-wxyz');
+});
+
+test('a document with no minter degrades instead of minting in the page', () => {
+  // A scope the page could choose is worse than no references at all:
+  // two documents would share it and a stale reference from one page
+  // would resolve to the other page's element. There is no in-page
+  // fallback on purpose.
+  const page = pageWithoutMinter(el('body', {}, [el('button', {}, ['Save'])]));
+  const envelope = page.run(SERIALIZER_JS);
+  assert.equal(envelope.truncated, true, 'the missing minter is reported, not hidden');
+  assert.equal(envelope.root.children[0].role, 'button', 'the tree is still serialized');
+  assert.equal(envelope.root.children[0].ref, undefined, 'no reference is handed out');
+});
+
 test('a store with no usable shape is left alone instead of throwing', () => {
   // The script promises never to throw. A page that pre-seeds
   // `window.__rutterRefStore` with something else must not take the
@@ -160,6 +249,10 @@ test('a document with no body still reports a root', () => {
     document: makeDocument({ noBody: true }).document,
     window: { innerWidth: 0, innerHeight: 0 },
   });
+  // The engine installs the scope minter at document start; without it
+  // the snapshot reports itself truncated, which is not what this test
+  // is about.
+  page.run(ENTROPY_JS);
   const envelope = page.run(SERIALIZER_JS);
   assert.equal(envelope.version, 1);
   assert.equal(envelope.truncated, false);

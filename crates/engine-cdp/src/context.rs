@@ -29,9 +29,26 @@ use rutter_engine::error::EngineError;
 use rutter_engine::page::PageHandle;
 
 use crate::page::CdpPage;
+use crate::page::{DEFINE_REFUSED_PREFIX, REF_SCOPE_PROPERTY};
 
 /// Pages of one CDP browser context, keyed by rutter page id.
 type PageMap = HashMap<PageId, Arc<CdpPage>>;
+
+/// Per-target preparation state, shared by every context of one
+/// launcher: the gate that serializes preparation of a target, holding
+/// the scope an engine install locked onto the document that was current
+/// when it ran. `None` means no install of the engine's is known for the
+/// current document -- nothing prepared it yet, or the document was
+/// replaced after the recorded install failed to verify.
+///
+/// Shared rather than per context because the locked property belongs to
+/// the document, not to the context that installed it: a second context
+/// adopting a target a first one prepared must recognize the install
+/// instead of defining over it, which the first define made impossible.
+/// The outer mutex is the sync one -- a guard over it is held only long
+/// enough to clone a gate.
+pub(crate) type PreparationRegistry =
+    Arc<Mutex<HashMap<TargetId, Arc<AsyncMutex<Option<String>>>>>>;
 
 /// One isolated CDP browser context.
 pub struct CdpContext {
@@ -48,6 +65,9 @@ pub struct CdpContext {
     /// are synchronous per trait, and guards are never held across an
     /// await.
     pages: Mutex<PageMap>,
+    /// The launcher-wide preparation registry; see
+    /// [`PreparationRegistry`] for why it is shared.
+    preparing: PreparationRegistry,
     page_counter: AtomicU64,
 }
 
@@ -58,6 +78,7 @@ impl CdpContext {
         browser: Arc<AsyncMutex<chromiumoxide::Browser>>,
         cdp_context_id: Option<BrowserContextId>,
         config: ContextConfig,
+        preparing: PreparationRegistry,
     ) -> Self {
         Self {
             id,
@@ -65,6 +86,7 @@ impl CdpContext {
             cdp_context_id,
             config,
             pages: Mutex::new(HashMap::new()),
+            preparing,
             page_counter: AtomicU64::new(0),
         }
     }
@@ -77,6 +99,143 @@ impl CdpContext {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    /// The gate that serializes preparation for one target, creating it
+    /// on first use.
+    fn preparation_gate(&self, target_id: &TargetId) -> Arc<AsyncMutex<Option<String>>> {
+        let mut preparing = self
+            .preparing
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Arc::clone(preparing.entry(target_id.clone()).or_default())
+    }
+
+    /// Prepares one page's ref scope, once per document.
+    ///
+    /// Two adoptions of the same target must not both define the locked
+    /// scope minter: the second define meets the first and throws, which
+    /// would turn an otherwise idempotent adoption into a failure -- and
+    /// a failure that closed the shared target would take the winner's
+    /// page with it. The gate makes the second caller wait for the first
+    /// and then recognize the work done, and because the gate lives in
+    /// the launcher-wide registry, "the first" spans every context of
+    /// the engine, not only this one.
+    ///
+    /// Three ways to find the document already covered, in order of
+    /// strength:
+    ///
+    /// 1. The document-start registration ran for it -- proved by the
+    ///    minter in the isolated world no page can reach. The locked
+    ///    property the serializer reads is the document-start one,
+    ///    whatever the page tried.
+    /// 2. The document carries this engine's claim for the remembered
+    ///    scope -- written in the isolated world next to the define it
+    ///    names, so it dies with the document -- and the live minter
+    ///    answers that scope through CDP. The claim is what binds the
+    ///    remembered scope to *this* document: a minter's answer alone
+    ///    proves nothing, because a page can call its own minter, learn
+    ///    the scope, navigate, and plant a locked one answering the same
+    ///    value in a document nothing covers.
+    /// 3. Neither holds, so the document has no minter the engine put
+    ///    there: mint one in the isolated world, claim it, and define
+    ///    it. The claim and the record are written *before* the define,
+    ///    so a define whose answer was lost -- a timeout, a transport
+    ///    drop -- leaves the candidate remembered and a retry takes
+    ///    path 2 instead of defining a second time; a define the
+    ///    browser ran and saw refused is not ambiguous -- the property
+    ///    beat this attempt -- so the previous record is restored and
+    ///    the failure surfaces.
+    ///    A verification that itself learns nothing -- a timeout, a
+    ///    transport failure -- fails the caller the same way: the claim
+    ///    predates the define and cannot stand in for the minter's own
+    ///    answer.
+    async fn prepare_once(&self, handle: &CdpPage) -> Result<(), EngineError> {
+        let gate = self.preparation_gate(&handle.target_id());
+        let mut recorded = gate.lock().await;
+        // The registrations live per CDP session, so this handle installs
+        // its own before anything is checked: a document this page loads
+        // from here on must be covered by *this* session's registration,
+        // not only by the one a previous adopter's session installed.
+        handle.install_entropy_capture().await?;
+        // The shadow in the isolated world proves the registration ran,
+        // and the main-world property must still be the locked one it
+        // defines: an actor that runs at document start too -- a preload
+        // or an extension -- can lock the name first, and the capture
+        // would swallow its own failed define. A main world with no
+        // minter, or a mutable one, falls through to the fresh mint
+        // below, which replaces what it can and fails against what it
+        // cannot.
+        if handle.document_start_ran().await? && handle.locked_scope_minter().await.is_ok() {
+            return Ok(());
+        }
+        if let Some(scope) = recorded.as_ref()
+            && handle.document_scope_claimed(scope).await?
+        {
+            match handle.verify_locked_scope(scope).await {
+                // The claim proves this document is the one the define
+                // named, so a verified answer is the install it left.
+                Ok(true) => return Ok(()),
+                // The browser answered and the minter is not the one the
+                // claim names: the document holds a minter this engine
+                // did not install, and the fresh mint below must fail
+                // against it.
+                Ok(false) => {}
+                // Nothing was learned -- the check ran out of time or
+                // the transport failed, and the claim predates the
+                // define, so it cannot stand in for the minter's own
+                // answer. Fail the caller: a page whose minter is
+                // unconfirmed is not one to hand back, and the recorded
+                // candidate stays for the retry that follows.
+                Err(error) => return Err(error),
+            }
+        }
+        // No claim for the remembered scope: the document was replaced
+        // (a claim dies with it, and a document-start one leaves none),
+        // the minter the claim named is somebody else's, or an attempt
+        // before this one never got as far as a define. Either way the
+        // document gets a fresh mint below; the remembered scope stays
+        // until the define decides what replaces it.
+        let scope = handle.mint_scope_in_isolated_world().await?;
+        handle.claim_document_scope(&scope).await?;
+        let previous = recorded.replace(scope.clone());
+        match handle.define_locked_scope(&scope).await {
+            Err(error) => {
+                // Two shapes of answer exist. The browser that RAN the
+                // define and saw it throw reports the refusal, and the
+                // property it met is not this attempt's to record. Every
+                // other failure -- a timeout, a transport drop -- is
+                // ambiguous: the define may have executed with its
+                // answer lost, so the candidate stays remembered and a
+                // later preparation verifies it (path 2) instead of
+                // meeting the property a second time.
+                if let EngineError::Internal { detail } = &error
+                    && detail.starts_with(DEFINE_REFUSED_PREFIX)
+                {
+                    *recorded = previous;
+                }
+                Err(error)
+            }
+            Ok(()) => match handle.verify_locked_scope(&scope).await {
+                Ok(true) => Ok(()),
+                Ok(false) => Err(EngineError::Internal {
+                    detail: format!(
+                        "the document's {REF_SCOPE_PROPERTY} did not answer with the minted \
+                         scope: a page that keeps its own minter can choose its own scope"
+                    ),
+                }),
+                Err(error) => Err(error),
+            },
+        }
+    }
+
+    /// Forgets a target's preparation gate, so a target that comes back
+    /// under the same id is prepared again.
+    fn forget_preparation(&self, target_id: &TargetId) {
+        self.preparing
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(target_id);
+    }
+
     /// Targets a registered handle already drives. Shared by the
     /// foreign-page listing and the attach fallback, which must never
     /// hand the same target out twice.
@@ -85,6 +244,45 @@ impl CdpContext {
             .values()
             .map(|page| page.target_id())
             .collect()
+    }
+
+    /// Closes a page whose preparation failed, when the target is this
+    /// context's to close.
+    ///
+    /// The handle was never registered in the page map, so `close_page`
+    /// cannot reach it and nothing else will: without this the target
+    /// would sit in the shared engine process for its lifetime. The
+    /// cleanup is bounded like every other call here, so a wedged
+    /// browser cannot park the caller while holding the browser mutex.
+    ///
+    /// The preparation record goes only when the browser confirms the
+    /// target is gone. A close that failed leaves the target — and
+    /// whatever an ambiguous attempt defined and claimed on it — alive,
+    /// and the record is what a later adoption verifies instead of
+    /// redefining into a refusal.
+    async fn discard_unprepared(&self, handle: &CdpPage) {
+        if !handle.closable() {
+            return;
+        }
+        let target_id = handle.target_id();
+        let browser = self.browser.lock().await;
+        let closed = crate::error::with_deadline(
+            "close_unprepared_page",
+            crate::error::COMMAND_TIMEOUT,
+            browser.execute(CloseTargetParams::new(target_id.clone())),
+        )
+        .await;
+        match closed {
+            Ok(_) => self.forget_preparation(&target_id),
+            // The probe defaults to "still there" when it cannot tell,
+            // which keeps the record — the conservative answer for a
+            // target that may carry an install of this engine's.
+            Err(_) => {
+                if !target_still_exists(&browser, target_id.clone()).await {
+                    self.forget_preparation(&target_id);
+                }
+            }
+        }
     }
 }
 
@@ -159,7 +357,7 @@ impl ContextHandle for CdpContext {
 
         let serial = self.page_counter.fetch_add(1, Ordering::Relaxed);
         let page_id = PageId::new(format!("{}:page-{}", self.id, serial));
-        let handle = Arc::new(if created {
+        let handle = if created {
             CdpPage::new(
                 page,
                 self.config.navigation_timeout,
@@ -171,7 +369,20 @@ impl ContextHandle for CdpContext {
                 self.config.navigation_timeout,
                 Some(self.config.screenshot_min_interval),
             )
-        });
+        };
+        // Before the page loads anything: a document's ref scope must not
+        // be a value the document itself can choose. The registration
+        // covers every document this page loads from here on; the
+        // document that is already there -- `about:blank` for a page this
+        // context just created, or the page of a target it attached to --
+        // gets its scope minted out of reach of the page. A failure
+        // discards a target this call created: it is not in the page map,
+        // so nothing else can reach it.
+        if let Err(error) = self.prepare_once(&handle).await {
+            self.discard_unprepared(&handle).await;
+            return Err(error);
+        }
+        let handle = Arc::new(handle);
 
         // The cap protects the shared engine process, so it is re-checked
         // under the lock that owns registration: a concurrent open may
@@ -194,13 +405,24 @@ impl ContextHandle for CdpContext {
                 // Same wedged-handler threat model as every call here:
                 // the cleanup must be bounded or a hung browser would
                 // park `open_page` forever while holding the browser
-                // mutex.
-                let _ = crate::error::with_deadline(
+                // mutex. The gate goes only when the close is confirmed:
+                // a target that outlives it keeps whatever preparation
+                // defined and claimed on it, which a later adoption
+                // verifies instead of redefining.
+                match crate::error::with_deadline(
                     "close_overflow_page",
                     crate::error::COMMAND_TIMEOUT,
-                    browser.execute(CloseTargetParams::new(target_id)),
+                    browser.execute(CloseTargetParams::new(target_id.clone())),
                 )
-                .await;
+                .await
+                {
+                    Ok(_) => self.forget_preparation(&target_id),
+                    Err(_) => {
+                        if !target_still_exists(&browser, target_id.clone()).await {
+                            self.forget_preparation(&target_id);
+                        }
+                    }
+                }
             }
             return Err(EngineError::Capacity {
                 detail: format!(
@@ -250,6 +472,24 @@ impl ContextHandle for CdpContext {
                 }
             }
         }
+        // The disposal closes every target inside this context's own
+        // isolation, so their gates would only be leaks; context churn
+        // must not grow the launcher-wide registry. A default-context
+        // target an adoption brought in is not the disposal's to close
+        // and keeps living, so its gate stays too: another context
+        // adopting it later must recognize what the first install left,
+        // or it would meet the locked property and fail.
+        let owned: Vec<TargetId> = {
+            let pages = self.lock_pages();
+            pages
+                .values()
+                .filter(|page| page.closable())
+                .map(|page| page.target_id())
+                .collect()
+        };
+        for target_id in owned {
+            self.forget_preparation(&target_id);
+        }
         self.lock_pages().drain();
         Ok(())
     }
@@ -263,11 +503,14 @@ impl ContextHandle for CdpContext {
         let Some(handle) = handle else {
             return Ok(());
         };
+        let target_id = handle.target_id();
         // An attached surface is the engine's own window content and
         // outlives the handle: closing its target would blank the
-        // browser's UI, so the registration alone goes.
+        // browser's UI, so the registration alone goes. The preparation
+        // gate stays with the still-open target: the next adoption then
+        // recognizes what this one installed instead of preparing the
+        // document again.
         if handle.closable() {
-            let target_id = handle.target_id();
             {
                 let browser = self.browser.lock().await;
                 let closed = crate::error::with_deadline(
@@ -281,11 +524,14 @@ impl ContextHandle for CdpContext {
                     // the tab, or the renderer crashed) answers CloseTarget
                     // with an error; the registration must still go, or the
                     // page cap counts a page that no longer exists.
-                    if target_still_exists(&browser, target_id).await {
+                    if target_still_exists(&browser, target_id.clone()).await {
                         return Err(error);
                     }
                 }
             }
+            // The target is closed, so nothing will prepare this id
+            // again: the gate would only be a leak.
+            self.forget_preparation(&target_id);
         }
         self.lock_pages().remove(&id);
         Ok(())
@@ -357,12 +603,21 @@ impl ContextHandle for CdpContext {
             )
             .await?
         };
-        let handle = Arc::new(CdpPage::adopted(
+        let handle = CdpPage::adopted(
             page,
             self.config.navigation_timeout,
             Some(self.config.screenshot_min_interval),
             adopt_closable(&self.cdp_context_id, &info),
-        ));
+        );
+        // The adopted target already carries a document, so both halves
+        // of the preparation apply: the registration for the documents it
+        // loads next, and a scope minted for the one it has.
+        //
+        // A failure is reported without closing the target. It is not
+        // this context's to destroy: another context may already drive it,
+        // and an engine-owned surface is the browser's own window content.
+        self.prepare_once(&handle).await?;
+        let handle = Arc::new(handle);
         let previous = self.lock_pages().insert(id.clone(), Arc::clone(&handle));
         if let Some(existing) = previous {
             // A concurrent adoption won the race between the check and

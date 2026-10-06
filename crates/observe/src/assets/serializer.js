@@ -22,10 +22,6 @@
   // the collected ones out. See pruneRefs.
   const REF_SWEEP_AT = 512;
 
-  // How many base36 characters a per-document ref scope carries. See
-  // mintScope.
-  const REF_SCOPE_CHARS = 4;
-
   // Mints the scope every ref of one document carries.
   //
   // Each document counts its refs from 1, so two pages that were both
@@ -38,12 +34,22 @@
   // the document's) makes a cross-page hit need the counter and the
   // scope to collide at once, while same-page refs keep the stability
   // the snapshot format promises.
+  //
+  // The scope has to be a value the page cannot choose, and this script
+  // runs after the page's own, so it cannot be minted here: `Math.random`,
+  // `crypto`, and the prototypes a conversion would go through are all
+  // replaceable. `__rutterRefScope` is that minter, installed and locked
+  // before the document ran anything -- at document start for a document
+  // the engine loads, and from an isolated world for one that was already
+  // loaded when rutter attached (see `entropy.js` and
+  // `crates/engine-cdp`). There is no in-page fallback on purpose: a
+  // scope drawn from a source the page can replace would hand two
+  // documents the same scope, which is the collision this exists to
+  // prevent. A document with no minter gets the degradation every other
+  // store failure gets -- `ensureRefStore` reports the snapshot truncated
+  // and hands out no references.
   function mintScope() {
-    let scope = '';
-    while (scope.length < REF_SCOPE_CHARS) {
-      scope += Math.random().toString(36).slice(2);
-    }
-    return scope.slice(0, REF_SCOPE_CHARS);
+    return window.__rutterRefScope();
   }
 
   // The lookup tables below are a Set or a Map, never an object

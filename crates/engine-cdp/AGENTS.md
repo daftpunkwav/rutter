@@ -30,9 +30,22 @@ The module map lives in [README.md](README.md) and
 - Spawn sets `RUTTER_CDP_PORT` and `RUTTER_PROFILE`, nulls stdin and
   stdout, and sends stderr to a file. On Windows the child is created
   with `CREATE_NO_WINDOW`.
-- The profile directory is created exclusively under the temp dir.
-  `create_dir` failure, including a collision, is `LaunchFailed` and
-  is not retried.
+- The profile directory is created exclusively under the temp dir,
+  owner-only on Unix (`0700`): it holds the browser's cookies and login
+  state, and a directory made with the process umask could be readable
+  by every other local user. The mode is set outright after the create,
+  because the create's own mode is masked by the umask and a restrictive
+  one can clear the owner bits. Creation failure, including a collision,
+  is `LaunchFailed` and is not retried.
+- Opening or adopting a page prepares its ref scope, both halves
+  together: `rutter_observe::entropy_capture_script` registered with
+  `Page.addScriptToEvaluateOnNewDocument` for the documents it loads
+  next, and `install_current_scope` minting one in an isolated world for
+  the document that is already there. Preparation is once per target
+  behind a gate, because it defines a locked property and a second
+  attempt would meet the first and throw. A failure fails the page;
+  only a target this call created is closed, since an adopted one may
+  belong to another context or to the engine's own UI.
 - `launch_secret` and the dashboard `generate_token` stay the same
   construction. A change to one updates the other.
 

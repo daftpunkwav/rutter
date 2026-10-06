@@ -107,6 +107,62 @@ async fn foreign_pages_are_adoptable_and_closable() -> Result<(), Box<dyn std::e
     Ok(())
 }
 
+/// Two adoptions of one foreign surface may be in flight at once. Both
+/// must come back with it, and the target must survive them: preparing a
+/// page defines a locked scope minter, so a second attempt meets the
+/// first and throws — and a failure that closed the shared target would
+/// take the other caller's page with it.
+#[tokio::test]
+#[ignore = "requires a downloaded engine binary"]
+async fn concurrent_adoptions_of_one_surface_both_succeed() -> Result<(), Box<dyn std::error::Error>>
+{
+    let executable = resolve_executable().await?;
+    let launcher = CdpLauncher::new(executable, EngineBackend::ChromiumHeadlessShell);
+    let engine = launcher.launch(LaunchMode::Headless).await?;
+
+    let context = engine.create_context(ContextConfig::default()).await?;
+    let (_page_id, page) = context.open_page().await?;
+    page.navigate("data:text/html,<title>opener</title>")
+        .await?;
+    page.evaluate("window.open('data:text/html,<title>popup</title>'); null")
+        .await?;
+    let surface = context
+        .foreign_pages()
+        .await?
+        .first()
+        .expect("the popup is listed")
+        .id
+        .clone();
+
+    // Both calls pass the "already tracked" check before either has
+    // registered anything, which is what makes them prepare the same
+    // target.
+    let (first, second) = tokio::join!(context.adopt_page(&surface), context.adopt_page(&surface));
+    let (first_id, first_handle) = first?;
+    let (second_id, second_handle) = second?;
+    assert_eq!(first_id, surface);
+    assert_eq!(second_id, surface);
+
+    assert_eq!(
+        context.pages().iter().filter(|id| **id == surface).count(),
+        1,
+        "one surface, one registration"
+    );
+
+    // The target still answers through both handles: neither adoption
+    // closed what the other drives.
+    first_handle
+        .navigate("data:text/html,<title>adopted</title>")
+        .await?;
+    assert_eq!(
+        second_handle.evaluate("document.title").await?.as_str(),
+        Some("adopted")
+    );
+
+    engine.shutdown().await?;
+    Ok(())
+}
+
 /// Another session's isolated context is nobody's discovery: targets
 /// inside a foreign browser context are never reported.
 #[tokio::test]

@@ -64,7 +64,7 @@ pub fn files_check_script(reference: &str) -> String {
 
 /// Strips a reference to its alphanumeric-and-dash core; the only form
 /// that may be embedded into a page script. The dash is part of the
-/// minted form (`e17-9x2f`) and is inert inside a string literal, so
+/// minted form (`e17-9x2fqk`) and is inert inside a string literal, so
 /// it survives with the rest of the injection-safe alphabet.
 fn sanitized(reference: &str) -> String {
     reference

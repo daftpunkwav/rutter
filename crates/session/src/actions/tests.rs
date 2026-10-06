@@ -343,9 +343,12 @@ fn wheel_deltas_follow_directions() {
 async fn setting_files_targets_the_resolved_input() {
     let harness = Harness::new(Duration::from_secs(1), Duration::from_millis(1));
     harness.page.set_url("https://example.com");
-    let file = std::env::temp_dir().join("rutter-upload-test.txt");
-    std::fs::write(&file, b"payload").expect("fixture file writes");
-    let path = file.to_string_lossy().into_owned();
+    // A scratch file of the harness's own name: a fixed name under the
+    // shared temp dir is a path another local user could have planted a
+    // symlink at, and two runs would collide on it.
+    let file = tempfile::NamedTempFile::new().expect("fixture file");
+    std::fs::write(file.path(), b"payload").expect("fixture file writes");
+    let path = file.path().to_string_lossy().into_owned();
 
     let snapshot = harness
         .executor()
@@ -360,7 +363,6 @@ async fn setting_files_targets_the_resolved_input() {
         harness.page.input_files_calls(),
         vec![("e1".to_owned(), vec![path])]
     );
-    let _ = std::fs::remove_file(&file);
 }
 
 #[tokio::test]

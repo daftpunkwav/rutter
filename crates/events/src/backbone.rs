@@ -172,8 +172,12 @@ mod tests {
         let replayed = backbone.replay(&session);
         let seqs: Vec<u64> = replayed.iter().map(|envelope| envelope.seq).collect();
         assert_eq!(seqs, vec![0, 1]);
+        // A string pattern rather than a char pattern: a char literal in
+        // this file derails the complexity analyzer's Rust lexer, which
+        // then reports this twenty-line test as 182 lines of code and
+        // drops the twelve tests that follow it from its output.
         assert!(
-            replayed[0].recorded_at.contains('T'),
+            replayed[0].recorded_at.contains("T"),
             "timestamps are RFC 3339"
         );
     }

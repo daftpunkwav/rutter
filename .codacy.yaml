@@ -10,6 +10,19 @@
 # Note for maintainers: while this file exists, Codacy reads ignored
 # paths from here and not from the repository's Ignored files settings
 # on the Codacy UI.
+#
+# `biome.json` and `.markdownlint.json` in the repository root are the
+# tool configuration files for BiomeJS and markdownlint: they turn off
+# the Qwik `$()` rule, which has no referent outside a Qwik project,
+# and allow a repeated heading in a changelog that follows Keep a
+# Changelog. Codacy applies a tool configuration file only when the
+# toggle for that tool is on in the repository's Code patterns page
+# (Code patterns -> tool -> "Use configuration file"); until then the
+# files are inert here and describe the intended configuration only.
+# The remaining `@typescript-eslint/no-var-requires` findings need the
+# pattern itself switched off there: an `.eslintrc` that named one rule
+# would replace the analyzer's rule set rather than amend it, and the
+# sandboxed Electron preload cannot use `import` at all.
 engines:
   lizard:
     exclude_paths:

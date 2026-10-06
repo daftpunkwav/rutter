@@ -22,14 +22,16 @@ use chromiumoxide::cdp::browser_protocol::network::{
     EventLoadingFailed, EventRequestWillBeSent, EventResponseReceived, RequestId,
 };
 use chromiumoxide::cdp::browser_protocol::page::{
-    EventFrameNavigated, EventJavascriptDialogOpening, EventScreencastFrame,
+    AddScriptToEvaluateOnNewDocumentParams, CreateIsolatedWorldParams, EventFrameNavigated,
+    EventJavascriptDialogOpening, EventScreencastFrame, GetFrameTreeParams,
     GetNavigationHistoryParams, HandleJavaScriptDialogParams, NavigateParams,
     NavigateToHistoryEntryParams, ScreencastFrameAckParams, StartScreencastFormat,
     StartScreencastParams, StopScreencastParams,
 };
 use chromiumoxide::cdp::browser_protocol::target::TargetId;
 use chromiumoxide::cdp::js_protocol::runtime::{
-    EvaluateParams, EventConsoleApiCalled, EventExceptionThrown, RemoteObject,
+    CallFunctionOnParams, EvaluateParams, EventConsoleApiCalled, EventExceptionThrown,
+    ExecutionContextId, GetPropertiesParams, RemoteObject, RemoteObjectType,
 };
 use chromiumoxide::error::CdpError;
 use chromiumoxide::listeners::EventStream;
@@ -68,6 +70,63 @@ fn screencast_params() -> StartScreencastParams {
 /// Cap on one observation's text: a hostile or chatty page must not be
 /// able to bloat the event ring or a console feed with one call.
 const OBSERVATION_TEXT_CAP: usize = 2_000;
+
+/// The world a scope is minted in when the document is already loaded.
+/// Named rather than anonymous so a repeated call reuses it.
+const ISOLATED_WORLD: &str = "rutter-ref-scope";
+
+/// The global the serializer reads its scope from; `entropy.js` locks the
+/// same name onto the global at document start.
+pub(crate) const REF_SCOPE_PROPERTY: &str = "__rutterRefScope";
+
+/// The isolated-world marker that binds a defined scope to the document
+/// it was defined on. The page cannot reach the isolated world, and a
+/// navigation replaces the world's global, so a claim read back from it
+/// proves the locked minter answering that scope is the one this engine
+/// defined on *this* document — not one a later document planted after
+/// learning the scope from its own minter, which is callable from page
+/// script by design.
+const CLAIM_PROPERTY: &str = "__rutterEngineClaim";
+
+/// The prefix of the one define error the browser produced itself: the
+/// evaluation ran and the property refused the install. Every other
+/// define failure -- a timeout, a transport drop -- leaves whether the
+/// define executed unknown, and preparation records its candidate for
+/// a later verification instead of assuming the attempt never landed.
+pub(crate) const DEFINE_REFUSED_PREFIX: &str = "install the document scope:";
+
+/// How many base36 characters a scope carries, as the snapshot format
+/// documents: 36^6 puts a two-document collision past two billion to
+/// one, far outside any session's reach.
+const REF_SCOPE_CHARS: usize = 6;
+
+/// Mints one scope in an isolated world, where `crypto` is the
+/// platform's own and no page patch has reached it. Six bytes are 48
+/// bits, inside the integer range a Number carries exactly.
+const SCOPE_IN_ISOLATED_WORLD: &str = "(function () { \
+   var bytes = new Uint8Array(6); \
+   crypto.getRandomValues(bytes); \
+   var value = 0; \
+   for (var index = 0; index < bytes.length; index += 1) { value = value * 256 + bytes[index]; } \
+   var digits = '0123456789abcdefghijklmnopqrstuvwxyz'; \
+   var scope = ''; \
+   for (var index = 0; index < 6; index += 1) { \
+     var digit = value % 36; \
+     scope = digits[digit] + scope; \
+     value = (value - digit) / 36; \
+   } \
+   return scope; \
+ })()";
+
+/// Whether a value is a scope the snapshot format accepts: exactly
+/// [`REF_SCOPE_CHARS`] base36 characters. Checked before the value is
+/// spliced into a script, so a malformed one cannot become script text.
+fn is_scope(scope: &str) -> bool {
+    scope.len() == REF_SCOPE_CHARS
+        && scope
+            .chars()
+            .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit())
+}
 
 /// Bounds an observation text at [`OBSERVATION_TEXT_CAP`] characters.
 fn cap_text(text: String) -> String {
@@ -270,6 +329,429 @@ impl CdpPage {
     /// Whether closing this page may close the underlying target.
     pub fn closable(&self) -> bool {
         self.closable
+    }
+
+    /// Registers the entropy capture for every document this page loads
+    /// from now on, in the main world and in the named isolated world.
+    ///
+    /// A document's ref scope keeps a stale reference captured on one
+    /// page from resolving to another page's element after a tab switch,
+    /// and it has to be a value the document cannot choose: every global
+    /// a page can reach -- `Math.random`, `crypto`, the prototypes a
+    /// conversion would go through -- is one it can replace. The capture
+    /// script runs before the document's own scripts and holds
+    /// everything it needs from the platform; see
+    /// [`rutter_observe::entropy_capture_script`].
+    ///
+    /// The shadow copy in the isolated world defines the same minter
+    /// where no page script can reach. It never runs in the serializer;
+    /// its presence is what [`CdpPage::document_start_ran`] reads as the
+    /// proof that the document-start registration covered the document
+    /// that is now current, so the locked property in the main world was
+    /// installed by the engine rather than by the page. Both worlds draw
+    /// from the same platform `crypto`, so the shadow succeeding while
+    /// the main-world capture failed is not a case: the two
+    /// registrations are installed back to back and run back to back
+    /// before any page script.
+    ///
+    /// Registration is per CDP session and per target and survives
+    /// navigation, so once per session is enough for every document the
+    /// page loads afterwards, including ones the page starts itself. A
+    /// handle re-prepared on its session adds the registrations again;
+    /// the script's own locked define turns the repeat into a swallowed
+    /// throw. A failure is reported rather than swallowed: a page whose
+    /// scope the page itself can choose is a weaker guarantee than the
+    /// one callers are promised. Every call is under a deadline like the
+    /// rest of this file, so a browser that stops answering cannot park
+    /// a page open.
+    pub async fn install_entropy_capture(&self) -> Result<(), EngineError> {
+        let source = rutter_observe::entropy_capture_script();
+        let params = AddScriptToEvaluateOnNewDocumentParams::builder()
+            .source(source)
+            .build()
+            .map_err(|error| EngineError::Internal {
+                detail: format!("build the entropy capture registration: {error}"),
+            })?;
+        with_deadline(
+            "install_entropy_capture",
+            COMMAND_TIMEOUT,
+            self.page.execute(params),
+        )
+        .await?;
+        let shadow = AddScriptToEvaluateOnNewDocumentParams::builder()
+            .source(source)
+            .world_name(ISOLATED_WORLD.to_owned())
+            .build()
+            .map_err(|error| EngineError::Internal {
+                detail: format!("build the entropy shadow registration: {error}"),
+            })?;
+        with_deadline(
+            "install_entropy_capture_shadow",
+            COMMAND_TIMEOUT,
+            self.page.execute(shadow),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Whether the document-start registration covered the document that
+    /// is current: the named isolated world carries the minter the
+    /// registration defines there.
+    ///
+    /// The page cannot reach an isolated world, so this answer cannot be
+    /// forged from page script. A minter in the named world means the
+    /// engine's document-start script ran for this document before the
+    /// page's own, and the locked property the serializer reads in the
+    /// main world is therefore the engine's, however hostile the page --
+    /// which is what lets preparation accept an installed minter instead
+    /// of defining over it, a define that would throw.
+    ///
+    /// Every call is under a deadline like the rest of this file: this
+    /// runs while a page is being opened or adopted, so a browser that
+    /// stops answering must not park that.
+    pub(crate) async fn document_start_ran(&self) -> Result<bool, EngineError> {
+        let context_id = self.isolated_world().await?;
+        let probe = with_deadline(
+            "probe_document_start",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                EvaluateParams::builder()
+                    .expression(format!("typeof {REF_SCOPE_PROPERTY} === 'function'"))
+                    .context_id(context_id)
+                    .return_by_value(true)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the document-start probe: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        if let Some(details) = probe.result.exception_details {
+            return Err(EngineError::Internal {
+                detail: format!(
+                    "probe the document-start registration: {}",
+                    exception_text(&details)
+                ),
+            });
+        }
+        Ok(probe
+            .result
+            .result
+            .value
+            .as_ref()
+            .and_then(Value::as_bool)
+            .unwrap_or(false))
+    }
+
+    /// The execution context of the named isolated world, creating the
+    /// world for the frame when absent; a repeated call reuses it.
+    async fn isolated_world(&self) -> Result<ExecutionContextId, EngineError> {
+        let tree = with_deadline(
+            "get_frame_tree",
+            COMMAND_TIMEOUT,
+            self.page.execute(GetFrameTreeParams::default()),
+        )
+        .await?;
+        let world = with_deadline(
+            "create_isolated_world",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                CreateIsolatedWorldParams::builder()
+                    .frame_id(tree.frame_tree.frame.id.clone())
+                    .world_name(ISOLATED_WORLD)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the isolated world request: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        Ok(world.execution_context_id)
+    }
+
+    /// Records `scope` as this document's engine claim in the isolated
+    /// world, overwriting any claim an earlier attempt left.
+    ///
+    /// A plain binding, not a locked define: the world is unreachable
+    /// from page script, so there is nothing to lock against, and the
+    /// overwrite is what keeps a retry consistent — a define that timed
+    /// out ambiguously leaves the claim answering the candidate, which
+    /// the retry then verifies against the live minter. The claim dies
+    /// with the document: a navigation replaces the world's global, so
+    /// a remembered scope can never verify against a later document,
+    /// however the page acquired it.
+    pub(crate) async fn claim_document_scope(&self, scope: &str) -> Result<(), EngineError> {
+        let context_id = self.isolated_world().await?;
+        let claim = with_deadline(
+            "claim_document_scope",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                EvaluateParams::builder()
+                    .expression(format!("{CLAIM_PROPERTY} = '{scope}'"))
+                    .context_id(context_id)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the scope claim: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        if let Some(details) = claim.result.exception_details {
+            return Err(EngineError::Internal {
+                detail: format!("claim the document scope: {}", exception_text(&details)),
+            });
+        }
+        Ok(())
+    }
+
+    /// Whether this document carries the engine claim for `scope`.
+    ///
+    /// The marker was written by [`Self::claim_document_scope`] right
+    /// before the define it names, so a match proves the locked minter
+    /// answering `scope` was installed by this engine *on this
+    /// document* — the proof a same-document retry needs, and the
+    /// reason a page that replants a learned scope on a fresh document
+    /// fails instead.
+    pub(crate) async fn document_scope_claimed(&self, scope: &str) -> Result<bool, EngineError> {
+        let context_id = self.isolated_world().await?;
+        let probe = with_deadline(
+            "probe_scope_claim",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                EvaluateParams::builder()
+                    .expression(format!("{CLAIM_PROPERTY} === '{scope}'"))
+                    .context_id(context_id)
+                    .return_by_value(true)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the claim probe: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        if let Some(details) = probe.result.exception_details {
+            return Err(EngineError::Internal {
+                detail: format!("probe the scope claim: {}", exception_text(&details)),
+            });
+        }
+        Ok(probe
+            .result
+            .result
+            .value
+            .as_ref()
+            .and_then(Value::as_bool)
+            .unwrap_or(false))
+    }
+
+    /// Draws one scope in an isolated world: a separate realm with the
+    /// platform's own `crypto`, which the page's patches do not reach.
+    pub(crate) async fn mint_scope_in_isolated_world(&self) -> Result<String, EngineError> {
+        let context_id = self.isolated_world().await?;
+        let minted = with_deadline(
+            "mint_ref_scope",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                EvaluateParams::builder()
+                    .expression(SCOPE_IN_ISOLATED_WORLD)
+                    .context_id(context_id)
+                    .return_by_value(true)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the scope evaluation: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        if let Some(details) = minted.result.exception_details {
+            return Err(EngineError::Internal {
+                detail: format!("mint the document scope: {}", exception_text(&details)),
+            });
+        }
+        minted
+            .result
+            .result
+            .value
+            .as_ref()
+            .and_then(Value::as_str)
+            .filter(|scope| is_scope(scope))
+            .map(str::to_owned)
+            .ok_or_else(|| EngineError::Internal {
+                detail: "the isolated world returned no usable scope".to_owned(),
+            })
+    }
+
+    /// Defines the scope in the main world as a locked property.
+    ///
+    /// The expression is wrapped so the evaluation returns nothing:
+    /// `Object.defineProperty` answers with the object it was given, and
+    /// asking CDP to serialize the window back is an error, not a result.
+    /// An exception here means the property already exists as a
+    /// non-configurable one the caller has not verified as its own --
+    /// the page planted it, or an earlier install of this engine did and
+    /// the recorded scope must be checked against it instead.
+    pub(crate) async fn define_locked_scope(&self, scope: &str) -> Result<(), EngineError> {
+        let install = format!(
+            "(function () {{ Object.defineProperty(window, '{REF_SCOPE_PROPERTY}', {{ \
+               value: function () {{ return '{scope}'; }}, \
+               writable: false, configurable: false, enumerable: false }}); }})()"
+        );
+        let installed = with_deadline(
+            "install_ref_scope",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                EvaluateParams::builder()
+                    .expression(install)
+                    .return_by_value(true)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the scope installation: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        match installed.result.exception_details {
+            Some(details) => Err(EngineError::Internal {
+                detail: format!("{DEFINE_REFUSED_PREFIX} {}", exception_text(&details)),
+            }),
+            None => Ok(()),
+        }
+    }
+
+    /// Checks the installation through CDP rather than by reading the
+    /// property back in the page.
+    ///
+    /// The expression above runs in the main world, where a page can
+    /// replace `Object.defineProperty` with a no-op -- or
+    /// `Object.getOwnPropertyDescriptor` with something that lies -- and
+    /// either would leave the snapshot minting from a scope the page
+    /// chose. The browser's own view of the global cannot be forged from
+    /// inside the page, so the property has to be an own, non-writable,
+    /// non-configurable function *and* that function has to answer with
+    /// the scope that was minted: a page that kept its own locked
+    /// function in place returns its own value, and the comparison
+    /// catches it. The same check against a remembered scope is how a
+    /// retry recognizes an install of its own.
+    ///
+    /// `Ok(true)` means the minter the browser reports answers with the
+    /// scope named; `Ok(false)` means the browser answered and the
+    /// minter is someone else's; `Err` means nothing was learned -- a
+    /// wedged or slow browser must fail the caller rather than hand
+    /// back a page whose minter is unconfirmed.
+    ///
+    /// The boundary this check cannot cross: a document that was already
+    /// loaded when rutter attached can have made `Object.defineProperty`
+    /// a spying no-op, so the define lands nowhere and the answer is the
+    /// page's echo of the scope it saw. That page owns its realm either
+    /// way — the labels it renders are equally its choice — and every
+    /// document the registration covers is immune, because the
+    /// document-start install runs before any page script.
+    pub(crate) async fn verify_locked_scope(&self, scope: &str) -> Result<bool, EngineError> {
+        let minter = self.locked_scope_minter().await?;
+        let object_id = minter
+            .object_id
+            .clone()
+            .ok_or_else(|| EngineError::Internal {
+                detail: format!("the browser returned no handle for {REF_SCOPE_PROPERTY}"),
+            })?;
+        // Called on the function object the browser itself reported, so
+        // the call cannot land on anything the page swapped in after the
+        // check.
+        let answered = with_deadline(
+            "call_ref_scope",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                CallFunctionOnParams::builder()
+                    .object_id(object_id)
+                    .function_declaration("function () { return this(); }")
+                    .return_by_value(true)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the minter call: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        if let Some(details) = answered.result.exception_details {
+            return Err(EngineError::Internal {
+                detail: format!("call the document scope: {}", exception_text(&details)),
+            });
+        }
+        let answered = answered
+            .result
+            .result
+            .value
+            .as_ref()
+            .and_then(Value::as_str);
+        Ok(answered == Some(scope))
+    }
+
+    /// The locked scope minter the document holds, as the browser sees it.
+    ///
+    /// A property that is missing, writable, configurable, or not a
+    /// function is not the one this engine installed.
+    ///
+    /// The global is read through `this` — a sloppy function's `this` is
+    /// the realm's global object itself, a binding the page cannot
+    /// reassign — and not through `globalThis` or `window`, both of
+    /// which are properties a pre-loaded page can point at a look-alike
+    /// before rutter attaches.
+    pub(crate) async fn locked_scope_minter(&self) -> Result<RemoteObject, EngineError> {
+        let global = with_deadline(
+            "read_global",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                EvaluateParams::builder()
+                    .expression("(function () { return this; })()")
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the global read: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        let object_id =
+            global
+                .result
+                .result
+                .object_id
+                .clone()
+                .ok_or_else(|| EngineError::Internal {
+                    detail: "the browser returned no handle for the global object".to_owned(),
+                })?;
+        let properties = with_deadline(
+            "read_global_properties",
+            COMMAND_TIMEOUT,
+            self.page.execute(
+                GetPropertiesParams::builder()
+                    .object_id(object_id)
+                    .own_properties(true)
+                    .build()
+                    .map_err(|error| EngineError::Internal {
+                        detail: format!("build the property read: {error}"),
+                    })?,
+            ),
+        )
+        .await?;
+        properties
+            .result
+            .result
+            .iter()
+            .find(|property| property.name == REF_SCOPE_PROPERTY)
+            .filter(|property| {
+                property.writable == Some(false)
+                    && !property.configurable
+                    && property
+                        .value
+                        .as_ref()
+                        .is_some_and(|value| value.r#type == RemoteObjectType::Function)
+            })
+            .and_then(|property| property.value.clone())
+            .ok_or_else(|| EngineError::Internal {
+                detail: format!(
+                    "the document did not take a locked {REF_SCOPE_PROPERTY}: \
+                     a page that can replace it can choose its own scope"
+                ),
+            })
     }
 
     /// Target id for closing the tab through the browser connection
