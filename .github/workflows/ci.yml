@@ -25,6 +25,17 @@ on:
     # through.
     - cron: "23 6 * * 1"
 
+# Least privilege, declared once: no job in this workflow writes, and
+# contents read is what the ones that touch the repository need — the
+# path triage's `gh api` compare call reads commits and files through
+# this same grant. `title` and `gate` read only the event payload and
+# inherit it unused; leaving them with nothing would let a later step
+# there run with no token at all rather than with read. A job that ever
+# needs more declares its own `permissions` block, which replaces this
+# default for that job alone.
+permissions:
+  contents: read
+
 # An updated pull_request run cancels the superseded one; push runs
 # queue behind the running one instead, and finished jobs keep their
 # results.
