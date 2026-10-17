@@ -259,7 +259,15 @@ impl EngineStore {
             if file.is_dir() {
                 continue;
             }
-            let name = file.name().to_owned();
+            // zip 9 returns a fallible name because it decodes the entry
+            // name; own the value so the borrow of `file` ends before the
+            // entry is read through a mutable borrow.
+            let name = file
+                .name()
+                .map_err(|error| EngineError::DownloadFailed {
+                    detail: format!("engine zip entry {index} has an unreadable name: {error}"),
+                })?
+                .into_owned();
             // Flatten `chrome-headless-shell-win64/<rest>` to `<rest>`;
             // entries without a folder prefix stay as they are.
             let relative = match name.find(['/', '\\']) {
