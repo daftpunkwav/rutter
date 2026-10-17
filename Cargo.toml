@@ -103,7 +103,7 @@ url = "2"
 # lock carries for it is cfg(fuzzing)-gated upstream, so normal builds
 # never compile it; later majors change API and MSRV for no defect
 # this workspace has.
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 # Lint policy: no unwrap/expect/panic outside tests and
 # process init, no placeholder markers, public items documented.
