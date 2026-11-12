@@ -701,13 +701,16 @@ impl ContextHandle for CdpContext {
 
 /// Whether the browser refused the command itself rather than failing
 /// it: the Electron engine's CDP endpoint answers commands it does not
-/// implement (target creation, browser contexts) with the CDP server
-/// error "Not supported", which [`crate::error::fold`] keeps verbatim
-/// in the detail text.
+/// implement (target creation, browser contexts) with a CDP server
+/// error, which [`crate::error::fold`] keeps verbatim in the detail
+/// text. Two wordings are matched, each verified against a live engine:
+/// the classic "Not supported" server error, and Chromium 148+'s
+/// command-specific "Failed to create browser context." that Electron
+/// answers `Target.createBrowserContext` with.
 ///
 /// Upgrade checkpoint: this is a contract on the engine's *wording*,
 /// and the pinned test (`a_cdp_refusal_is_recognized_as_not_supported`)
-/// builds its refusal by hand, so a chromiumoxide or Electron bump that
+/// builds its refusals by hand, so a chromiumoxide or Electron bump that
 /// changed the message would silence the attach fallback below without
 /// any unit test failing — drive `open_page` against the real engine
 /// once (`cargo test -- --include-ignored`) when a bump lands. The
@@ -720,8 +723,11 @@ impl ContextHandle for CdpContext {
 /// only discriminating signal the protocol gives, which is what is
 /// matched here.
 pub(crate) fn is_not_supported(error: &EngineError) -> bool {
-    matches!(error, EngineError::Internal { detail }
-        if detail.to_lowercase().contains("not supported"))
+    let EngineError::Internal { detail } = error else {
+        return false;
+    };
+    let detail = detail.to_lowercase();
+    detail.contains("not supported") || detail.contains("failed to create browser context")
 }
 
 /// Whether a target URL is the shell's own toolbar document — the
@@ -1061,6 +1067,19 @@ mod tests {
         assert!(is_not_supported(&EngineError::Internal {
             detail: "cdp command failed: Error -32000: not supported".to_owned(),
         }));
+        // The wording Electron answers Target.createBrowserContext
+        // with on the Chromium 148 line (Electron 44) and above, as
+        // observed live on Electron 44.5.1 and 45.0.0: a
+        // command-specific failure message instead of the classic
+        // "Not supported" server error.
+        let refusal = fold(CdpError::Chrome(chromiumoxide::types::Error {
+            code: -32000,
+            message: "Failed to create browser context.".to_owned(),
+        }));
+        assert!(
+            is_not_supported(&refusal),
+            "Electron context-creation refusal must match: {refusal}"
+        );
     }
 
     #[test]
@@ -1074,6 +1093,13 @@ mod tests {
         }));
         assert!(!is_not_supported(&EngineError::Internal {
             detail: "cdp layer failure: connection closed before a response".to_owned(),
+        }));
+        // A command-specific "Failed to ..." for an operation that is
+        // implemented must not ride the fallback: the wording match is
+        // pinned to the browser-context command, and other failures on
+        // the same generic -32000 code stay real failures.
+        assert!(!is_not_supported(&EngineError::Internal {
+            detail: "cdp command failed: Error -32000: Failed to navigate to URL".to_owned(),
         }));
         assert!(!is_not_supported(&EngineError::Capacity {
             detail: "cap reached".to_owned(),
