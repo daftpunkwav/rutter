@@ -391,7 +391,9 @@ test('a crafted token cannot move a request off the dashboard origin', async () 
   // host, and port, with the token reduced to a query value: it must
   // never be able to supply any part of the target itself.
   const hostile = '//evil.example/steal';
-  const { socket, requests } = await boot({ search: '?token=' + encodeURIComponent(hostile) });
+  const { socket, requests } = await boot({
+    search: `?token=${encodeURIComponent(hostile)}`,
+  });
   const targets = [socket.url, ...requests];
   assert.equal(targets.length, 2, 'the socket and the string catalog');
   for (const target of targets) {

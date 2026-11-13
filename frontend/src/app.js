@@ -36,7 +36,7 @@
     const origin = window.location.origin;
     const url = new URL(path, origin);
     if (url.origin !== origin) {
-      throw new Error('request outside the dashboard origin: ' + path);
+      throw new Error(`request outside the dashboard origin: ${path}`);
     }
     if (protocol) { url.protocol = protocol; }
     if (token) { url.searchParams.set('token', token); }
