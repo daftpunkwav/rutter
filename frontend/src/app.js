@@ -18,11 +18,32 @@
   const token = new URLSearchParams(window.location.search).get('token');
   try { window.localStorage.removeItem('rutterToken'); } catch {}
 
-  function withToken(path) {
-    return token ? path + '?token=' + encodeURIComponent(token) : path;
+  /**
+   * The target of one dashboard request, confined to this page's origin.
+   *
+   * The token is page-controlled data: it arrives in the page URL and
+   * rides each request's query string until the cookie replaces it.
+   * Building the request through `URL` from this page's own origin and a
+   * constant path keeps the token a query value -- it cannot supply a
+   * scheme, host, or port -- and the origin assertion fails closed
+   * instead of letting a target point somewhere else.
+   *
+   * @param {string} path endpoint path, rooted at the dashboard origin
+   * @param {string} [protocol] request scheme, such as `ws:`
+   * @returns {URL} the request target
+   */
+  function dashboardUrl(path, protocol) {
+    const origin = window.location.origin;
+    const url = new URL(path, origin);
+    if (url.origin !== origin) {
+      throw new Error(`request outside the dashboard origin: ${path}`);
+    }
+    if (protocol) { url.protocol = protocol; }
+    if (token) { url.searchParams.set('token', token); }
+    return url;
   }
 
-  fetch(withToken('/i18n/en.json'))
+  fetch(dashboardUrl('/i18n/en.json'))
     .then((response) => response.json())
     .then((catalog) => {
       I18N = new Map(Object.entries(catalog));
@@ -64,8 +85,7 @@
     // chips (and the stale id options) off the screen.
     renderSessions();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    socket = new WebSocket(
-      protocol + '//' + window.location.host + withToken('/ws'));
+    socket = new WebSocket(dashboardUrl('/ws', protocol));
     socket.binaryType = 'arraybuffer';
 
     socket.onmessage = (message) => {
@@ -267,7 +287,7 @@
     // instead of looking like a grant that did nothing.
     const controller = new AbortController();
     const timer = setTimeout(() => { controller.abort(); }, DECIDE_TIMEOUT);
-    fetch(withToken('/api/decisions'), {
+    fetch(dashboardUrl('/api/decisions'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ request_id: requestId, grant: grant }),
