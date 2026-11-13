@@ -44,7 +44,7 @@ const CATALOG = {
 /** A socket the test delivers frames through. */
 class FakeSocket {
   constructor(url) {
-    this.url = url;
+    this.url = String(url);
     this.readyState = 1;
     this.sent = [];
     sockets.push(this);
@@ -139,11 +139,17 @@ async function boot({
   sockets = [];
   const ids = dashboardDom();
   const posts = [];
+  const requests = [];
   const timers = [];
   const page = createPage({
     document: clientDocument(ids, labels),
     window: {
-      location: { search, protocol: 'http:', host: '127.0.0.1:7700' },
+      location: {
+        search,
+        protocol: 'http:',
+        host: '127.0.0.1:7700',
+        origin: 'http://127.0.0.1:7700',
+      },
       localStorage: {
         removed: [],
         removeItem(key) {
@@ -151,8 +157,9 @@ async function boot({
         },
       },
       fetch(url, init) {
+        requests.push(String(url));
         if (init && init.method === 'POST') {
-          posts.push({ url, body: JSON.parse(init.body) });
+          posts.push({ url: String(url), body: JSON.parse(init.body) });
           const answer = post(url, init);
           return answer instanceof Error
             ? Promise.reject(answer)
@@ -170,7 +177,7 @@ async function boot({
   });
   page.run(APP_JS);
   await flush();
-  return { page, ids, posts, timers, socket: sockets[0] };
+  return { page, ids, posts, requests, timers, socket: sockets[0] };
 }
 
 const timeline = (ids) => ids.events.textContent;
@@ -313,7 +320,7 @@ test('a refused decision post is surfaced instead of looking granted', async () 
   grant.onclick();
   await flush();
   assert.deepEqual(posts, [
-    { url: '/api/decisions', body: { request_id: 'apr-1', grant: true } },
+    { url: 'http://127.0.0.1:7700/api/decisions', body: { request_id: 'apr-1', grant: true } },
   ]);
   assert.equal(timeline(ids), 'decision not accepted: apr-1 (403)');
 });
@@ -374,8 +381,28 @@ test('the first visit trades its query token for the cookie and forgets it', asy
   // it, and every request that follows carries it until the cookie
   // takes over.
   const { socket } = await boot({ search: '?token=s%20ecret' });
-  assert.equal(socket.url, 'ws://127.0.0.1:7700/ws?token=s%20ecret');
+  assert.equal(socket.url, 'ws://127.0.0.1:7700/ws?token=s+ecret');
   assert.deepEqual(socket.sent, [], 'nothing is sent before a click');
+});
+
+test('a crafted token cannot move a request off the dashboard origin', async () => {
+  // The token is read from the page URL, so it is attacker-influenced
+  // data by construction. A request must stay on the page's own scheme,
+  // host, and port, with the token reduced to a query value: it must
+  // never be able to supply any part of the target itself.
+  const hostile = '//evil.example/steal';
+  const { socket, requests } = await boot({ search: '?token=' + encodeURIComponent(hostile) });
+  const targets = [socket.url, ...requests];
+  assert.equal(targets.length, 2, 'the socket and the string catalog');
+  for (const target of targets) {
+    const url = new URL(target);
+    assert.equal(url.host, '127.0.0.1:7700', `the token cannot move the host: ${target}`);
+    assert.ok(
+      url.pathname === '/i18n/en.json' || url.pathname === '/ws',
+      `the path is a constant: ${target}`
+    );
+    assert.equal(url.searchParams.get('token'), hostile, `the token stays a query value: ${target}`);
+  }
 });
 
 test('a malformed frame does not take the client down', async () => {
