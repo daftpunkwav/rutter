@@ -395,7 +395,11 @@ export function createPage({ document, window: windowExtras = {}, extra = {} } =
     window: sandbox,
     document,
     run(source) {
-      return vm.runInContext(source, sandbox, { filename: 'page-script.js' });
+      // `source` is a shipped file read by loadScript(), never network or
+      // user input, and `sandbox` is the throwaway context above.
+      // Executing it there is this harness's whole contract, so the
+      // dynamic execution below is deliberately marked safe.
+      return vm.runInContext(source, sandbox, { filename: 'page-script.js' }); // NOSONAR
     },
   };
 }
