@@ -311,9 +311,11 @@ jobs:
   gate:
     # Merge-time summary: branch protection requires this check. Always runs;
     # passes when every job that ran succeeded (skipped areas are the path
-    # triage doing its job) and fails on any failure or cancellation, so a
-    # cancelled run can never masquerade as green. Future jobs join the needs
-    # list; the required-checks entry never changes.
+    # triage doing its job) and fails on any failure, cancellation, or
+    # abandonment (a runner reaped by the infrastructure reports its matrix
+    # as "abandoned" rather than "cancelled"), so a cancelled run can never
+    # masquerade as green. Future jobs join the needs list; the
+    # required-checks entry never changes.
     name: gate
     needs: [changes, title, gates, quality, integration, e2e, coverage, msrv, deny, npm-audit]
     if: always()
@@ -338,8 +340,8 @@ jobs:
           set -euo pipefail
           results="changes=$CHANGES title=$TITLE gates=$GATES quality=$QUALITY integration=$INTEGRATION e2e=$E2E coverage=$COVERAGE msrv=$MSRV deny=$DENY npm_audit=$NPM_AUDIT"
           echo "$results"
-          if grep -qE '=(failure|cancelled)' <<< "$results"; then
-            echo "::error::one or more gates failed or were cancelled"
+          if grep -qE '=(failure|cancelled|abandoned)' <<< "$results"; then
+            echo "::error::one or more gates failed, were cancelled, or were abandoned"
             exit 1
           fi
           echo "all triggered gates passed"
